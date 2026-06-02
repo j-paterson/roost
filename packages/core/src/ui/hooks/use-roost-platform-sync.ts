@@ -128,7 +128,7 @@ export function useRoostPlatformSync({ app, plugin, log, scanLibrary }: UseRoost
     try {
       const onProgress = (p: SyncPhaseProgress) => {
         setSyncStatus(`${p.phase}`);
-        setSyncProgress({ phase: p.phase, count: p.count, written: totalPushed, skipped: 0, resynced: 0 });
+        setSyncProgress({ phase: p.phase, count: p.count, total: p.total, written: totalPushed, skipped: 0, resynced: 0 });
       };
       let totalSkipped = 0;
       let totalResynced = 0;

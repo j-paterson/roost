@@ -16,6 +16,10 @@ export interface HubInputs {
   llmReadyForPipelines: boolean;
   /** Keyed by "tiktok" / "twitter" — last sync state. */
   syncStateByPlatform: Record<string, { complete: boolean; count: number; timestamp: number } | undefined>;
+  /** Keyed by "tiktok" / "twitter" — live auth-cookie probe result. The real
+   *  "logged in?" signal, independent of sync history. Optional/"unknown" when
+   *  not yet probed, in which case derivation falls back to sync history. */
+  authByPlatform?: Record<string, "connected" | "logged-out" | "unknown" | undefined>;
   /** Pending enrichment buckets from the latest scan; null if no sync has run yet. */
   incompleteByCategory: IncompleteByCategory | null;
   /** True iff settings.eagleToken + eagleLibraryPath are populated. */
@@ -85,7 +89,23 @@ function deriveBacklogs(byCategory: IncompleteByCategory | null): Backlogs {
 function deriveSocialPlatform(
   sync: { complete: boolean; count: number; timestamp: number } | undefined,
   backlogs: Backlogs,
+  auth: "connected" | "logged-out" | "unknown",
 ): PlatformState {
+  // A live auth cookie is the authoritative signal when we have it: the user
+  // is connected even before their first sync (itemCount 0 → card shows
+  // "Connected" + Sync). An interrupted last sync still surfaces as an error
+  // so the Retry affordance shows.
+  if (auth === "connected") {
+    if (sync && !sync.complete) return { kind: "error", reason: "Last sync incomplete" };
+    return { kind: "connected-idle", itemCount: sync?.count ?? 0, lastSync: sync?.timestamp ?? 0, backlogs };
+  }
+  // Cookie is gone. If we have sync history, the login expired (Reconnect);
+  // otherwise it was never set up.
+  if (auth === "logged-out") {
+    return sync ? { kind: "expired-auth" } : { kind: "unconfigured" };
+  }
+  // auth "unknown" (not probed yet) → fall back to sync-history derivation so
+  // we never wrongly downgrade a known-synced platform.
   if (!sync) return { kind: "unconfigured" };
   if (!sync.complete) return { kind: "error", reason: "Last sync incomplete" };
   return { kind: "connected-idle", itemCount: sync.count, lastSync: sync.timestamp, backlogs };
@@ -107,9 +127,10 @@ function deriveEagle(input: HubInputs): PlatformState {
 export function deriveHubState(input: HubInputs): HubState {
   const prereqs = derivePrereqs(input);
   const backlogs = deriveBacklogs(input.incompleteByCategory);
+  const auth = input.authByPlatform ?? {};
   const platforms = {
-    tiktok: deriveSocialPlatform(input.syncStateByPlatform.tiktok, backlogs),
-    x: deriveSocialPlatform(input.syncStateByPlatform.twitter, backlogs),
+    tiktok: deriveSocialPlatform(input.syncStateByPlatform.tiktok, backlogs, auth.tiktok ?? "unknown"),
+    x: deriveSocialPlatform(input.syncStateByPlatform.twitter, backlogs, auth.twitter ?? "unknown"),
     eagle: deriveEagle(input),
   };
 

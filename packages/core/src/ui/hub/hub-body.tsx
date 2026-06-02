@@ -12,6 +12,7 @@ import { PipelinesPanel } from "@/ui/hub/pipelines-panel";
 import { buildPipelineRows } from "@/ui/hub/pipeline-rows";
 import { gateCtxFromPlugin } from "@/lib/pipeline-gate-plugin";
 import type { PipelineId } from "@/lib/enrichments";
+import { Notice } from "obsidian";
 import type { App } from "obsidian";
 import type { IRoostPlugin } from "@/types/plugin";
 import type { Platform, StopSignal, SyncPhaseProgress } from "@/types/sync";
@@ -47,6 +48,14 @@ export function HubBody({ app, plugin }: { app: App; plugin: IRoostPlugin }) {
     tiktok: null,
     twitter: null,
   });
+  // True while a platform's login webview is mounted inline in its card. We
+  // keep the embedded site visible (it shows the login screen when logged out)
+  // until the auth-cookie probe flips the platform to connected.
+  const [loginActive, setLoginActive] = useState<Record<Platform, boolean>>({
+    tiktok: false,
+    twitter: false,
+  });
+  const loginPollRef = useRef<Record<Platform, number | null>>({ tiktok: null, twitter: null });
 
   // Refs hold the DOM mount targets for each platform's webview during sync.
   // PlatformCard renders an empty div with this ref attached when syncing.
@@ -102,6 +111,7 @@ export function HubBody({ app, plugin }: { app: App; plugin: IRoostPlugin }) {
                 progress: {
                   phase: p.phase,
                   count: p.count,
+                  total: p.total,
                   written: prior?.written ?? 0,
                   skipped: prior?.skipped ?? 0,
                   resynced: prior?.resynced ?? 0,
@@ -145,11 +155,17 @@ export function HubBody({ app, plugin }: { app: App; plugin: IRoostPlugin }) {
   };
 
   const updateAll = async (fastMode: boolean) => {
+    const targets: Platform[] = [];
+    if (state.platforms.tiktok.kind === "connected-idle") targets.push("tiktok");
+    if (state.platforms.x.kind === "connected-idle") targets.push("twitter");
+    // Defensive: the action bar already disables the buttons when nothing is
+    // connected, but never let a click silently do nothing.
+    if (targets.length === 0) {
+      new Notice("Connect TikTok or X/Twitter first, then sync.");
+      return;
+    }
     setGlobalRunning(true);
     try {
-      const targets: Platform[] = [];
-      if (state.platforms.tiktok.kind === "connected-idle") targets.push("tiktok");
-      if (state.platforms.x.kind === "connected-idle") targets.push("twitter");
       // Run in parallel — each platform has its own webview, writer, and
       // mount target. fastMode is X-only (TikTok ignores it).
       await Promise.all(targets.map((p) => runOne(p, fastMode)));
@@ -167,8 +183,52 @@ export function HubBody({ app, plugin }: { app: App; plugin: IRoostPlugin }) {
     await runOne(id);
   };
 
-  const connect = (id: "tiktok" | "twitter") => {
-    void plugin.openWebview(id);
+  const PLATFORM_LABEL: Record<"tiktok" | "twitter", string> = { tiktok: "TikTok", twitter: "X/Twitter" };
+
+  // Connect/reconnect: mount the SAME embedded webview used for syncing directly
+  // into the platform card. The page shows the platform's login screen while
+  // logged out; once the auth cookie appears we collapse the pane and the card
+  // flips to Connected. No separate webview leaf is opened.
+  const connect = async (id: Platform): Promise<void> => {
+    if (liveSyncs[id]) return; // a sync owns the webview right now
+    setLoginActive((prev) => ({ ...prev, [id]: true }));
+    // Wait one frame so the card renders its mount div before we attach.
+    await new Promise<void>((r) => requestAnimationFrame(() => r()));
+    const target = mountRefs[id].current;
+    const wm = plugin.getWebviewManager();
+    if (target) wm.mount(id, target);
+    new Notice(`Log in to ${PLATFORM_LABEL[id]} below — Roost detects it automatically.`);
+    // No login event exists, so poll the auth probe (~5 min cap).
+    let tries = 0;
+    const poll = window.setInterval(() => {
+      tries += 1;
+      void plugin.refreshAuthStatus().then(() => {
+        if (plugin.authStatus[id] === "connected") {
+          stopLogin(id);
+          new Notice(`${PLATFORM_LABEL[id]} connected ✓ — you can sync now.`);
+        } else if (tries >= 150) {
+          stopLogin(id);
+        }
+      });
+    }, 2000);
+    loginPollRef.current[id] = poll;
+  };
+
+  const stopLogin = (id: Platform): void => {
+    const poll = loginPollRef.current[id];
+    if (poll != null) {
+      window.clearInterval(poll);
+      loginPollRef.current[id] = null;
+    }
+    // Return the webview to the hidden container unless a sync is using it.
+    if (!liveSyncs[id]) plugin.getWebviewManager().unmount(id);
+    setLoginActive((prev) => ({ ...prev, [id]: false }));
+  };
+
+  const disconnect = (id: "tiktok" | "twitter") => {
+    void plugin.disconnectPlatform(id).then(() => {
+      new Notice(`${PLATFORM_LABEL[id]} disconnected.`);
+    });
   };
 
   const backfill = (bucket: string) => {
@@ -202,10 +262,14 @@ export function HubBody({ app, plugin }: { app: App; plugin: IRoostPlugin }) {
     void plugin.saveSettings().then(() => plugin.triggerHubStateChange());
   };
 
-  // On unmount, make sure any in-flight webview-mounts get returned to the
+  // On unmount, stop any login polls and return in-flight webview-mounts to the
   // hidden container so a future open of the hub doesn't show stale state.
   useEffect(() => {
     return () => {
+      for (const p of ["tiktok", "twitter"] as const) {
+        const poll = loginPollRef.current[p];
+        if (poll != null) window.clearInterval(poll);
+      }
       const wm = plugin.getWebviewManager?.();
       if (!wm) return;
       wm.unmount("tiktok");
@@ -217,9 +281,12 @@ export function HubBody({ app, plugin }: { app: App; plugin: IRoostPlugin }) {
     <div className="roost-hub-body mx-auto max-w-3xl py-2">
       <header className="px-4 pt-3 pb-3 border-b border-border">
         <h1 className="text-base font-semibold tracking-tight">Roost Hub</h1>
-        <p className="text-xs text-muted-foreground mt-0.5">Setup, sync, and per-platform status — all in one place.</p>
+        <p className="text-xs text-muted-foreground mt-0.5">Connect, sync, and manage your platforms — all in one place.</p>
       </header>
 
+      {/* Platforms + sync are the primary surface, so they lead. The global
+          Fast/Deep sync controls sit at the top of this section. */}
+      <SectionHeader>Platforms &amp; sync</SectionHeader>
       <GlobalActionBar
         state={state}
         isRunning={globalRunning || isPlatformSyncing("tiktok") || isPlatformSyncing("twitter")}
@@ -230,6 +297,31 @@ export function HubBody({ app, plugin }: { app: App; plugin: IRoostPlugin }) {
           cancelOne("twitter");
         }}
       />
+      <div className="border-b border-border pb-2">
+        {HUB_PLATFORMS.map((p) => {
+          const syncId = hubPlatformToSyncId(p);
+          const live = syncId === "eagle" ? null : liveSyncs[syncId as Platform];
+          const mountRef = syncId === "eagle" ? null : mountRefs[syncId as Platform];
+          const isLoggingIn = syncId === "eagle" ? false : loginActive[syncId as Platform];
+          return (
+            <PlatformCard
+              key={p}
+              platform={p}
+              state={state.platforms[p]}
+              live={live}
+              loginActive={isLoggingIn}
+              webviewMountRef={mountRef}
+              onConnect={() => { if (syncId !== "eagle") void connect(syncId); }}
+              onSync={() => void syncOne(syncId)}
+              onReconnect={() => { if (syncId !== "eagle") void connect(syncId); }}
+              onCancelLogin={() => { if (syncId !== "eagle") stopLogin(syncId as Platform); }}
+              onDisconnect={syncId === "eagle" ? undefined : () => disconnect(syncId)}
+              onBackfill={backfill}
+              onCancel={() => { if (syncId !== "eagle") cancelOne(syncId as Platform); }}
+            />
+          );
+        })}
+      </div>
 
       <SectionHeader>Prerequisites</SectionHeader>
       <div className="border-b border-border pb-2">
@@ -252,29 +344,6 @@ export function HubBody({ app, plugin }: { app: App; plugin: IRoostPlugin }) {
           llm={pipelineGate.llm}
           onToggle={togglePipeline}
         />
-      </div>
-
-      <SectionHeader>Platforms</SectionHeader>
-      <div className="pb-2">
-        {HUB_PLATFORMS.map((p) => {
-          const syncId = hubPlatformToSyncId(p);
-          const live = syncId === "eagle" ? null : liveSyncs[syncId as Platform];
-          const mountRef = syncId === "eagle" ? null : mountRefs[syncId as Platform];
-          return (
-            <PlatformCard
-              key={p}
-              platform={p}
-              state={state.platforms[p]}
-              live={live}
-              webviewMountRef={mountRef}
-              onConnect={() => { if (syncId !== "eagle") connect(syncId); }}
-              onSync={() => void syncOne(syncId)}
-              onReconnect={() => { if (syncId !== "eagle") connect(syncId); }}
-              onBackfill={backfill}
-              onCancel={() => { if (syncId !== "eagle") cancelOne(syncId as Platform); }}
-            />
-          );
-        })}
       </div>
     </div>
   );
