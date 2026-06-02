@@ -5,6 +5,7 @@ import * as React from "react";
 import { App } from "obsidian";
 import type { RoostFilter, MatchDetail, ClassifyProposalData, SmartAssignInput } from "@/types/roost";
 import type { StopSignal } from "@/types/sync";
+import type { CategoryEmbeddings, CategoryTaxonomy } from "@/pipeline/taxonomy";
 import type { IRoostPlugin } from "@/types/plugin";
 import type { SyncProgress } from "@/ui/components/progress-header";
 import type { SmartAssignMode } from "@/ui/lib/smart-assign/types";

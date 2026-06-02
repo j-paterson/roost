@@ -11,11 +11,11 @@ import type { App, Notice as NoticeT } from "obsidian";
 import { Notice } from "obsidian";
 import type { IRoostPlugin } from "@/types/plugin";
 import type {
-  NormalizedRecord,
   Platform,
   StopSignal,
   SyncPhaseProgress,
 } from "@/types/sync";
+import type { NormalizedRecord } from "@/lib/normalize";
 import { syncTikTok } from "@/sync/tiktok-sync";
 import { syncTwitter } from "@/sync/twitter-sync";
 import { VaultWriter } from "@/sync/vault-writer";

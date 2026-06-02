@@ -7,9 +7,9 @@ import {
   toIsoDate,
 } from "../week-boundary";
 
-function d(year: number, monthIndex0: number, day: number, hour = 12): Date {
+function d(year: number, monthIndex0: number, day: number, hour = 12, minute = 0): Date {
   // Construct a local-time Date. monthIndex0: Jan = 0.
-  return new Date(year, monthIndex0, day, hour, 0, 0, 0);
+  return new Date(year, monthIndex0, day, hour, minute, 0, 0);
 }
 
 describe("currentWeekStart", () => {

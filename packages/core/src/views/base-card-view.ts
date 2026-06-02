@@ -36,8 +36,11 @@ export interface BaseCardConfig {
 export abstract class BaseCardView extends BasesView {
   abstract type: string;
 
-  protected containerEl: HTMLElement;
-  protected scrollEl: HTMLElement;
+  // Public (not protected): subclasses are passed as a MarkdownRenderChild /
+  // Gallery host, both of which expose `containerEl` publicly — a protected
+  // member can't satisfy that.
+  containerEl: HTMLElement;
+  scrollEl: HTMLElement;
   protected hydrationObserver: IntersectionObserver | null = null;
   protected renderedKey: string = "";
 

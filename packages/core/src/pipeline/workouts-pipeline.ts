@@ -485,7 +485,7 @@ export function reconstructWorkoutsCache(
       triage: "workout",
       extraction: {
         name: String(fm.workout_name ?? "Unknown"),
-        workoutType: typeof fm.workout_type === "string" ? fm.workout_type : "",
+        workoutType: normalizeWorkoutType(typeof fm.workout_type === "string" ? fm.workout_type : ""),
         targetArea: typeof fm.workout_target_area === "string" ? fm.workout_target_area : "",
         difficulty: (fm.workout_difficulty === "beginner" || fm.workout_difficulty === "advanced")
           ? fm.workout_difficulty : "intermediate",
