@@ -1,0 +1,50 @@
+node_modules/
+dist/
+main.js
+styles.css
+*.js.map
+test/.venv/
+.claude/
+.worktrees/
+
+# Internal docs — NOT shipped. Public repo ships only README.md + ARCHITECTURE.md.
+# These dirs/files are kept locally (planning, agent instructions) but never tracked.
+CLAUDE.md
+AGENTS.md
+REVIEW.md
+docs/
+
+# Local build/test/verify logs
+.build.log
+.e2e-*.log
+.verify-output.txt
+
+# E2E vault working copies managed by wdio-obsidian-service
+.e2e-vault/
+# X session cookies for live e2e tests — NEVER commit (session credentials, expire ~yearly)
+tests/e2e/.x-cookies.json
+# Local secrets for ad-hoc test scripts (Spotify credentials, etc.)
+.env
+.env.*
+# wdio-obsidian-service Obsidian version cache
+.obsidian-cache/
+# WDIO logs
+wdio-*.log
+# WDIO test output
+test-results/
+
+# Promo assets (regenerate with npm run promo:experiments)
+docs/promo/screenshots/*.png
+docs/promo/bursts/
+docs/promo/videos/*.mp4
+docs/promo/videos/.concat-list.txt
+
+# Python bytecode cache
+scripts/__pycache__/
+*.pyc
+.superpowers/
+
+# Large eval outputs (regenerable pipeline results, not source)
+tests/eval/*-results.json
+tests/eval/*-results-highfloor.json
+tests/eval/results-after-blended.json

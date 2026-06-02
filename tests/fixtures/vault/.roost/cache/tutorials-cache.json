@@ -1,0 +1,94 @@
+{
+  "bm_25": {
+    "triage": "tutorial",
+    "extraction": {
+      "skill": "Pour-over coffee",
+      "skillArea": "coffee",
+      "difficulty": "easy",
+      "timeEstimate": "8 min",
+      "tools": [
+        "kettle",
+        "dripper",
+        "scale"
+      ],
+      "steps": [
+        "Heat water to 96°C.",
+        "Bloom grounds.",
+        "Pulse pour to 300g."
+      ],
+      "tips": []
+    }
+  },
+  "bm_26": {
+    "triage": "tutorial",
+    "extraction": {
+      "skill": "Interactive rebase",
+      "skillArea": "git",
+      "difficulty": "medium",
+      "timeEstimate": "12 min",
+      "tools": [
+        "terminal"
+      ],
+      "steps": [
+        "git rebase -i main",
+        "Reorder commits",
+        "Force-push branch"
+      ],
+      "tips": []
+    }
+  },
+  "bm_27": {
+    "triage": "tutorial",
+    "extraction": {
+      "skill": "Whetstone sharpening",
+      "skillArea": "kitchen",
+      "difficulty": "medium",
+      "timeEstimate": "15 min",
+      "tools": [
+        "1000/6000 stone"
+      ],
+      "steps": [
+        "Soak stone.",
+        "Find angle.",
+        "Polish edge."
+      ],
+      "tips": []
+    }
+  },
+  "bm_28": {
+    "triage": "tutorial",
+    "extraction": {
+      "skill": "Dataview queries",
+      "skillArea": "obsidian",
+      "difficulty": "easy",
+      "timeEstimate": "10 min",
+      "tools": [
+        "Obsidian"
+      ],
+      "steps": [
+        "Install plugin.",
+        "Write LIST query.",
+        "Add filters."
+      ],
+      "tips": []
+    }
+  },
+  "bm_29": {
+    "triage": "tutorial",
+    "extraction": {
+      "skill": "Sourdough shaping",
+      "skillArea": "baking",
+      "difficulty": "hard",
+      "timeEstimate": "20 min",
+      "tools": [
+        "bench scraper"
+      ],
+      "steps": [
+        "Wet hands.",
+        "Stretch north.",
+        "Fold and rotate."
+      ],
+      "tips": []
+    }
+  }
+}

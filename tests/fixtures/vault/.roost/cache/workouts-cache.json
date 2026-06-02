@@ -1,0 +1,57 @@
+{
+  "bm_20": {
+    "triage": "workout",
+    "extraction": {
+      "name": "Lower Body Strength",
+      "targetArea": "legs",
+      "difficulty": "medium",
+      "duration": "45 min",
+      "exercises": [],
+      "notes": "Progressive overload on squats."
+    }
+  },
+  "bm_21": {
+    "triage": "workout",
+    "extraction": {
+      "name": "Full Body HIIT",
+      "targetArea": "full body",
+      "difficulty": "hard",
+      "duration": "20 min",
+      "exercises": [],
+      "notes": "No rest between rounds."
+    }
+  },
+  "bm_22": {
+    "triage": "workout",
+    "extraction": {
+      "name": "Hip Mobility",
+      "targetArea": "hips",
+      "difficulty": "easy",
+      "duration": "15 min",
+      "exercises": [],
+      "notes": "Great post-run."
+    }
+  },
+  "bm_23": {
+    "triage": "workout",
+    "extraction": {
+      "name": "Upper Push/Pull",
+      "targetArea": "upper body",
+      "difficulty": "medium",
+      "duration": "50 min",
+      "exercises": [],
+      "notes": "Superset antagonists."
+    }
+  },
+  "bm_24": {
+    "triage": "workout",
+    "extraction": {
+      "name": "Endurance Ride",
+      "targetArea": "legs",
+      "difficulty": "easy",
+      "duration": "40 min",
+      "exercises": [],
+      "notes": "Keep HR in zone 2."
+    }
+  }
+}

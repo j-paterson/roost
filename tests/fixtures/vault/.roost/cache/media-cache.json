@@ -1,0 +1,57 @@
+{
+  "bm_10": {
+    "triage": "media",
+    "extraction": {
+      "title": "The Bear",
+      "mediaType": "tv",
+      "genre": "drama",
+      "where": "Hulu",
+      "rating": "9/10",
+      "summary": "Chef drama in Chicago."
+    }
+  },
+  "bm_11": {
+    "triage": "media",
+    "extraction": {
+      "title": "BoJack Horseman",
+      "mediaType": "series",
+      "genre": "animation",
+      "where": "Netflix",
+      "rating": "8.8/10",
+      "summary": "Animated Hollywood satire."
+    }
+  },
+  "bm_12": {
+    "triage": "media",
+    "extraction": {
+      "title": "The Three-Body Problem",
+      "mediaType": "books",
+      "genre": "sci-fi",
+      "where": "Kindle",
+      "rating": "8.5/10",
+      "summary": "Hard sci-fi epic."
+    }
+  },
+  "bm_13": {
+    "triage": "media",
+    "extraction": {
+      "title": "Better Off Alone",
+      "mediaType": "Music",
+      "genre": "electronic",
+      "where": "Spotify",
+      "rating": "7.5/10",
+      "summary": "90s dance classic."
+    }
+  },
+  "bm_14": {
+    "triage": "media",
+    "extraction": {
+      "title": "Past Lives",
+      "mediaType": "film",
+      "genre": "romance",
+      "where": "Apple TV",
+      "rating": "8.9/10",
+      "summary": "Quiet reunion drama."
+    }
+  }
+}

@@ -1,0 +1,157 @@
+{
+  "bm_0": {
+    "triage": "recipe",
+    "extraction": {
+      "dish": "Cacio e Pepe",
+      "cuisine": "Italian",
+      "ingredients": [
+        {
+          "item": "spaghetti",
+          "qty": "200g"
+        },
+        {
+          "item": "pecorino",
+          "qty": "100g"
+        },
+        {
+          "item": "black pepper",
+          "qty": "2 tsp"
+        }
+      ],
+      "steps": [
+        "Boil pasta al dente.",
+        "Toast pepper in pan.",
+        "Toss with cheese and pasta water."
+      ],
+      "prepTime": "5 min",
+      "cookTime": "15 min",
+      "difficulty": "medium",
+      "notes": "",
+      "recipeLink": "https://example.com/cacio-e-pepe"
+    }
+  },
+  "bm_1": {
+    "triage": "recipe",
+    "extraction": {
+      "dish": "Shakshuka",
+      "cuisine": "Middle Eastern",
+      "ingredients": [
+        {
+          "item": "eggs",
+          "qty": "4"
+        },
+        {
+          "item": "crushed tomatoes",
+          "qty": "1 can"
+        },
+        {
+          "item": "feta",
+          "qty": "80g"
+        }
+      ],
+      "steps": [
+        "Simmer spiced tomato sauce.",
+        "Crack in eggs.",
+        "Cover until set."
+      ],
+      "prepTime": "10 min",
+      "cookTime": "25 min",
+      "difficulty": "easy",
+      "notes": "",
+      "recipeLink": "https://example.com/shakshuka"
+    }
+  },
+  "bm_2": {
+    "triage": "recipe",
+    "extraction": {
+      "dish": "Tonkotsu Ramen",
+      "cuisine": "Japanese",
+      "ingredients": [
+        {
+          "item": "pork bones",
+          "qty": "2 kg"
+        },
+        {
+          "item": "ramen noodles",
+          "qty": "400g"
+        },
+        {
+          "item": "miso tare",
+          "qty": "3 tbsp"
+        }
+      ],
+      "steps": [
+        "Blanch bones.",
+        "Simmer broth 12 hours.",
+        "Season and assemble bowls."
+      ],
+      "prepTime": "30 min",
+      "cookTime": "4 hr",
+      "difficulty": "hard",
+      "notes": "",
+      "recipeLink": "https://example.com/tonkotsu"
+    }
+  },
+  "bm_3": {
+    "triage": "recipe",
+    "extraction": {
+      "dish": "Chocolate Chip Cookies",
+      "cuisine": "American",
+      "ingredients": [
+        {
+          "item": "butter",
+          "qty": "170g"
+        },
+        {
+          "item": "flour",
+          "qty": "280g"
+        },
+        {
+          "item": "chocolate chips",
+          "qty": "200g"
+        }
+      ],
+      "steps": [
+        "Brown the butter.",
+        "Mix dough.",
+        "Bake at 175°C."
+      ],
+      "prepTime": "20 min",
+      "cookTime": "12 min",
+      "difficulty": "easy",
+      "notes": "",
+      "recipeLink": "https://example.com/cookies"
+    }
+  },
+  "bm_4": {
+    "triage": "recipe",
+    "extraction": {
+      "dish": "Pad Thai",
+      "cuisine": "Thai",
+      "ingredients": [
+        {
+          "item": "rice noodles",
+          "qty": "250g"
+        },
+        {
+          "item": "tamarind",
+          "qty": "2 tbsp"
+        },
+        {
+          "item": "peanuts",
+          "qty": "50g"
+        }
+      ],
+      "steps": [
+        "Soak noodles.",
+        "Stir-fry protein and sauce.",
+        "Finish with lime and peanuts."
+      ],
+      "prepTime": "15 min",
+      "cookTime": "10 min",
+      "difficulty": "medium",
+      "notes": "",
+      "recipeLink": "https://example.com/pad-thai"
+    }
+  }
+}

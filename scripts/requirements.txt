@@ -1,0 +1,4 @@
+sentence-transformers>=2.5,<4
+torch>=2.1
+numpy>=1.24
+einops

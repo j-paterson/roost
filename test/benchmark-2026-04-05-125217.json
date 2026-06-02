@@ -1,0 +1,540 @@
+{
+  "timestamp": "2026-04-05T17:52:17.468Z",
+  "elapsedSeconds": 16,
+  "params": {
+    "minClusterSize": 15,
+    "totalItems": 18254,
+    "itemsWithCollections": 2248,
+    "collectionCategories": 39
+  },
+  "collectionRecovery": {
+    "macroF1": 0.1642,
+    "collectionCount": 30,
+    "perCollection": [
+      {
+        "collection": "Drinks",
+        "size": 27,
+        "bestCluster": 22,
+        "precision": 0.3788,
+        "recall": 0.9259,
+        "f1": 0.5376
+      },
+      {
+        "collection": "Fitness",
+        "size": 163,
+        "bestCluster": 39,
+        "precision": 0.6184,
+        "recall": 0.2883,
+        "f1": 0.3933
+      },
+      {
+        "collection": "Fashion",
+        "size": 92,
+        "bestCluster": 62,
+        "precision": 0.2857,
+        "recall": 0.5652,
+        "f1": 0.3796
+      },
+      {
+        "collection": "Tattoo",
+        "size": 12,
+        "bestCluster": 3,
+        "precision": 0.2037,
+        "recall": 0.9167,
+        "f1": 0.3333
+      },
+      {
+        "collection": "Austin",
+        "size": 73,
+        "bestCluster": 20,
+        "precision": 0.4082,
+        "recall": 0.274,
+        "f1": 0.3279
+      },
+      {
+        "collection": "Relationships",
+        "size": 92,
+        "bestCluster": 86,
+        "precision": 0.2345,
+        "recall": 0.3696,
+        "f1": 0.2869
+      },
+      {
+        "collection": "Places",
+        "size": 306,
+        "bestCluster": 31,
+        "precision": 0.3795,
+        "recall": 0.2059,
+        "f1": 0.2669
+      },
+      {
+        "collection": "Crafts",
+        "size": 67,
+        "bestCluster": 104,
+        "precision": 0.2258,
+        "recall": 0.3134,
+        "f1": 0.2625
+      },
+      {
+        "collection": "Rizz",
+        "size": 55,
+        "bestCluster": 86,
+        "precision": 0.1724,
+        "recall": 0.4545,
+        "f1": 0.25
+      },
+      {
+        "collection": "D & D",
+        "size": 12,
+        "bestCluster": 74,
+        "precision": 0.1333,
+        "recall": 0.5,
+        "f1": 0.2105
+      },
+      {
+        "collection": "Edits",
+        "size": 19,
+        "bestCluster": 79,
+        "precision": 0.1343,
+        "recall": 0.4737,
+        "f1": 0.2093
+      },
+      {
+        "collection": "Art",
+        "size": 47,
+        "bestCluster": 102,
+        "precision": 0.1358,
+        "recall": 0.234,
+        "f1": 0.1719
+      },
+      {
+        "collection": "Media List",
+        "size": 190,
+        "bestCluster": 12,
+        "precision": 0.3333,
+        "recall": 0.1158,
+        "f1": 0.1719
+      },
+      {
+        "collection": "Spicy",
+        "size": 103,
+        "bestCluster": 65,
+        "precision": 0.3243,
+        "recall": 0.1165,
+        "f1": 0.1714
+      },
+      {
+        "collection": "Recipes",
+        "size": 252,
+        "bestCluster": 26,
+        "precision": 0.5476,
+        "recall": 0.0913,
+        "f1": 0.1565
+      },
+      {
+        "collection": "Quotes",
+        "size": 121,
+        "bestCluster": 94,
+        "precision": 0.2027,
+        "recall": 0.124,
+        "f1": 0.1538
+      },
+      {
+        "collection": "Branding",
+        "size": 5,
+        "bestCluster": 66,
+        "precision": 0.0833,
+        "recall": 0.4,
+        "f1": 0.1379
+      },
+      {
+        "collection": "Kaizen",
+        "size": 49,
+        "bestCluster": 94,
+        "precision": 0.0676,
+        "recall": 0.102,
+        "f1": 0.0813
+      },
+      {
+        "collection": "Lifestyle",
+        "size": 252,
+        "bestCluster": 9,
+        "precision": 0.1083,
+        "recall": 0.0516,
+        "f1": 0.0699
+      },
+      {
+        "collection": "Stuff",
+        "size": 141,
+        "bestCluster": 9,
+        "precision": 0.075,
+        "recall": 0.0638,
+        "f1": 0.069
+      },
+      {
+        "collection": "Music",
+        "size": 4,
+        "bestCluster": 97,
+        "precision": 0.0345,
+        "recall": 0.5,
+        "f1": 0.0645
+      },
+      {
+        "collection": "Want to go",
+        "size": 9,
+        "bestCluster": 32,
+        "precision": 0.0339,
+        "recall": 0.2222,
+        "f1": 0.0588
+      },
+      {
+        "collection": "Watchlist",
+        "size": 5,
+        "bestCluster": 79,
+        "precision": 0.0299,
+        "recall": 0.4,
+        "f1": 0.0556
+      },
+      {
+        "collection": "code",
+        "size": 22,
+        "bestCluster": 69,
+        "precision": 0.0195,
+        "recall": 0.1364,
+        "f1": 0.0341
+      },
+      {
+        "collection": "Learning",
+        "size": 55,
+        "bestCluster": 57,
+        "precision": 0.0209,
+        "recall": 0.0909,
+        "f1": 0.034
+      },
+      {
+        "collection": "Dance",
+        "size": 3,
+        "bestCluster": 9,
+        "precision": 0.0083,
+        "recall": 0.3333,
+        "f1": 0.0163
+      },
+      {
+        "collection": "Macro",
+        "size": 44,
+        "bestCluster": 57,
+        "precision": 0.0084,
+        "recall": 0.0455,
+        "f1": 0.0141
+      },
+      {
+        "collection": "Finances",
+        "size": 5,
+        "bestCluster": 57,
+        "precision": 0.0042,
+        "recall": 0.2,
+        "f1": 0.0082
+      },
+      {
+        "collection": "Poses",
+        "size": 6,
+        "bestCluster": -1,
+        "precision": 0,
+        "recall": 0,
+        "f1": 0
+      },
+      {
+        "collection": "Content Creation",
+        "size": 6,
+        "bestCluster": -1,
+        "precision": 0,
+        "recall": 0,
+        "f1": 0
+      }
+    ]
+  },
+  "clusterPurity": {
+    "mean": 0.3011,
+    "median": 0.2595,
+    "min": 0.0714,
+    "max": 0.7368
+  },
+  "cohesion": {
+    "mean": 0.8286,
+    "median": 0.8234,
+    "min": 0.7791,
+    "max": 0.901
+  },
+  "namingQuality": {
+    "consensus": 9,
+    "tfidf": 102
+  },
+  "noiseRate": 0.6988,
+  "noiseCount": 12755,
+  "clusterCount": 111,
+  "bisectingKMeans": {
+    "collectionRecovery": {
+      "macroF1": 0.1305,
+      "collectionCount": 30,
+      "perCollection": [
+        {
+          "collection": "Recipes",
+          "size": 252,
+          "bestCluster": 60,
+          "precision": 0.5,
+          "recall": 0.9286,
+          "f1": 0.65
+        },
+        {
+          "collection": "Fitness",
+          "size": 163,
+          "bestCluster": 41,
+          "precision": 0.2845,
+          "recall": 0.8221,
+          "f1": 0.4227
+        },
+        {
+          "collection": "Relationships",
+          "size": 92,
+          "bestCluster": 44,
+          "precision": 0.2025,
+          "recall": 0.6957,
+          "f1": 0.3137
+        },
+        {
+          "collection": "Places",
+          "size": 306,
+          "bestCluster": 57,
+          "precision": 0.2969,
+          "recall": 0.3105,
+          "f1": 0.3035
+        },
+        {
+          "collection": "Fashion",
+          "size": 92,
+          "bestCluster": 34,
+          "precision": 0.1422,
+          "recall": 0.6848,
+          "f1": 0.2355
+        },
+        {
+          "collection": "Austin",
+          "size": 73,
+          "bestCluster": 61,
+          "precision": 0.1778,
+          "recall": 0.3288,
+          "f1": 0.2308
+        },
+        {
+          "collection": "Quotes",
+          "size": 121,
+          "bestCluster": 42,
+          "precision": 0.1483,
+          "recall": 0.3884,
+          "f1": 0.2146
+        },
+        {
+          "collection": "Rizz",
+          "size": 55,
+          "bestCluster": 44,
+          "precision": 0.1203,
+          "recall": 0.6909,
+          "f1": 0.2049
+        },
+        {
+          "collection": "Stuff",
+          "size": 141,
+          "bestCluster": 49,
+          "precision": 0.1108,
+          "recall": 0.2553,
+          "f1": 0.1545
+        },
+        {
+          "collection": "Lifestyle",
+          "size": 252,
+          "bestCluster": 52,
+          "precision": 0.1116,
+          "recall": 0.2143,
+          "f1": 0.1467
+        },
+        {
+          "collection": "Crafts",
+          "size": 67,
+          "bestCluster": 49,
+          "precision": 0.0831,
+          "recall": 0.403,
+          "f1": 0.1378
+        },
+        {
+          "collection": "Media List",
+          "size": 190,
+          "bestCluster": 46,
+          "precision": 0.0927,
+          "recall": 0.1947,
+          "f1": 0.1256
+        },
+        {
+          "collection": "Spicy",
+          "size": 103,
+          "bestCluster": 34,
+          "precision": 0.0677,
+          "recall": 0.2913,
+          "f1": 0.1099
+        },
+        {
+          "collection": "Drinks",
+          "size": 27,
+          "bestCluster": 60,
+          "precision": 0.0577,
+          "recall": 1,
+          "f1": 0.1091
+        },
+        {
+          "collection": "Kaizen",
+          "size": 49,
+          "bestCluster": 42,
+          "precision": 0.0442,
+          "recall": 0.2857,
+          "f1": 0.0765
+        },
+        {
+          "collection": "Macro",
+          "size": 44,
+          "bestCluster": 8,
+          "precision": 0.0386,
+          "recall": 0.2955,
+          "f1": 0.0682
+        },
+        {
+          "collection": "Art",
+          "size": 47,
+          "bestCluster": 38,
+          "precision": 0.0356,
+          "recall": 0.2553,
+          "f1": 0.0625
+        },
+        {
+          "collection": "Edits",
+          "size": 19,
+          "bestCluster": 47,
+          "precision": 0.0298,
+          "recall": 0.6316,
+          "f1": 0.0569
+        },
+        {
+          "collection": "Tattoo",
+          "size": 12,
+          "bestCluster": 34,
+          "precision": 0.0248,
+          "recall": 0.9167,
+          "f1": 0.0484
+        },
+        {
+          "collection": "code",
+          "size": 22,
+          "bestCluster": 19,
+          "precision": 0.0213,
+          "recall": 0.3182,
+          "f1": 0.0399
+        },
+        {
+          "collection": "Want to go",
+          "size": 9,
+          "bestCluster": 58,
+          "precision": 0.019,
+          "recall": 0.4444,
+          "f1": 0.0365
+        },
+        {
+          "collection": "D & D",
+          "size": 12,
+          "bestCluster": 33,
+          "precision": 0.0179,
+          "recall": 0.5,
+          "f1": 0.0345
+        },
+        {
+          "collection": "Dance",
+          "size": 3,
+          "bestCluster": 39,
+          "precision": 0.0134,
+          "recall": 0.6667,
+          "f1": 0.0263
+        },
+        {
+          "collection": "Learning",
+          "size": 55,
+          "bestCluster": 4,
+          "precision": 0.0148,
+          "recall": 0.1091,
+          "f1": 0.026
+        },
+        {
+          "collection": "Poses",
+          "size": 6,
+          "bestCluster": 39,
+          "precision": 0.0134,
+          "recall": 0.3333,
+          "f1": 0.0258
+        },
+        {
+          "collection": "Branding",
+          "size": 5,
+          "bestCluster": 30,
+          "precision": 0.0077,
+          "recall": 0.4,
+          "f1": 0.015
+        },
+        {
+          "collection": "Finances",
+          "size": 5,
+          "bestCluster": 4,
+          "precision": 0.0074,
+          "recall": 0.6,
+          "f1": 0.0146
+        },
+        {
+          "collection": "Music",
+          "size": 4,
+          "bestCluster": 46,
+          "precision": 0.005,
+          "recall": 0.5,
+          "f1": 0.0099
+        },
+        {
+          "collection": "Watchlist",
+          "size": 5,
+          "bestCluster": 47,
+          "precision": 0.005,
+          "recall": 0.4,
+          "f1": 0.0098
+        },
+        {
+          "collection": "Content Creation",
+          "size": 6,
+          "bestCluster": 4,
+          "precision": 0.0025,
+          "recall": 0.1667,
+          "f1": 0.0049
+        }
+      ]
+    },
+    "clusterPurity": {
+      "mean": 0.1804,
+      "median": 0.1469,
+      "min": 0.035,
+      "max": 0.4756
+    },
+    "cohesion": {
+      "mean": 0.7827,
+      "median": 0.7792,
+      "min": 0.7482,
+      "max": 0.8658
+    },
+    "namingQuality": {
+      "consensus": 1,
+      "tfidf": 61
+    },
+    "clusterCount": 62
+  }
+}

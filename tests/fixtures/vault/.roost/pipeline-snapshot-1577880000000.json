@@ -1,0 +1,403 @@
+{
+  "ts": 1577880000000,
+  "platform": "",
+  "userTopics": [
+    "Recipes",
+    "Places",
+    "Media",
+    "Products",
+    "Workouts",
+    "Tutorials",
+    "Home"
+  ],
+  "collections": {
+    "Recipes": [
+      "bm_0",
+      "bm_1",
+      "bm_2",
+      "bm_3",
+      "bm_4"
+    ],
+    "Places": [
+      "bm_5",
+      "bm_6",
+      "bm_7",
+      "bm_8",
+      "bm_9"
+    ],
+    "Media": [
+      "bm_10",
+      "bm_11",
+      "bm_12",
+      "bm_13",
+      "bm_14"
+    ],
+    "Products": [
+      "bm_15",
+      "bm_16",
+      "bm_17",
+      "bm_18",
+      "bm_19"
+    ],
+    "Workouts": [
+      "bm_20",
+      "bm_21",
+      "bm_22",
+      "bm_23",
+      "bm_24"
+    ],
+    "Tutorials": [
+      "bm_25",
+      "bm_26",
+      "bm_27",
+      "bm_28",
+      "bm_29"
+    ],
+    "Home": [
+      "bm_30",
+      "bm_31",
+      "bm_32",
+      "bm_33",
+      "bm_34"
+    ]
+  },
+  "matched": {},
+  "matchDetailMap": [],
+  "unsortedIds": [
+    "bm_u_0",
+    "bm_u_1",
+    "bm_u_2",
+    "bm_u_3",
+    "bm_u_4",
+    "bm_u_5",
+    "bm_u_6",
+    "bm_u_7",
+    "bm_u_8",
+    "bm_u_9",
+    "bm_u_10",
+    "bm_u_11",
+    "bm_u_12",
+    "bm_u_13",
+    "bm_u_14"
+  ],
+  "result": {
+    "proposals": [
+      {
+        "suggestedName": "Food saves",
+        "altNames": [
+          "Food saves"
+        ],
+        "count": 5,
+        "itemIds": [
+          "bm_u_0",
+          "bm_u_1",
+          "bm_u_2",
+          "bm_u_3",
+          "bm_u_4"
+        ],
+        "samples": [
+          {
+            "id": "bm_u_0"
+          },
+          {
+            "id": "bm_u_1"
+          },
+          {
+            "id": "bm_u_2"
+          },
+          {
+            "id": "bm_u_3"
+          },
+          {
+            "id": "bm_u_4"
+          }
+        ],
+        "confidence": 0.85,
+        "source": "cluster",
+        "fromCollection": false
+      },
+      {
+        "suggestedName": "Fitness & gifts",
+        "altNames": [
+          "Fitness & gifts"
+        ],
+        "count": 5,
+        "itemIds": [
+          "bm_u_5",
+          "bm_u_6",
+          "bm_u_7",
+          "bm_u_8",
+          "bm_u_9"
+        ],
+        "samples": [
+          {
+            "id": "bm_u_5"
+          },
+          {
+            "id": "bm_u_6"
+          },
+          {
+            "id": "bm_u_7"
+          },
+          {
+            "id": "bm_u_8"
+          },
+          {
+            "id": "bm_u_9"
+          }
+        ],
+        "confidence": 0.82,
+        "source": "cluster",
+        "fromCollection": false
+      },
+      {
+        "suggestedName": "Media & gear",
+        "altNames": [
+          "Media & gear"
+        ],
+        "count": 5,
+        "itemIds": [
+          "bm_u_10",
+          "bm_u_11",
+          "bm_u_12",
+          "bm_u_13",
+          "bm_u_14"
+        ],
+        "samples": [
+          {
+            "id": "bm_u_10"
+          },
+          {
+            "id": "bm_u_11"
+          },
+          {
+            "id": "bm_u_12"
+          },
+          {
+            "id": "bm_u_13"
+          },
+          {
+            "id": "bm_u_14"
+          }
+        ],
+        "confidence": 0.88,
+        "source": "cluster",
+        "fromCollection": false
+      }
+    ],
+    "platform": "",
+    "noiseItemIds": [],
+    "collections": {
+      "Recipes": [
+        "bm_0",
+        "bm_1",
+        "bm_2",
+        "bm_3",
+        "bm_4"
+      ],
+      "Places": [
+        "bm_5",
+        "bm_6",
+        "bm_7",
+        "bm_8",
+        "bm_9"
+      ],
+      "Media": [
+        "bm_10",
+        "bm_11",
+        "bm_12",
+        "bm_13",
+        "bm_14"
+      ],
+      "Products": [
+        "bm_15",
+        "bm_16",
+        "bm_17",
+        "bm_18",
+        "bm_19"
+      ],
+      "Workouts": [
+        "bm_20",
+        "bm_21",
+        "bm_22",
+        "bm_23",
+        "bm_24"
+      ],
+      "Tutorials": [
+        "bm_25",
+        "bm_26",
+        "bm_27",
+        "bm_28",
+        "bm_29"
+      ],
+      "Home": [
+        "bm_30",
+        "bm_31",
+        "bm_32",
+        "bm_33",
+        "bm_34"
+      ]
+    },
+    "splitTree": {
+      "id": "root",
+      "itemIds": [
+        "bm_u_0",
+        "bm_u_1",
+        "bm_u_2",
+        "bm_u_3",
+        "bm_u_4",
+        "bm_u_5",
+        "bm_u_6",
+        "bm_u_7",
+        "bm_u_8",
+        "bm_u_9",
+        "bm_u_10",
+        "bm_u_11",
+        "bm_u_12",
+        "bm_u_13",
+        "bm_u_14"
+      ],
+      "name": {
+        "suggestedName": "Unsorted",
+        "altNames": [
+          "Unsorted"
+        ],
+        "fromCollection": false
+      },
+      "samples": [
+        {
+          "id": "bm_u_0"
+        },
+        {
+          "id": "bm_u_1"
+        },
+        {
+          "id": "bm_u_2"
+        },
+        {
+          "id": "bm_u_3"
+        },
+        {
+          "id": "bm_u_4"
+        },
+        {
+          "id": "bm_u_5"
+        }
+      ],
+      "cohesion": 0.5,
+      "children": [
+        {
+          "id": "group-a",
+          "itemIds": [
+            "bm_u_0",
+            "bm_u_1",
+            "bm_u_2",
+            "bm_u_3",
+            "bm_u_4"
+          ],
+          "name": {
+            "suggestedName": "Food saves",
+            "altNames": [
+              "Food saves"
+            ],
+            "fromCollection": false
+          },
+          "samples": [
+            {
+              "id": "bm_u_0"
+            },
+            {
+              "id": "bm_u_1"
+            },
+            {
+              "id": "bm_u_2"
+            },
+            {
+              "id": "bm_u_3"
+            },
+            {
+              "id": "bm_u_4"
+            }
+          ],
+          "cohesion": 0.85,
+          "children": null
+        },
+        {
+          "id": "group-b",
+          "itemIds": [
+            "bm_u_5",
+            "bm_u_6",
+            "bm_u_7",
+            "bm_u_8",
+            "bm_u_9"
+          ],
+          "name": {
+            "suggestedName": "Fitness & gifts",
+            "altNames": [
+              "Fitness & gifts"
+            ],
+            "fromCollection": false
+          },
+          "samples": [
+            {
+              "id": "bm_u_5"
+            },
+            {
+              "id": "bm_u_6"
+            },
+            {
+              "id": "bm_u_7"
+            },
+            {
+              "id": "bm_u_8"
+            },
+            {
+              "id": "bm_u_9"
+            }
+          ],
+          "cohesion": 0.85,
+          "children": null
+        },
+        {
+          "id": "group-c",
+          "itemIds": [
+            "bm_u_10",
+            "bm_u_11",
+            "bm_u_12",
+            "bm_u_13",
+            "bm_u_14"
+          ],
+          "name": {
+            "suggestedName": "Media & gear",
+            "altNames": [
+              "Media & gear"
+            ],
+            "fromCollection": false
+          },
+          "samples": [
+            {
+              "id": "bm_u_10"
+            },
+            {
+              "id": "bm_u_11"
+            },
+            {
+              "id": "bm_u_12"
+            },
+            {
+              "id": "bm_u_13"
+            },
+            {
+              "id": "bm_u_14"
+            }
+          ],
+          "cohesion": 0.85,
+          "children": null
+        }
+      ]
+    }
+  },
+  "totalItems": 50,
+  "scoredItems": 15,
+  "proposalCount": 3
+}

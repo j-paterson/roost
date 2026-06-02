@@ -1,0 +1,530 @@
+/**
+ * Workouts & Fitness extraction pipeline — finds workout/exercise/fitness
+ * bookmarks, triages them, extracts structured workout data, and writes
+ * workout_* fields onto the source bookmark's frontmatter.
+ *
+ * Data sources per item (in priority order):
+ * 1. raw.json `videoSuggestWordsList` — TikTok entity extraction
+ * 2. raw.json `contents` — structured line-by-line description
+ * 3. frontmatter `title` — flattened caption
+ * 4. frontmatter `subtitle` — speech-to-text transcript
+ * 5. embedding cache `vision` — LLM description of video frames
+ */
+import { App, TFile } from "obsidian";
+import { buildFileIndex, stripWikilink } from "@/lib/vault-utils";
+import { updateNoteFrontmatter, type FrontmatterValue } from "@/lib/vault-helpers";
+import { CATEGORY_FIELD, SUBCATEGORY_FIELD } from "@/config";
+import {
+  loadEmbeddingCache,
+  ollamaGenerate,
+  readRawJson,
+  extractDescription,
+  loadPipelineCache,
+  savePipelineCache,
+} from "@/pipeline/shared";
+
+// ── Types ──
+
+type WorkoutType =
+  | "strength" | "cardio" | "hiit" | "yoga" | "pilates"
+  | "stretching" | "calisthenics" | "martial-arts" | "dance"
+  | "running" | "cycling" | "swimming" | "other";
+
+interface WorkoutExtraction {
+  workoutType: WorkoutType;
+  name: string;
+  targetArea: string;
+  exercises: { name: string; reps: string | null }[];
+  duration: string | null;
+  difficulty: "beginner" | "intermediate" | "advanced";
+  equipment: string[];
+  notes: string | null;
+}
+
+interface CacheEntry {
+  triage: "workout" | "skip";
+  extraction: WorkoutExtraction | null;
+}
+
+interface WorkoutCandidate {
+  roostId: string;
+  file: TFile;
+  title: string;
+  subtitle: string;
+  description: string;
+  vision: string;
+  tags: string[];
+  author: string;
+  authorHandle: string;
+  url: string;
+  suggestWords: string[];
+}
+
+// ── Constants ──
+
+const WORKOUT_CATEGORIES = new Set([
+  "fitness", "workout", "exercise", "gym", "yoga", "pilates",
+  "stretching", "running", "cycling", "bodybuilding", "crossfit",
+  "calisthenics", "martial",
+]);
+
+const WORKOUT_TAG_KEYWORDS = [
+  "workout", "fitness", "gym", "exercise", "hiit", "yoga",
+  "pilates", "stretching", "calisthenics", "bodybuilding",
+  "crossfit", "gains", "fitnessmotivation", "legday", "armday",
+  "absworkout", "coreworkout", "homeworkout", "gymtok",
+  "flexibility", "mobility", "cardio", "running", "lifting",
+];
+
+const FAST_PATH_TAGS = new Set([
+  "gymtok", "homeworkout", "absworkout", "coreworkout",
+  "legday", "armday", "hiitworkout",
+]);
+
+const VALID_WORKOUT_TYPES = new Set<WorkoutType>([
+  "strength", "cardio", "hiit", "yoga", "pilates",
+  "stretching", "calisthenics", "martial-arts", "dance",
+  "running", "cycling", "swimming", "other",
+]);
+
+const CACHE_FILE = "workouts-cache.json";
+const CONCURRENCY = 3;
+
+const WORKOUT_PIPELINE_VERSION = 1;
+
+export const WORKOUT_FIELDS = {
+  name: "workout_name",
+  type: "workout_type",
+  targetArea: "workout_target_area",
+  difficulty: "workout_difficulty",
+  duration: "workout_duration",
+  equipment: "workout_equipment",
+  exercises: "workout_exercises",
+  notes: "workout_notes",
+  version: "enrichment_v_workout",
+} as const;
+
+// ── Helpers ──
+
+function extractSuggestWords(raw: any): string[] {
+  const structs = raw?.videoSuggestWordsList?.video_suggest_words_struct;
+  if (!Array.isArray(structs)) return [];
+  const words: string[] = [];
+  for (const s of structs) {
+    for (const w of (s.words || [])) {
+      if (w.word) words.push(w.word);
+    }
+  }
+  return words;
+}
+
+function normalizeWorkoutType(raw: string): WorkoutType {
+  const lower = (raw || "").toLowerCase().trim().replace(/\s+/g, "-");
+  if (VALID_WORKOUT_TYPES.has(lower as WorkoutType)) return lower as WorkoutType;
+  if (lower === "weight-training" || lower === "weightlifting" || lower === "lifting" || lower === "bodybuilding") return "strength";
+  if (lower === "crossfit") return "hiit";
+  if (lower === "flexibility" || lower === "mobility") return "stretching";
+  if (lower === "boxing" || lower === "kickboxing" || lower === "mma" || lower === "jiu-jitsu") return "martial-arts";
+  if (lower === "jogging" || lower === "sprinting") return "running";
+  if (lower === "spin" || lower === "biking") return "cycling";
+  return "other";
+}
+
+function hasWorkoutFastPath(tags: string[]): boolean {
+  return tags.some(t => {
+    const cleaned = t.toLowerCase().replace(/^#/, "");
+    return FAST_PATH_TAGS.has(cleaned);
+  });
+}
+
+// ── Candidate gathering ──
+
+function gatherCandidates(app: App, syncFolder: string): WorkoutCandidate[] {
+  const embeddingCache = loadEmbeddingCache(app.vault);
+  const fileIndex = buildFileIndex(app, syncFolder);
+  const candidates: WorkoutCandidate[] = [];
+
+  for (const [roostId, file] of fileIndex) {
+    const fm = app.metadataCache.getFileCache(file)?.frontmatter;
+    if (!fm) continue;
+
+    const embedded = embeddingCache[roostId];
+    const category = (embedded?.category || "").toLowerCase();
+    const rawTags: string[] = Array.isArray(fm.tags)
+      ? (fm.tags as unknown[]).map(t => String(t).toLowerCase())
+      : [];
+
+    const categoryMatch = WORKOUT_CATEGORIES.has(category);
+    const tagMatch = rawTags.some(t =>
+      WORKOUT_TAG_KEYWORDS.some(kw => t.includes(kw)),
+    );
+
+    if (!categoryMatch && !tagMatch) continue;
+
+    const raw = readRawJson(app.vault, syncFolder, roostId);
+    const description = extractDescription(raw);
+    const suggestWords = extractSuggestWords(raw);
+    // raw is typed as Record<string, unknown> | null; cast inline at the
+    // boundaries to TikTok's raw.json shape.
+    const challenges = (raw?.challenges as Array<{title?: string}> | undefined) ?? [];
+    const hashtags: string[] = challenges
+      .map(c => c.title)
+      .filter((t): t is string => Boolean(t));
+    const rawAuthor = raw?.author as { uniqueId?: string } | undefined;
+
+    candidates.push({
+      roostId,
+      file,
+      title: fm.title || "",
+      subtitle: fm.subtitle || "",
+      description,
+      vision: embedded?.vision || "",
+      tags: [...new Set([...hashtags, ...rawTags])],
+      author: fm.author ? stripWikilink(fm.author) : "",
+      authorHandle: rawAuthor?.uniqueId || "",
+      url: fm.url || "",
+      suggestWords,
+    });
+  }
+
+  return candidates;
+}
+
+// ── Triage ──
+
+function buildTriagePrompt(c: WorkoutCandidate): string {
+  const text = (c.description || c.title).slice(0, 1500);
+  const transcript = c.subtitle ? c.subtitle.slice(0, 800) : "No transcript.";
+  const visual = c.vision ? c.vision.slice(0, 300) : "No description.";
+  const tags = c.tags.slice(0, 15).join(", ");
+
+  return `You are classifying a social media bookmark.
+
+Caption: ${text}
+Transcript: ${transcript}
+Visual: ${visual}
+Hashtags: ${tags}
+
+Is this an actual WORKOUT or EXERCISE routine — showing or describing specific exercises, stretches, or physical training you can follow?
+
+Or is it fitness motivation, body transformation, gym humor, or other content NOT containing a followable workout?
+
+Respond with ONLY one word: workout or skip`;
+}
+
+async function triageItem(c: WorkoutCandidate): Promise<"workout" | "skip"> {
+  const raw = await ollamaGenerate(buildTriagePrompt(c), { numPredict: 5, numCtx: 2048 });
+  const word = raw.toLowerCase().replace(/[^a-z]/g, "");
+  if (word.includes("skip")) return "skip";
+  return "workout";
+}
+
+// ── Extraction ──
+
+function buildExtractPrompt(c: WorkoutCandidate): string {
+  const sections: string[] = [];
+
+  if (c.suggestWords.length > 0) {
+    sections.push(`TikTok search suggestions: ${c.suggestWords.slice(0, 8).join(", ")}`);
+  }
+
+  if (c.description) {
+    sections.push(`Description:\n${c.description.slice(0, 1500)}`);
+  } else if (c.title) {
+    sections.push(`Caption: ${c.title.slice(0, 1500)}`);
+  }
+
+  if (c.subtitle) {
+    sections.push(`Video transcript: ${c.subtitle.slice(0, 1000)}`);
+  }
+
+  if (c.vision) {
+    sections.push(`Visual description: ${c.vision.slice(0, 400)}`);
+  }
+
+  if (c.tags.length > 0) {
+    sections.push(`Tags: ${c.tags.slice(0, 15).join(", ")}`);
+  }
+
+  return `Extract the workout routine from this social media video.
+Identify the exercises, target areas, and structure of the workout.
+
+${sections.join("\n\n")}
+
+Respond with ONLY valid JSON — no markdown fences, no commentary:
+{
+  "workoutType": "strength|cardio|hiit|yoga|pilates|stretching|calisthenics|martial-arts|dance|running|cycling|swimming|other",
+  "name": "descriptive name for this workout (e.g. '10-Min Ab Burner', 'Full Body Dumbbell Circuit')",
+  "targetArea": "primary body area targeted (e.g. 'core', 'upper body', 'legs', 'full body', 'flexibility')",
+  "exercises": [
+    {"name": "exercise name", "reps": "reps, sets, or duration (e.g. '3x12', '30 seconds', '10 each side') or null"}
+  ],
+  "duration": "total workout duration if mentioned or null",
+  "difficulty": "beginner|intermediate|advanced",
+  "equipment": ["equipment needed (e.g. 'dumbbells', 'resistance band', 'none/bodyweight')"],
+  "notes": "important form cues or tips, or null"
+}`;
+}
+
+async function extractWorkout(c: WorkoutCandidate): Promise<WorkoutExtraction | null> {
+  const raw = await ollamaGenerate(buildExtractPrompt(c), { numPredict: 1536, numCtx: 4096 });
+  const cleaned = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/, "");
+
+  try {
+    const parsed = JSON.parse(cleaned);
+    const name = parsed.name || "";
+    if (!name || name.toLowerCase() === "unknown") return null;
+
+    return {
+      workoutType: normalizeWorkoutType(parsed.workoutType),
+      name,
+      targetArea: parsed.targetArea || "Full body",
+      exercises: Array.isArray(parsed.exercises)
+        ? (parsed.exercises as { name?: unknown; reps?: unknown }[]).map(e => ({
+            name: String(e.name || ""),
+            reps: e.reps && e.reps !== "null" ? String(e.reps) : null,
+          })).filter(e => e.name)
+        : [],
+      duration: parsed.duration && parsed.duration !== "null" ? parsed.duration : null,
+      difficulty: (["beginner", "intermediate", "advanced"].includes(parsed.difficulty)
+        ? parsed.difficulty : "intermediate") as "beginner" | "intermediate" | "advanced",
+      equipment: Array.isArray(parsed.equipment)
+        ? (parsed.equipment as unknown[]).map(e => String(e)).filter(Boolean).slice(0, 10)
+        : [],
+      notes: parsed.notes && parsed.notes !== "null" ? parsed.notes : null,
+    };
+  } catch {
+    console.warn(`[roost] workouts: failed to parse extraction for ${c.roostId}:`, cleaned.slice(0, 200));
+    return null;
+  }
+}
+
+// ── Frontmatter write helpers ──
+
+export function computeWorkoutBackfillFields(
+  extraction: WorkoutExtraction,
+  existingFm: Record<string, unknown>,
+): Record<string, FrontmatterValue> {
+  const updates: Record<string, FrontmatterValue> = {};
+  updates[WORKOUT_FIELDS.name] = extraction.name;
+  updates[WORKOUT_FIELDS.type] = extraction.workoutType;
+  updates[WORKOUT_FIELDS.targetArea] = extraction.targetArea;
+  updates[WORKOUT_FIELDS.difficulty] = extraction.difficulty;
+  updates[WORKOUT_FIELDS.duration] = extraction.duration;
+  updates[WORKOUT_FIELDS.equipment] = extraction.equipment;
+  updates[WORKOUT_FIELDS.exercises] = extraction.exercises as unknown as string[];
+  updates[WORKOUT_FIELDS.notes] = extraction.notes;
+  updates[WORKOUT_FIELDS.version] = WORKOUT_PIPELINE_VERSION;
+
+  // Subcategory backfill rule
+  const existingCategory = typeof existingFm[CATEGORY_FIELD] === "string"
+    ? existingFm[CATEGORY_FIELD] as string : null;
+  const existingSubcategory = typeof existingFm[SUBCATEGORY_FIELD] === "string"
+    ? existingFm[SUBCATEGORY_FIELD] as string : null;
+  if (!existingSubcategory) {
+    const matchesPipeline = existingCategory
+      && ["Fitness", "Workouts", "Workout", "Exercise"].some(
+        c => c.toLowerCase() === existingCategory.toLowerCase()
+      );
+    if (!existingCategory) {
+      updates[CATEGORY_FIELD] = "Workouts";
+      updates[SUBCATEGORY_FIELD] = extraction.workoutType;
+    } else if (matchesPipeline) {
+      updates[SUBCATEGORY_FIELD] = extraction.workoutType;
+    }
+  }
+  return updates;
+}
+
+export async function writeWorkoutToBookmark(
+  app: App,
+  file: TFile,
+  extraction: WorkoutExtraction,
+): Promise<void> {
+  const fm = app.metadataCache.getFileCache(file)?.frontmatter ?? {};
+  const updates = computeWorkoutBackfillFields(extraction, fm);
+  const content = await app.vault.read(file);
+  const updated = updateNoteFrontmatter(content, updates);
+  if (updated !== null) {
+    await app.vault.modify(file, updated);
+  }
+}
+
+// ── Main pipeline ──
+
+interface WorkoutsPipelineResult {
+  candidates: number;
+  workouts: number;
+  skipped: number;
+  errors: number;
+}
+
+export async function runWorkoutsPipeline(
+  app: App,
+  syncFolder: string,
+  onLog?: (msg: string) => void,
+): Promise<WorkoutsPipelineResult> {
+  const log = onLog || (() => {});
+  const vault = app.vault;
+  const cache = loadPipelineCache<CacheEntry>(vault, CACHE_FILE);
+
+  // 1. Gather candidates
+  log("Scanning bookmarks...");
+  const candidates = gatherCandidates(app, syncFolder);
+  log(`Found ${candidates.length} workout candidates`);
+
+  const uncached = candidates.filter(c => !cache[c.roostId]);
+  const needExtract = candidates.filter(
+    c => cache[c.roostId]?.triage === "workout" && !cache[c.roostId]?.extraction,
+  ).length;
+  log(`${uncached.length} need triage, ${needExtract} need extraction (${candidates.length - uncached.length - needExtract} complete)`);
+
+  // 2. Triage — tag fast-path + LLM
+  let fastCount = 0;
+  for (const c of uncached) {
+    if (hasWorkoutFastPath(c.tags)) {
+      cache[c.roostId] = { triage: "workout", extraction: null };
+      fastCount++;
+    }
+  }
+  if (fastCount > 0) {
+    savePipelineCache(vault, CACHE_FILE, cache);
+    log(`Tag fast-path: ${fastCount} items auto-triaged as workout`);
+  }
+
+  const needTriage = uncached.filter(c => !cache[c.roostId]);
+  if (needTriage.length > 0) {
+    log(`Triaging ${needTriage.length} items...`);
+    for (let i = 0; i < needTriage.length; i += CONCURRENCY) {
+      const batch = needTriage.slice(i, i + CONCURRENCY);
+      const results = await Promise.all(
+        batch.map(c => triageItem(c).catch(() => "skip" as const)),
+      );
+      for (let j = 0; j < batch.length; j++) {
+        cache[batch[j].roostId] = { triage: results[j], extraction: null };
+      }
+      savePipelineCache(vault, CACHE_FILE, cache);
+      log(`Triaged ${Math.min(i + CONCURRENCY, needTriage.length)}/${needTriage.length}`);
+    }
+  }
+
+  // 3. Backfill previously cached workouts onto their source bookmarks
+  const alreadyCached = candidates.filter(
+    c => cache[c.roostId]?.triage === "workout" && cache[c.roostId]?.extraction,
+  );
+  let writtenCount = 0;
+  for (const c of alreadyCached) {
+    const extraction = cache[c.roostId].extraction!;
+    await writeWorkoutToBookmark(app, c.file, extraction);
+    writtenCount++;
+  }
+  if (alreadyCached.length > 0) {
+    log(`Wrote ${alreadyCached.length} cached workouts`);
+  }
+
+  // 4. Extract new workouts
+  const toExtract = candidates.filter(
+    c => cache[c.roostId]?.triage === "workout" && !cache[c.roostId]?.extraction,
+  );
+  let errors = 0;
+
+  if (toExtract.length > 0) {
+    log(`Extracting ${toExtract.length} workouts...`);
+    for (let i = 0; i < toExtract.length; i += CONCURRENCY) {
+      const batch = toExtract.slice(i, i + CONCURRENCY);
+      const results = await Promise.all(
+        batch.map(c => extractWorkout(c).catch((err) => {
+          console.warn(`[roost] workouts: extraction error for ${c.roostId}:`, err);
+          return null;
+        })),
+      );
+
+      for (let j = 0; j < batch.length; j++) {
+        const extraction = results[j];
+        if (extraction) {
+          cache[batch[j].roostId] = { triage: "workout", extraction };
+          await writeWorkoutToBookmark(app, batch[j].file, extraction);
+          writtenCount++;
+        } else {
+          cache[batch[j].roostId] = { triage: "skip", extraction: null };
+          errors++;
+        }
+      }
+
+      savePipelineCache(vault, CACHE_FILE, cache);
+      log(`Extracted ${Math.min(i + CONCURRENCY, toExtract.length)}/${toExtract.length}`);
+    }
+  }
+
+  const skipped = candidates.filter(c => cache[c.roostId]?.triage === "skip").length;
+
+  return {
+    candidates: candidates.length,
+    workouts: writtenCount,
+    skipped,
+    errors,
+  };
+}
+
+// ─── Cache reconstruction ─────────────────────────────────────────────────────
+
+/** Rebuild the workouts pipeline cache from source-bookmark frontmatter.
+ *  Scans Bookmarks/ for notes with enrichment_v_workout set, reads the
+ *  workout_* fields, and returns a cache record keyed by roost_id. */
+export function reconstructWorkoutsCache(
+  app: App,
+): Record<string, { triage: "workout"; extraction: WorkoutExtraction }> {
+  const out: Record<string, { triage: "workout"; extraction: WorkoutExtraction }> = {};
+  for (const f of app.vault.getMarkdownFiles()) {
+    if (!f.path.startsWith("Bookmarks/")) continue;
+    const fm = app.metadataCache.getFileCache(f)?.frontmatter;
+    if (!fm || typeof fm.enrichment_v_workout !== "number") continue;
+    const id = typeof fm.roost_id === "string" ? fm.roost_id : null;
+    if (!id) continue;
+    out[id] = {
+      triage: "workout",
+      extraction: {
+        name: String(fm.workout_name ?? "Unknown"),
+        workoutType: typeof fm.workout_type === "string" ? fm.workout_type : "",
+        targetArea: typeof fm.workout_target_area === "string" ? fm.workout_target_area : "",
+        difficulty: (fm.workout_difficulty === "beginner" || fm.workout_difficulty === "advanced")
+          ? fm.workout_difficulty : "intermediate",
+        duration: typeof fm.workout_duration === "string" ? fm.workout_duration : null,
+        equipment: Array.isArray(fm.workout_equipment) ? fm.workout_equipment : [],
+        exercises: Array.isArray(fm.workout_exercises) ? fm.workout_exercises : [],
+        notes: typeof fm.workout_notes === "string" ? fm.workout_notes : null,
+      },
+    };
+  }
+  return out;
+}
+
+// ─── Enrichment registry entry ────────────────────────────────────────────────
+import type { EnrichmentDef } from "@/lib/enrichments";
+
+export const WORKOUT_ENRICHMENT: EnrichmentDef = {
+  id: "workout",
+  displayName: "Workouts & Fitness",
+  schemaVersion: 1,
+  commandId: "run-workouts-pipeline",
+  commandName: "Run Workouts extraction pipeline",
+  runBackfill: async (plugin, opts) => {
+    const vault = plugin.app.vault;
+    const existing = loadPipelineCache<CacheEntry>(vault, CACHE_FILE);
+    if (Object.keys(existing).length === 0) {
+      const reconstructed = reconstructWorkoutsCache(plugin.app);
+      if (Object.keys(reconstructed).length > 0) {
+        savePipelineCache(vault, CACHE_FILE, reconstructed);
+      }
+    }
+    await runWorkoutsPipeline(plugin.app, plugin.settings.syncFolder, opts?.onLog);
+  },
+  panelDetail: "Extract exercises, reps, and target areas from fitness bookmarks. Writes workout_* fields onto each source bookmark.",
+  categoryMatches: ["Fitness", "Workouts", "Workout", "Exercise"],
+  fieldsWritten: ["workout_name", "workout_type", "workout_target_area", "workout_difficulty", "workout_duration", "workout_equipment", "workout_exercises"],
+  chips: [
+    { field: "workout_duration", kind: "time" },
+    { field: "workout_difficulty", kind: "difficulty" },
+    { field: "workout_target_area", kind: "tag" },
+  ],
+};

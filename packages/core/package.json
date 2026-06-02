@@ -1,0 +1,7 @@
+{
+  "name": "@roost/core",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Roost shared core (edition-neutral source).",
+  "main": "src/main.ts"
+}

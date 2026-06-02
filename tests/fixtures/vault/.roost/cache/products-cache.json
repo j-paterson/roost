@@ -1,0 +1,57 @@
+{
+  "bm_15": {
+    "triage": "product",
+    "extraction": {
+      "name": "Vitamix 5200",
+      "brand": "Vitamix",
+      "price": "$549",
+      "whereToBuy": "Amazon",
+      "category": "blender",
+      "summary": "Workhorse kitchen blender."
+    }
+  },
+  "bm_16": {
+    "triage": "product",
+    "extraction": {
+      "name": "Aeropress Go",
+      "brand": "Aeropress",
+      "price": "$39",
+      "whereToBuy": "REI",
+      "category": "coffee",
+      "summary": "Travel coffee press."
+    }
+  },
+  "bm_17": {
+    "triage": "product",
+    "extraction": {
+      "name": "Kindle Paperwhite",
+      "brand": "Amazon",
+      "price": "$149",
+      "whereToBuy": "Amazon",
+      "category": "ereader",
+      "summary": "Waterproof e-reader."
+    }
+  },
+  "bm_18": {
+    "triage": "product",
+    "extraction": {
+      "name": "Sonos Era 100",
+      "brand": "Sonos",
+      "price": "$249",
+      "whereToBuy": "Sonos",
+      "category": "speaker",
+      "summary": "Compact smart speaker."
+    }
+  },
+  "bm_19": {
+    "triage": "product",
+    "extraction": {
+      "name": "Misen Chef's Knife",
+      "brand": "Misen",
+      "price": "$65",
+      "whereToBuy": "Misen",
+      "category": "kitchen",
+      "summary": "Affordable 8-inch chef knife."
+    }
+  }
+}

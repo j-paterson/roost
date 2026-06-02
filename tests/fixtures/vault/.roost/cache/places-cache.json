@@ -1,0 +1,107 @@
+{
+  "bm_5": {
+    "triage": "place",
+    "extraction": {
+      "name": "Trattoria Da Enzo",
+      "city": "Rome",
+      "country": "Italy",
+      "placeType": "restaurant",
+      "description": "Classic Roman trattoria.",
+      "vibes": [
+        "cozy",
+        "local"
+      ],
+      "bestFor": "carbonara",
+      "tips": [
+        "Book ahead on weekends"
+      ],
+      "address": "Via dei Vascellari, 29, Rome",
+      "lat": 41.8897,
+      "lng": 12.4692
+    }
+  },
+  "bm_6": {
+    "triage": "place",
+    "extraction": {
+      "name": "Tsukiji Outer Market",
+      "city": "Tokyo",
+      "country": "Japan",
+      "placeType": "market",
+      "description": "Famous fish market stalls.",
+      "vibes": [
+        "bustling",
+        "foodie"
+      ],
+      "bestFor": "sushi breakfast",
+      "tips": [
+        "Arrive before 9am"
+      ],
+      "address": "4 Chome Tsukiji, Tokyo",
+      "lat": 35.6654,
+      "lng": 139.7707
+    }
+  },
+  "bm_7": {
+    "triage": "place",
+    "extraction": {
+      "name": "Café de Flore",
+      "city": "Paris",
+      "country": "France",
+      "placeType": "cafe",
+      "description": "Iconic Left Bank café.",
+      "vibes": [
+        "classic",
+        "literary"
+      ],
+      "bestFor": "people watching",
+      "tips": [
+        "Try the hot chocolate"
+      ],
+      "address": "172 Blvd Saint-Germain, Paris",
+      "lat": 48.8542,
+      "lng": 2.332
+    }
+  },
+  "bm_8": {
+    "triage": "place",
+    "extraction": {
+      "name": "Borough Market",
+      "city": "London",
+      "country": "UK",
+      "placeType": "market",
+      "description": "Historic food market.",
+      "vibes": [
+        "lively",
+        "diverse"
+      ],
+      "bestFor": "street food",
+      "tips": [
+        "Thursday–Saturday busiest"
+      ],
+      "address": "8 Southwark St, London",
+      "lat": 51.5054,
+      "lng": -0.0909
+    }
+  },
+  "bm_9": {
+    "triage": "place",
+    "extraction": {
+      "name": "La Boqueria",
+      "city": "Barcelona",
+      "country": "Spain",
+      "placeType": "market",
+      "description": "Vibrant public market.",
+      "vibes": [
+        "colorful",
+        "touristy"
+      ],
+      "bestFor": "jamón and fruit",
+      "tips": [
+        "Walk the full aisle"
+      ],
+      "address": "La Rambla, 91, Barcelona",
+      "lat": 41.3819,
+      "lng": 2.1716
+    }
+  }
+}

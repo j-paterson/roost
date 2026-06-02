@@ -1,0 +1,10 @@
+{
+  "id": "roost",
+  "name": "Roost",
+  "version": "1.0.0",
+  "minAppVersion": "1.10.0",
+  "description": "Sync your TikTok and X/Twitter bookmarks into the vault as notes, then auto-organize them with a local AI categorizer.",
+  "author": "Jesse Paterson",
+  "authorUrl": "https://github.com/j-paterson",
+  "isDesktopOnly": true
+}

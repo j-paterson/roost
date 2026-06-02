@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+#
+# pre-commit hook: block accidentally committing large files (the thing that
+# bloated this repo). Tiny stub fixtures (a few hundred bytes) pass fine;
+# multi-MB real videos / generated result JSON get rejected.
+#
+# Install:
+#   mkdir -p .githooks && cp pre-commit-block-large.sh .githooks/pre-commit
+#   chmod +x .githooks/pre-commit
+#   git config core.hooksPath .githooks
+#
+set -euo pipefail
+
+MAX_BYTES=$((256 * 1024))   # 256 KB ceiling for newly-added files
+violations=0
+
+while IFS= read -r -d '' file; do
+  [ -f "$file" ] || continue
+  size=$(wc -c < "$file")
+  if [ "$size" -gt "$MAX_BYTES" ]; then
+    printf '  ✗ %s (%d KB > %d KB)\n' "$file" $((size/1024)) $((MAX_BYTES/1024))
+    violations=$((violations+1))
+  fi
+done < <(git diff --cached --name-only --diff-filter=A -z)
+
+if [ "$violations" -gt 0 ]; then
+  cat >&2 <<EOF
+
+Refusing to commit $violations large file(s) above $((MAX_BYTES/1024)) KB.
+These belong outside git (Git LFS, generated at test time, or a tiny stub).
+For test videos use: node tests/fixtures/stub-mp4.mjs <path>
+To override for a legitimate large file: git commit --no-verify
+EOF
+  exit 1
+fi

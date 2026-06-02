@@ -1,0 +1,9 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "paths": {
+      "@/*": ["./packages/core/src/*"],
+      "obsidian": ["./packages/core/src/__mocks__/obsidian.ts"]
+    }
+  }
+}

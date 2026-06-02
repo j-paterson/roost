@@ -1,0 +1,188 @@
+/* Feed view — split-pane host */
+.roost-feed-host {
+  background: var(--background-primary);
+}
+.roost-feed-pane-left {
+  min-width: 0;
+  overflow-y: auto;
+  border-right: 1px solid var(--background-modifier-border);
+}
+.roost-feed-pane-right {
+  min-width: 0;
+  overflow: hidden;
+  background: var(--background-secondary);
+  position: relative;
+}
+.roost-feed-divider {
+  width: 6px;
+  flex-shrink: 0;
+  cursor: col-resize;
+  background: transparent;
+  transition: background 100ms ease;
+}
+.roost-feed-divider:hover {
+  background: var(--interactive-accent);
+  opacity: 0.4;
+}
+
+/* Feed pane scroller */
+.roost-feed-scroller {
+  width: 100%;
+  height: 100%;
+  overflow-y: auto;
+  scroll-snap-type: y mandatory;
+  outline: none;
+}
+.roost-feed-item {
+  width: 100%;
+  height: 100%;
+  scroll-snap-align: start;
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+}
+
+/* TikTok feed item */
+.roost-feed-item-tiktok {
+  background: #000;
+  color: #fff;
+  overflow: hidden;
+}
+.roost-feed-tiktok-stage {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #000;
+}
+.roost-feed-tiktok-video,
+.roost-feed-tiktok-cover {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  display: block;
+}
+.roost-feed-tiktok-mute {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  cursor: pointer;
+  z-index: 2;
+}
+.roost-feed-tiktok-rail {
+  position: absolute;
+  right: 12px;
+  bottom: 64px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  z-index: 2;
+}
+.roost-feed-rail-btn {
+  width: 56px;
+  background: rgba(255, 255, 255, 0.15);
+  color: #fff;
+  font-size: 11px;
+  text-align: center;
+  padding: 8px 0;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.roost-feed-rail-btn:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+.roost-feed-tiktok-caption {
+  position: absolute;
+  left: 16px;
+  bottom: 16px;
+  right: 80px;
+  z-index: 2;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+.roost-feed-tiktok-author {
+  font-size: 12px;
+  opacity: 0.85;
+  margin-bottom: 4px;
+}
+.roost-feed-tiktok-title {
+  font-size: 14px;
+  line-height: 1.35;
+  margin-bottom: 4px;
+}
+.roost-feed-tiktok-tags {
+  font-size: 11px;
+  color: var(--interactive-accent);
+  opacity: 0.9;
+}
+
+/* X feed item */
+.roost-feed-item-x {
+  background: var(--background-secondary);
+  overflow-y: auto;
+}
+.roost-feed-x-frame {
+  width: 100%;
+  min-height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  box-sizing: border-box;
+}
+.roost-feed-x-card {
+  width: 100%;
+  max-width: 600px;
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 12px;
+  padding: 16px;
+}
+
+/* Default feed item — same shape as X */
+.roost-feed-item-default {
+  background: var(--background-secondary);
+  overflow-y: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  box-sizing: border-box;
+}
+.roost-feed-item-default-card {
+  width: 100%;
+  max-width: 600px;
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 12px;
+  padding: 16px;
+}
+
+/* Shared action row (X + default) */
+.roost-feed-actions-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+.roost-feed-action {
+  font-size: 12px;
+  padding: 6px 10px;
+  border-radius: 4px;
+  background: var(--background-modifier-hover);
+  cursor: pointer;
+}
+.roost-feed-action:hover {
+  background: var(--background-modifier-active-hover);
+}
+.roost-feed-action-delete {
+  color: var(--text-error);
+}

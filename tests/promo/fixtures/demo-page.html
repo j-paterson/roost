@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Roost promo fixture (Playwright experiment D)</title>
+    <style>
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: system-ui, sans-serif;
+        background: #1a1a2e;
+        color: #eee;
+        min-height: 100vh;
+      }
+      header {
+        padding: 24px 32px;
+        background: linear-gradient(90deg, #3d5a80, #98c1d9);
+        color: #0d1b2a;
+      }
+      main { padding: 32px; max-width: 960px; }
+      .card {
+        background: #16213e;
+        border-radius: 12px;
+        padding: 20px;
+        margin-bottom: 16px;
+        border: 1px solid #3d5a80;
+        transition: transform 0.3s ease, box-shadow 0.3s ease;
+      }
+      .card:hover {
+        transform: translateY(-4px);
+        box-shadow: 0 12px 24px rgba(0, 0, 0, 0.4);
+      }
+      button {
+        background: #ee6c4d;
+        color: #fff;
+        border: none;
+        padding: 10px 18px;
+        border-radius: 8px;
+        font-size: 15px;
+        cursor: pointer;
+      }
+      #status { margin-top: 12px; color: #98c1d9; }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 12px;
+        margin-top: 20px;
+      }
+      .tile {
+        height: 80px;
+        background: #0f3460;
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 13px;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Roost — demo surface</h1>
+      <p>Playwright screencast experiment (not Obsidian)</p>
+    </header>
+    <main>
+      <div class="card" id="hero">
+        <h2>Smart Assign</h2>
+        <p>Embed → Score → Discover → Review</p>
+        <button type="button" id="run-btn">Run pipeline</button>
+        <p id="status">Ready</p>
+      </div>
+      <div class="grid" id="grid">
+        <div class="tile">Recipes</div>
+        <div class="tile">Places</div>
+        <div class="tile">Media</div>
+      </div>
+    </main>
+    <script>
+      const steps = ["Embedding…", "Scoring known…", "Discovering…", "Review"];
+      document.getElementById("run-btn").addEventListener("click", async () => {
+        const status = document.getElementById("status");
+        for (const s of steps) {
+          status.textContent = s;
+          await new Promise((r) => setTimeout(r, 600));
+        }
+        status.textContent = "Done";
+        document.getElementById("grid").style.opacity = "0.5";
+        await new Promise((r) => setTimeout(r, 200));
+        document.getElementById("grid").style.opacity = "1";
+      });
+    </script>
+  </body>
+</html>

@@ -1,0 +1,7 @@
+filters:
+  and:
+    - file.inFolder("Bookmarks")
+    - note.roost_id
+views:
+  - type: roost-bookmarks
+    name: Gallery

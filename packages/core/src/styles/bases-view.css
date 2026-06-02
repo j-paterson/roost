@@ -1,0 +1,1993 @@
+/* Roost Bookmarks Bases View — card grid styling */
+
+/* Media list — sortable table that the gallery substitutes for its card
+ * grid when the active filter is Media (or a Media subcategory). Mirrors
+ * the Places-map pattern but as substitution, not overlay — text-dense
+ * recommendations don't benefit from card thumbnails the way Place pins
+ * do from a map. .roost-media-list-host on the container resets the grid
+ * styling so the table claims full width. */
+/* Master-detail split: table on the left, expanded-card preview on the
+ * right. Both panes scroll independently inside the gallery container. */
+.roost-bases-grid.roost-media-list-host {
+  display: flex;
+  gap: 16px;
+  height: 100%;
+  min-height: 0;
+}
+.roost-media-list-pane-left {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+}
+/* Draggable divider between the two panes. 6px wide, sits flush against
+ * the right pane, accent on hover so users discover the resize affordance. */
+.roost-media-list-divider {
+  width: 6px;
+  flex-shrink: 0;
+  cursor: col-resize;
+  background: transparent;
+  border-left: 1px solid var(--background-modifier-border);
+  margin-right: -1px;
+  transition: background 100ms ease;
+}
+.roost-media-list-divider:hover {
+  background: var(--interactive-accent);
+  opacity: 0.4;
+}
+.roost-media-list-pane-right {
+  flex: 0 0 40%;
+  min-width: 320px;
+  overflow-y: auto;
+  padding-left: 16px;
+}
+.roost-media-list-pane-right-empty {
+  color: var(--text-muted);
+  text-align: center;
+  padding: 48px 16px;
+  font-size: var(--font-ui-small);
+}
+.roost-media-list-row.is-selected {
+  background: var(--background-modifier-hover);
+}
+.roost-media-list-row.is-selected td.roost-media-list-title {
+  color: var(--text-accent);
+}
+.roost-media-list-root {
+  padding: 12px 16px 24px;
+  font-size: var(--font-ui-small);
+}
+.roost-media-list-empty {
+  color: var(--text-muted);
+  padding: 32px 16px;
+  text-align: center;
+}
+.roost-media-list-table {
+  width: 100%;
+  border-collapse: collapse;
+  /* Fixed table-layout makes <th> widths binding — required for column
+   * resize handles to translate to visible column changes (under "auto"
+   * layout the browser ignores width hints when content exceeds them). */
+  table-layout: fixed;
+}
+.roost-media-list-table th,
+.roost-media-list-table td {
+  padding: 6px 10px;
+  text-align: left;
+  border-bottom: 1px solid var(--background-modifier-border);
+  /* Long cell text truncates with an ellipsis instead of forcing the
+   * column wider than the user dragged it to. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.roost-media-list-header {
+  cursor: pointer;
+  user-select: none;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: var(--background-secondary);
+  /* Sticky positions the header to the top during scroll AND establishes
+   * a containing block for the absolute-positioned resize handle inside. */
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+/* Column-resize handle — thin strip on the right edge of each header
+ * cell. col-resize cursor signals the affordance; faint background on
+ * hover so the handle is discoverable without being noisy at rest. */
+.roost-media-list-resize-handle {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 6px;
+  cursor: col-resize;
+  user-select: none;
+  background: transparent;
+  transition: background 100ms ease;
+}
+.roost-media-list-resize-handle:hover {
+  background: var(--interactive-accent);
+  opacity: 0.4;
+}
+.roost-media-list-header:hover {
+  color: var(--text-normal);
+}
+.roost-media-list-header.is-sorted {
+  color: var(--text-normal);
+}
+.roost-media-list-sort-arrow {
+  color: var(--text-faint);
+  font-size: 0.85em;
+}
+.roost-media-list-row {
+  cursor: pointer;
+}
+.roost-media-list-row:hover {
+  background: var(--background-modifier-hover);
+}
+.roost-media-list-title {
+  font-weight: 500;
+  color: var(--text-normal);
+}
+.roost-media-list-footer {
+  margin-top: 12px;
+  color: var(--text-muted);
+  font-size: var(--font-smallest);
+}
+.roost-media-list-empty-cell {
+  color: var(--text-faint);
+}
+/* Music play-link in the Where cell. Accent color signals "this opens a
+ * streaming service" — distinguishes it from the muted "Source ↗"
+ * fallback that points at the source TikTok/X post. */
+.roost-media-list-play-link {
+  color: var(--text-accent);
+  text-decoration: none;
+}
+.roost-media-list-play-link:hover {
+  text-decoration: underline;
+}
+/* Where-cell hosting a music card. Spotify embed iframe and the
+ * TikTok music player share the same cell layout — both 80px tall
+ * for the compact "single-row" Spotify embed look. */
+.roost-inline-play-cell--card {
+  display: block;
+  min-width: 320px;
+  padding: 4px 0;
+}
+
+/* Spotify embed iframe — auto-mounted for every music row with a
+ * media_spotify_id. 80px is Spotify's compact embed height (small
+ * artwork on the left, title + creator stacked, scrubber). */
+.roost-spotify-embed-iframe {
+  width: 100%;
+  min-width: 320px;
+  height: 80px;
+  border: 0;
+  border-radius: 12px;
+  display: block;
+}
+
+/* TikTok music player — Spotify-styled compact card for music rows
+ * backed by a cached source video. Matches Spotify's 80px embed
+ * dimensions so they sit side-by-side without looking mismatched. */
+.roost-tt-music-player {
+  width: 100%;
+  min-width: 320px;
+  height: 80px;
+  background: #181818;
+  color: #fff;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  padding: 8px;
+  gap: 12px;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+.roost-tt-music-player-art {
+  flex: 0 0 auto;
+  width: 64px;
+  height: 64px;
+  object-fit: cover;
+  border-radius: 4px;
+  background: #282828;
+}
+.roost-tt-music-player-art--empty {
+  background: linear-gradient(135deg, #404040 0%, #282828 100%);
+}
+.roost-tt-music-player-body {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
+  gap: 2px;
+}
+.roost-tt-music-player-title {
+  font-weight: 700;
+  font-size: 13px;
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.roost-tt-music-player-creator {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.7);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.roost-tt-music-player-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 2px;
+}
+.roost-tt-music-player-playbtn {
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border-radius: 50%;
+  border: 0;
+  background: #1ed760;
+  color: #000;
+  cursor: pointer;
+  font-size: 10px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.roost-tt-music-player-playbtn:hover { background: #1fdf64; }
+.roost-tt-music-player-scrubber {
+  flex: 1 1 auto;
+  min-width: 40px;
+  height: 3px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 2px;
+  cursor: pointer;
+}
+.roost-tt-music-player-scrubber::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #fff;
+  cursor: pointer;
+}
+.roost-tt-music-player-scrubber:disabled { opacity: 0.4; cursor: default; }
+.roost-tt-music-player-time {
+  flex: 0 0 auto;
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.6);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.roost-bases-grid {
+  min-height: 100%;
+  align-content: start;
+}
+
+@keyframes roost-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.roost-card {
+  position: relative;
+  border-radius: 8px;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-secondary);
+  overflow: hidden;
+  cursor: pointer;
+  transition: box-shadow 0.15s ease, opacity 0.2s ease;
+  /* Skip layout + paint for off-screen cards. Critical when "All" is
+   * selected and 18K+ cards are mounted — without this, every layout
+   * query (offsetHeight, getBoundingClientRect during expand) forces the
+   * browser to resolve positions for the full grid, which makes click→
+   * expand feel laggy. With content-visibility:auto, layout work scales
+   * with visible cards (~50-100) instead of total cards.
+   *
+   * contain-intrinsic-size keeps scroll position stable across renders;
+   * `auto 230px` matches the cardSize(180) + body(~50) estimate the
+   * skeleton hydration uses, and `auto` lets the browser remember the
+   * real measured size after a card has been rendered once. */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 230px;
+}
+
+/* Uncertain items — subtle desaturation in non-split mode */
+.roost-card.roost-card-uncertain {
+  opacity: 0.45;
+  filter: saturate(0.5);
+}
+.roost-card.roost-card-uncertain:hover {
+  opacity: 0.7;
+}
+
+/* Split view — certain/uncertain side by side */
+.roost-split-pane {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+}
+.roost-split-label {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 6px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  background: var(--background-primary);
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+.roost-split-certain .roost-split-label {
+  color: var(--text-accent);
+}
+.roost-split-uncertain .roost-split-label {
+  color: var(--text-faint);
+}
+.roost-split-divider {
+  width: 1px;
+  background: var(--background-modifier-border);
+  flex-shrink: 0;
+}
+/* In split mode, uncertain cards don't need dimming — spatial separation is enough */
+.roost-split-uncertain .roost-card.roost-card-uncertain {
+  opacity: 0.75;
+  filter: saturate(0.8);
+}
+.roost-split-uncertain .roost-card.roost-card-uncertain:hover {
+  opacity: 1;
+  filter: none;
+}
+
+/* Fade skeleton pseudo-elements out when card content is ready */
+.roost-card.roost-card-ready::before,
+.roost-card.roost-card-ready::after {
+  animation: roost-fade-out 0.2s ease-out both;
+}
+
+@keyframes roost-fade-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+/* Card content fades in over the skeleton */
+.roost-card.roost-card-ready > .roost-card-cover,
+.roost-card.roost-card-ready > .roost-card-body,
+.roost-card.roost-card-ready.roost-card-scrub::after {
+  animation: roost-fade-in 0.2s ease-out both;
+}
+
+.roost-card-placeholder {
+  background: var(--background-primary-alt);
+  overflow: hidden;
+  position: relative;
+  animation: roost-fade-in 0.15s ease-out both;
+}
+
+/* Skeleton: fake cover + text lines — absolutely positioned to overlay card content */
+.roost-card-placeholder::before,
+.roost-card-placeholder::after {
+  position: absolute;
+  z-index: 2;
+}
+
+.roost-card-placeholder::before {
+  content: "";
+  top: 0;
+  left: 0;
+  right: 0;
+  aspect-ratio: 1 / 0.75;
+  background: var(--background-modifier-border);
+  border-radius: 4px 4px 0 0;
+}
+
+.roost-card-placeholder::after {
+  content: "";
+  bottom: 10px;
+  left: 10px;
+  height: 10px;
+  width: 60%;
+  border-radius: 4px;
+  background: var(--background-modifier-border);
+}
+
+/* Shimmer sweep */
+@keyframes roost-shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+.roost-card-placeholder > .roost-shimmer {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    var(--background-secondary-alt, rgba(255,255,255,0.04)) 50%,
+    transparent 100%
+  );
+  animation: roost-shimmer 1.5s ease-in-out infinite;
+}
+
+.roost-card:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+
+.roost-card-cover {
+  overflow: hidden;
+  background: var(--background-primary-alt);
+}
+
+.roost-card-cover img {
+  transition: transform 0.3s ease;
+  opacity: 0;
+}
+
+.roost-card-ready .roost-card-cover img {
+  opacity: 1;
+}
+
+.roost-card:hover .roost-card-cover img {
+  transform: scale(1.03);
+}
+
+.roost-card-body {
+  padding: 8px 10px 10px;
+}
+
+.roost-card-title {
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.4;
+  color: var(--text-normal);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  margin-bottom: 4px;
+}
+
+.roost-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.roost-card-author {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.roost-card-platform {
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.roost-platform-tiktok {
+  background: oklch(0.45 0.15 330 / 0.15);
+  color: oklch(0.65 0.15 330);
+}
+
+.roost-platform-twitter {
+  background: oklch(0.45 0.1 230 / 0.15);
+  color: oklch(0.65 0.1 230);
+}
+
+.roost-card-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  margin-top: 4px;
+}
+
+.roost-card-tag {
+  font-size: 9px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: var(--background-modifier-border);
+  color: var(--text-muted);
+}
+
+/* Video scrub — video overlays thumbnail on hover */
+.roost-scrub-video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  z-index: 3;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s;
+}
+
+.roost-scrub-video.roost-scrub-active {
+  opacity: 1;
+}
+
+/* Scrub progress bar */
+.roost-scrub-bar {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: rgba(0, 0, 0, 0.3);
+  z-index: 4;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.roost-card-scrub:hover .roost-scrub-bar {
+  opacity: 1;
+}
+
+.roost-scrub-bar-fill {
+  height: 100%;
+  background: rgba(255, 255, 255, 0.8);
+  width: 0%;
+  transition: width 75ms linear;
+}
+
+
+/* File type badge */
+.roost-card-badge {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  z-index: 2;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.4);
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 9px;
+  font-weight: 600;
+  font-family: var(--font-monospace);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  pointer-events: none;
+}
+
+.roost-card-scrub {
+  position: relative;
+}
+
+.roost-card-scrub::after {
+  content: "▶";
+  position: absolute;
+  bottom: 6px;
+  right: 6px;
+  font-size: 10px;
+  color: white;
+  background: rgba(0, 0, 0, 0.5);
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.roost-card-scrub:hover::after {
+  display: none;
+}
+
+/* Expanded inline detail — inserted into grid after clicked card */
+.roost-card.roost-expanded {
+  cursor: default;
+}
+.roost-expanded {
+  grid-column: 1 / -1;
+  display: flex;
+  border-radius: 10px;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-primary);
+  overflow: hidden;
+  height: 50vh;
+  min-height: 300px;
+  transform-origin: top left;
+}
+
+/* Left: media */
+.roost-expanded-media {
+  width: 45%;
+  flex-shrink: 0;
+  background: black;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  position: relative;
+}
+
+.roost-expanded-video,
+.roost-expanded-img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.roost-expanded-placeholder {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+/* Multi-image gallery — left/right hover buttons + bottom counter */
+.roost-gallery-btn {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 32px;
+  height: 48px;
+  background: rgba(0, 0, 0, 0.4);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 20px;
+  z-index: 3;
+  opacity: 0;
+  transition: opacity 0.15s, background 0.15s;
+  border: none;
+  padding: 0;
+}
+.roost-gallery-btn-prev {
+  left: 0;
+  border-radius: 0 6px 6px 0;
+}
+.roost-gallery-btn-next {
+  right: 0;
+  border-radius: 6px 0 0 6px;
+}
+.roost-expanded-media:hover .roost-gallery-btn {
+  opacity: 1;
+}
+.roost-gallery-btn:hover {
+  background: rgba(0, 0, 0, 0.75);
+}
+.roost-gallery-counter {
+  position: absolute;
+  bottom: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 11px;
+  color: white;
+  background: rgba(0, 0, 0, 0.5);
+  padding: 2px 8px;
+  border-radius: 10px;
+  z-index: 2;
+}
+
+/* Right: metadata */
+.roost-expanded-info {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.roost-expanded-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.roost-expanded-title {
+  flex: 1;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--text-normal);
+}
+
+.roost-expanded-close {
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 14px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  flex-shrink: 0;
+  transition: background 0.1s;
+}
+
+.roost-expanded-close:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+.roost-expanded-identity {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.roost-expanded-identity-dot {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  border: 1.5px solid var(--text-muted);
+  color: var(--text-muted);
+  background: transparent;
+}
+.roost-expanded-identity-dot svg {
+  width: 9px;
+  height: 9px;
+  display: block;
+}
+.roost-expanded-identity-dot.roost-platform-tiktok { border-color: #ff0050; color: #ff0050; }
+.roost-expanded-identity-dot.roost-platform-twitter { border-color: #1da1f2; color: #1da1f2; }
+.roost-expanded-identity-dot.roost-platform-x { border-color: var(--text-normal); color: var(--text-normal); }
+
+.roost-expanded-identity-handle {
+  color: var(--text-muted);
+  text-decoration: none;
+  word-break: break-all;
+}
+.roost-expanded-identity-handle:hover {
+  color: var(--text-accent);
+  text-decoration: underline;
+}
+
+.roost-expanded-body {
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--text-normal);
+  white-space: pre-wrap;
+}
+
+/* Digest-embedded cards (rendered via the `roost-card` code block). Bumped
+   border + vertical margin so adjacent cards in a long digest are visually
+   distinct from each other. Scoped to .roost-card-block so the gallery's
+   expanded card retains its original chrome. */
+.roost-card-block.roost-expanded {
+  border-width: 2px;
+  margin: 16px 0;
+  position: relative;
+}
+
+/* Inline image lightbox — overlays the card itself rather than the whole
+   workspace. Mostly transparent backdrop with a soft blur, so the thread
+   stays visible behind the maximized image. Click anywhere (backdrop or
+   image) to dismiss; ESC also closes. */
+.roost-card-image-lightbox {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 20;
+  cursor: zoom-out;
+  border-radius: inherit;
+}
+.roost-card-image-lightbox-img {
+  max-width: calc(100% - 24px);
+  max-height: calc(100% - 24px);
+  object-fit: contain;
+  display: block;
+  border-radius: 4px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+  /* FLIP transforms compute deltas of top-left corners — origin must
+     match so translate + scale combine correctly. */
+  transform-origin: top left;
+  will-change: transform;
+}
+/* Hover affordance: photos look clickable. */
+.roost-expanded-bodytext-photo,
+.roost-card-block .roost-expanded-img {
+  cursor: zoom-in;
+  transition: filter 120ms ease;
+}
+.roost-expanded-bodytext-photo:hover,
+.roost-card-block .roost-expanded-img:hover {
+  filter: brightness(1.05);
+}
+
+/* Text-only items (no media): info panel uses the full card width and the
+   fixed 50vh height is dropped so the card grows to fit. */
+.roost-expanded.roost-expanded-text-only {
+  height: auto;
+  min-height: 0;
+}
+.roost-expanded.roost-expanded-text-only .roost-expanded-info {
+  flex: 1;
+}
+
+/* When bodyText is rendered, stack media on top + text below so the text
+   gets the full card width. Drops the wasted black sidebar that 16:9 video
+   posters create in a tall 45%-wide media panel.
+   Cap card height at 70vh so very long threads don't push later digest
+   content off-screen — the info panel scrolls internally. */
+.roost-expanded.roost-expanded-has-bodytext {
+  flex-direction: column;
+  height: auto;
+  min-height: 0;
+  max-height: 70vh;
+  position: relative;
+}
+.roost-expanded.roost-expanded-has-bodytext .roost-expanded-media {
+  width: 100%;
+  max-height: 320px;
+  flex-shrink: 0;
+}
+.roost-expanded.roost-expanded-has-bodytext .roost-expanded-info {
+  width: 100%;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+/* Visual hint that content extends past the card edge. The bottom 56px of
+   the card fades to the surrounding background — only when JS detects the
+   info panel is actually scrollable AND not scrolled to the bottom. */
+.roost-expanded.roost-expanded-has-bodytext::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 56px;
+  background: linear-gradient(
+    to bottom,
+    transparent,
+    var(--background-primary)
+  );
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+.roost-expanded.roost-expanded-has-bodytext.roost-expanded-overflow::after {
+  opacity: 1;
+}
+
+/* Native body-text rendering for text-only items — replaces the rasterized
+   card.png with selectable, scalable DOM text. */
+.roost-expanded-bodytext {
+  font-size: 15px;
+  line-height: 1.55;
+  color: var(--text-normal);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.roost-expanded-bodytext-para {
+  word-wrap: break-word;
+  overflow-wrap: anywhere;
+}
+
+/* A single segment within a thread render: text paragraphs on the left,
+   optional inline photo grid on the right (flex row). Segments without
+   photos let the text take the full segment width. */
+.roost-expanded-bodytext-segment {
+  display: flex;
+  flex-direction: row;
+  gap: 14px;
+  align-items: flex-start;
+}
+.roost-expanded-bodytext-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Focal (bookmarked) segment of a thread — subtle left accent bar so the
+   user can spot which tweet in the thread they actually saved. */
+.roost-expanded-bodytext-focal {
+  border-left: 3px solid var(--text-accent);
+  padding-left: 12px;
+  margin-left: -3px;
+}
+
+/* Per-segment inline photo grid — sits to the right of the segment's
+   text. Fixed-width column so segments without photos can use full width
+   without an awkward asymmetric gap. Layout adapts to photo count. */
+.roost-expanded-bodytext-photos {
+  flex: 0 0 240px;
+  display: grid;
+  gap: 4px;
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--background-secondary);
+}
+.roost-expanded-bodytext-photos.roost-photo-grid-1 {
+  grid-template-columns: 1fr;
+}
+.roost-expanded-bodytext-photos.roost-photo-grid-2 {
+  grid-template-columns: 1fr 1fr;
+}
+.roost-expanded-bodytext-photos.roost-photo-grid-3 {
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+}
+.roost-expanded-bodytext-photos.roost-photo-grid-3 .roost-expanded-bodytext-photo:first-child {
+  grid-row: span 2;
+}
+.roost-expanded-bodytext-photos.roost-photo-grid-4 {
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+}
+.roost-expanded-bodytext-photo {
+  width: 100%;
+  height: 100%;
+  max-height: 220px;
+  object-fit: cover;
+  display: block;
+}
+.roost-expanded-bodytext-photos.roost-photo-grid-1 .roost-expanded-bodytext-photo {
+  max-height: 280px;
+  object-fit: contain;
+}
+
+/* Segment separator (was rendered as "· · ·" plain text). A thin centered
+   row of dots, low-contrast, with comfortable margins. */
+.roost-expanded-bodytext-divider {
+  align-self: center;
+  width: 60px;
+  height: 4px;
+  margin: 4px 0;
+  background-image: radial-gradient(circle, var(--text-faint) 1.5px, transparent 1.5px);
+  background-size: 20px 4px;
+  background-repeat: repeat-x;
+  opacity: 0.7;
+}
+
+.roost-expanded-body-collapsed {
+  display: none;
+}
+
+.roost-expanded-title-toggle {
+  display: inline-block;
+  margin-left: 4px;
+  padding: 0 4px;
+  border-radius: 4px;
+  color: var(--text-muted);
+  cursor: pointer;
+  user-select: none;
+  transition: background-color 80ms ease, color 80ms ease;
+}
+
+.roost-expanded-title-toggle:hover {
+  background-color: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+.roost-expanded-stats {
+  display: flex;
+  gap: 14px;
+  padding: 2px 0;
+}
+
+.roost-expanded-stat {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-muted);
+}
+
+.roost-expanded-stat-icon {
+  font-size: 12px;
+  line-height: 1;
+  opacity: 0.8;
+}
+
+.roost-expanded-stat-val {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-normal);
+  font-variant-numeric: tabular-nums;
+}
+
+.roost-expanded-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.roost-expanded-collection {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.roost-expanded-collection-clickable {
+  cursor: pointer;
+  border-radius: 4px;
+  padding: 2px 6px;
+  margin: -2px -6px;
+  transition: background-color 80ms ease;
+}
+.roost-expanded-collection-clickable:hover {
+  background-color: var(--background-modifier-hover);
+}
+
+.roost-expanded-collection-icon {
+  flex-shrink: 0;
+}
+
+.roost-expanded-collection-name {
+  color: var(--text-normal);
+  font-weight: 500;
+}
+
+.roost-expanded-collection-source {
+  color: var(--text-faint);
+  font-size: 11px;
+  font-style: italic;
+}
+
+.roost-expanded-collection-match .roost-expanded-collection-name {
+  color: var(--color-green, #27ae60);
+}
+.roost-expanded-collection-check {
+  color: var(--color-green, #27ae60);
+  font-weight: 600;
+}
+
+.roost-expanded-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 14px;
+  margin-top: auto;
+  padding-top: 10px;
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+.roost-expanded-action {
+  font-size: 12px;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 4px;
+  transition: color 0.1s, background 0.1s;
+}
+.roost-expanded-action:hover {
+  color: var(--text-accent);
+  background: var(--background-modifier-hover);
+}
+
+.roost-expanded-action-delete {
+  display: flex;
+  align-items: center;
+  padding: 2px 6px;
+}
+.roost-expanded-action-delete:hover {
+  color: var(--text-error);
+  background: var(--background-modifier-hover);
+}
+.roost-expanded-action-delete .svg-icon {
+  width: 14px;
+  height: 14px;
+}
+
+/* Folder cards — stacked thumbnails for categories */
+.roost-folder-card {
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 8px;
+  border-radius: 8px;
+  transition: background 0.15s;
+}
+
+.roost-folder-card:hover {
+  background: var(--background-modifier-hover);
+}
+
+.roost-folder-stack {
+  position: relative;
+  width: 85%;
+  aspect-ratio: 4 / 3;
+}
+
+.roost-folder-thumb {
+  position: absolute;
+  inset: 0;
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+  border: 1px solid rgba(255,255,255,0.1);
+  transition: transform 0.2s ease;
+}
+
+.roost-folder-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.roost-folder-thumb-back {
+  z-index: 1;
+  transform: rotate(6deg);
+  margin: 0 8px;
+}
+
+.roost-folder-card:hover .roost-folder-thumb-back {
+  transform: rotate(10deg) translateX(6px);
+}
+
+.roost-folder-thumb-mid {
+  z-index: 2;
+  transform: rotate(-4deg);
+  margin: 0 4px;
+}
+
+.roost-folder-card:hover .roost-folder-thumb-mid {
+  transform: rotate(-8deg) translateX(-5px);
+}
+
+.roost-folder-thumb-front {
+  z-index: 3;
+  transform: scale(1);
+}
+
+.roost-folder-card:hover .roost-folder-thumb-front {
+  transform: scale(1.03) translateY(-2px);
+}
+
+.roost-folder-empty {
+  width: 100%;
+  height: 100%;
+  background: var(--background-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.roost-folder-label {
+  text-align: center;
+  width: 100%;
+}
+
+.roost-folder-name {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-normal);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: color 0.15s;
+}
+
+.roost-folder-card:hover .roost-folder-name {
+  color: var(--interactive-accent);
+}
+
+.roost-folder-meta {
+  font-size: 10px;
+  color: var(--text-muted);
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+}
+
+.roost-folder-cohesion {
+  font-weight: 600;
+}
+
+.roost-cohesion-high { color: var(--color-green); }
+.roost-cohesion-mid { color: var(--color-yellow); }
+.roost-cohesion-low { color: var(--color-red); }
+
+/* Group headers */
+.roost-bases-group {
+  grid-column: 1 / -1;
+}
+
+.roost-bases-group-header {
+  grid-column: 1 / -1;
+}
+
+/* Navigation bar */
+/* Unified gallery toolbar — nav + title + platform pills on one line */
+.roost-gallery-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--background-modifier-border);
+  background: var(--background-secondary);
+  flex-shrink: 0;
+  z-index: 5;
+}
+.roost-toolbar-nav { display: flex; gap: 4px; flex-shrink: 0; }
+.roost-toolbar-title {
+  flex: 1;
+  font-size: var(--font-small);
+  font-weight: 600;
+  color: var(--text-normal);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.roost-toolbar-pills { display: flex; gap: 4px; flex-shrink: 0; }
+.roost-nav-btn {
+  font-size: var(--font-smallest);
+  padding: 2px 10px;
+  border-radius: 4px;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-primary);
+  color: var(--text-normal);
+  cursor: pointer;
+}
+.roost-nav-btn:hover:not(:disabled) {
+  background: var(--background-modifier-hover);
+}
+.roost-nav-btn:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.roost-platform-pill {
+  padding: 2px 10px;
+  border-radius: 12px;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-primary);
+  color: var(--text-muted);
+  font-size: var(--font-smallest);
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.roost-platform-pill:hover:not(.is-active) {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+.roost-platform-pill.is-active {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border-color: transparent;
+}
+
+/* Suggestion banner */
+.roost-suggestion-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--background-modifier-border);
+  background: color-mix(in srgb, var(--color-green) 10%, var(--background-secondary));
+}
+.roost-suggestion-text {
+  flex: 1;
+  font-size: var(--font-smallest);
+  color: var(--color-green);
+}
+.roost-suggestion-actions {
+  display: flex;
+  gap: 6px;
+}
+
+/* Move-to dropdown in expanded card */
+.roost-expanded-move {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  background: var(--background-modifier-hover);
+}
+.roost-expanded-move-label {
+  font-size: var(--font-smallest);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.roost-expanded-move-select {
+  flex: 1;
+  font-size: var(--font-smallest);
+  padding: 2px 4px;
+  border-radius: 4px;
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  color: var(--text-normal);
+}
+
+/* Item modal (Obsidian Modal + React) */
+.roost-modal-content {
+  padding: 0 !important;
+}
+/* Post-move suggestion banner — surfaced inside the move-to modal after a
+ * successful move. Lets the user accept/dismiss/review related items the
+ * neighbor-suggestion pass thinks belong with the moved item. */
+.roost-suggestions {
+  padding: 8px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--color-green) 10%, var(--background-secondary));
+}
+.roost-suggestion-text { font-size: var(--font-smallest); color: var(--color-green); margin-bottom: 6px; }
+.roost-suggestion-actions { display: flex; gap: 6px; }
+
+/* Collection picker */
+.roost-picker { display: flex; flex-direction: column; gap: 4px; margin-top: 4px; }
+.roost-picker-input {
+  width: 100%;
+  padding: 6px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-primary);
+  color: var(--text-normal);
+  font-size: var(--font-small);
+  box-sizing: border-box;
+}
+.roost-picker-input:focus { outline: none; border-color: var(--interactive-accent); }
+.roost-picker-list {
+  max-height: 250px;
+  overflow-y: auto;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  background: var(--background-primary);
+}
+.roost-picker-section-label {
+  padding: 4px 8px;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  position: sticky;
+  top: 0;
+  background: var(--background-primary);
+}
+.roost-picker-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 8px;
+  cursor: pointer;
+  font-size: var(--font-small);
+}
+.roost-picker-row:hover { background: var(--background-modifier-hover); }
+.roost-picker-sim { font-size: 10px; color: var(--text-faint); margin-left: 8px; white-space: nowrap; }
+
+/* Selection mode — gallery cards with select/deselect + action bar */
+.roost-selection-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+  background: color-mix(in srgb, var(--interactive-accent) 12%, var(--background-secondary));
+  border-top: 1px solid var(--interactive-accent);
+  position: sticky;
+  bottom: 0;
+  z-index: 10;
+}
+.roost-selection-label {
+  font-size: var(--font-small);
+  font-weight: 600;
+  color: var(--text-normal);
+  white-space: nowrap;
+}
+.roost-selection-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.roost-selection-move-btn {
+  background: var(--interactive-accent) !important;
+  color: var(--text-on-accent) !important;
+}
+.roost-selection-move-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.roost-card-selected {
+  outline: 3px solid var(--interactive-accent);
+  outline-offset: -3px;
+  border-radius: 8px;
+}
+.roost-card-selected::after {
+  content: "\2713";
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+  z-index: 3;
+}
+
+/* Feed-mode active card highlight */
+.roost-card.roost-card-feed-active {
+  box-shadow: 0 0 0 2px var(--interactive-accent);
+  border-color: var(--interactive-accent);
+}
+
+/* View-mode toggle button in toolbar */
+.roost-toolbar-mode { display: flex; flex-shrink: 0; }
+.roost-mode-btn {
+  padding: 2px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-primary);
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 24px;
+}
+.roost-mode-btn:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+.roost-mode-btn.is-active {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border-color: transparent;
+}
+
+/* Suggestion modal */
+.roost-suggestion-modal h3 { margin-top: 0; }
+.roost-suggestion-desc { color: var(--text-muted); font-size: 14px; }
+.roost-suggestion-modal-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+}
+.roost-suggestion-modal-actions button {
+  padding: 6px 16px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+/* Matched item badge on card thumbnail */
+.roost-card-match-badge {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  z-index: 2;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--color-cyan, var(--text-accent)) 20%, rgba(0,0,0,0.4));
+  color: var(--color-cyan, var(--text-accent));
+  font-size: 9px;
+  font-weight: 600;
+  pointer-events: none;
+}
+
+/* Matched item highlight — teal ring during staging (matches the match badge color) */
+.roost-card[data-matched="1"] {
+  outline: 2px solid var(--color-cyan, var(--text-accent)) !important;
+  outline-offset: -2px;
+  box-shadow: 0 0 8px color-mix(in srgb, var(--color-cyan, var(--text-accent)) 35%, transparent) !important;
+}
+
+/* Match info block in expanded card */
+.roost-expanded-match {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--color-cyan, var(--text-accent)) 8%, var(--background-secondary));
+  border-left: 3px solid var(--color-cyan, var(--text-accent));
+}
+.roost-expanded-match-score {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-cyan, var(--text-accent));
+}
+.roost-expanded-match-reason {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+/* Fly-to-sidebar animation clones */
+.roost-fly-clone {
+  pointer-events: none;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  will-change: transform, opacity;
+}
+
+/* Sidebar row pulse when receiving items */
+@keyframes roost-sidebar-pulse {
+  0% { background: transparent; }
+  30% { background: color-mix(in srgb, var(--interactive-accent) 25%, transparent); }
+  100% { background: transparent; }
+}
+.roost-sidebar-receive {
+  animation: roost-sidebar-pulse 0.6s ease-out;
+}
+
+.roost-places-map-wrap {
+  position: relative;
+  height: 320px;
+  margin-bottom: var(--size-4-3);
+}
+.roost-places-map-wrap .roost-places-map,
+.roost-places-map-wrap .roost-map-container {
+  width: 100%;
+  height: 100%;
+}
+.roost-places-map-wrap .roost-map-stats {
+  position: absolute;
+  bottom: 4px;
+  left: 8px;
+  padding: 2px 8px;
+  background: var(--background-secondary);
+  border-radius: 4px;
+  font-size: 11px;
+  pointer-events: none;
+}
+
+/* Cover-image pins. The outer `.roost-map-pin-icon` is Leaflet's divIcon
+ * wrapper — kill its default background/border. The inner `.roost-map-pin`
+ * is the round thumbnail itself. */
+.roost-map-pin-icon {
+  background: transparent;
+  border: none;
+}
+/* White ring via box-shadow (outside the box) rather than border (inside the
+ * box). A border would shrink the content area and leave a visible strip of
+ * the fallback background color peeking past the image. */
+.roost-map-pin {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px #fff, 0 1px 4px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease;
+  cursor: pointer;
+}
+/* Specificity note: Leaflet's `.leaflet-container .leaflet-marker-pane img`
+ * rule sets `width: auto`, which beats a bare `.roost-map-pin img` selector
+ * and makes portrait images render at their natural aspect (narrower than the
+ * 32px circle, leaving half empty). Scoping under `.leaflet-container`
+ * matches Leaflet's specificity and wins via source order. */
+.leaflet-container .roost-map-pin img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.roost-map-pin-empty {
+  background: #27ae60;
+}
+.roost-map-pin.roost-map-pin-active {
+  box-shadow: 0 0 0 3px #e74c3c, 0 1px 4px rgba(0, 0, 0, 0.5);
+  transform: scale(1.25);
+}
+.roost-map-pin.roost-map-pin-dimmed {
+  opacity: 0.4;
+}
+
+/* Pipeline detail section (place, recipe, media, etc.) */
+.roost-pipeline-section {
+  padding: 4px 0 4px 10px;
+  border-left: 2px solid var(--pipeline-color, var(--background-modifier-border));
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.roost-pipeline-kv {
+  display: flex;
+  gap: 8px;
+  font-size: 13px;
+  line-height: 1.5;
+  margin-bottom: 2px;
+}
+.roost-pipeline-kv-label {
+  flex: 0 0 auto;
+  min-width: 80px;
+  color: var(--text-muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding-top: 2px;
+}
+.roost-pipeline-kv-value {
+  flex: 1 1 auto;
+  color: var(--text-normal);
+  word-break: break-word;
+}
+.roost-pipeline-description {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-normal);
+  margin: 8px 0;
+}
+.roost-pipeline-group {
+  margin: 10px 0;
+}
+.roost-pipeline-group-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 4px;
+}
+.roost-pipeline-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.roost-pipeline-pill {
+  display: inline-block;
+  padding: 2px 8px;
+  font-size: 11px;
+  color: var(--text-normal);
+  background: var(--background-modifier-hover);
+  border-radius: 10px;
+  white-space: nowrap;
+}
+.roost-pipeline-tips,
+.roost-pipeline-ingredients,
+.roost-pipeline-exercises,
+.roost-pipeline-steps {
+  margin: 4px 0 0 0;
+  padding-left: 20px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-normal);
+}
+.roost-pipeline-tips li,
+.roost-pipeline-ingredients li,
+.roost-pipeline-exercises li,
+.roost-pipeline-steps li {
+  margin-bottom: 2px;
+}
+.roost-pipeline-recipe-link {
+  color: var(--text-accent);
+  text-decoration: none;
+  word-break: break-all;
+}
+.roost-pipeline-recipe-link:hover {
+  text-decoration: underline;
+}
+
+/* Watchable deep-link chip (Films/Series/Anime/Documentaries) */
+.roost-watchable-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.roost-watchable-where {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.roost-watchable-sep {
+  color: var(--text-faint);
+  font-size: 11px;
+}
+
+.roost-watchable-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 500;
+  text-decoration: none;
+  border: 1px solid transparent;
+  transition: background 0.15s ease;
+}
+
+.roost-watchable-chip:hover {
+  text-decoration: none;
+}
+
+.roost-watchable-chip-icon {
+  font-size: 11px;
+}
+
+.roost-watchable-chip-ext {
+  font-size: 10px;
+  opacity: 0.7;
+}
+
+/* Canonical (resolved) — solid brand color */
+.roost-watchable-chip--letterboxd.roost-watchable-chip--canonical {
+  background: #00C030;
+  color: white;
+}
+.roost-watchable-chip--letterboxd.roost-watchable-chip--canonical:hover {
+  background: #00A028;
+}
+
+.roost-watchable-chip--anilist.roost-watchable-chip--canonical {
+  background: #02A9FF;
+  color: white;
+}
+.roost-watchable-chip--anilist.roost-watchable-chip--canonical:hover {
+  background: #0290D9;
+}
+
+/* Search fallback — dimmer outlined variant */
+.roost-watchable-chip--search {
+  background: transparent;
+  border-color: var(--background-modifier-border);
+  color: var(--text-muted);
+}
+.roost-watchable-chip--letterboxd.roost-watchable-chip--search:hover {
+  border-color: #00C030;
+  color: #00C030;
+}
+.roost-watchable-chip--anilist.roost-watchable-chip--search:hover {
+  border-color: #02A9FF;
+  color: #02A9FF;
+}
+
+/* ── Chip primitive ── */
+.roost-chip {
+  display: inline-block;
+  font-size: 0.75rem;
+  line-height: 1;
+  border-radius: 9999px;
+  background: var(--background-modifier-border);
+  color: var(--text-normal);
+  border: 1px solid var(--background-modifier-border-hover);
+}
+.roost-chip--compact { padding: 2px 6px; margin: 1px 4px 1px 0; }
+.roost-chip--full { padding: 4px 10px; font-size: 0.875rem; margin: 2px 6px 2px 0; }
+.roost-chip--price { background: var(--interactive-accent); color: var(--text-on-accent); font-weight: 600; }
+.roost-chip--rating { background: color-mix(in srgb, var(--color-yellow, #c9a227) 25%, transparent); }
+.roost-chip--difficulty { text-transform: capitalize; }
+.roost-chip--where { font-weight: 500; }
+.roost-chip-row { display: flex; flex-wrap: wrap; gap: 2px; margin-top: 4px; }
+/* ─── Explorer view: content-type card variants ─────────────────── */
+
+.roost-card-text-preview {
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text-normal);
+  display: -webkit-box;
+  -webkit-line-clamp: 5;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.roost-card-link-badge {
+  max-width: 80%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.roost-card-note-icon {
+  color: var(--text-muted);
+  opacity: 0.3;
+}
+
+.roost-card-path {
+  font-size: 10px;
+  color: var(--text-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-top: 2px;
+}
+
+/* ─── Vault Search Modal ────────────────────────────────────── */
+
+.vault-search-result {
+  padding: 6px 0;
+}
+
+.vault-search-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.vault-search-title {
+  font-weight: 600;
+  font-size: 14px;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vault-search-score {
+  font-size: 10px;
+  color: var(--text-faint);
+  background: var(--background-secondary);
+  padding: 1px 5px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.vault-search-path {
+  font-size: 11px;
+  color: var(--text-faint);
+  margin-top: 2px;
+}
+
+.vault-search-heading {
+  font-size: 11px;
+  color: var(--text-accent);
+  margin-top: 2px;
+}
+
+.vault-search-snippet {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 4px;
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.vault-search-tags {
+  display: flex;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.vault-search-tag {
+  font-size: 10px;
+  color: var(--text-faint);
+  background: var(--background-secondary);
+  padding: 1px 6px;
+  border-radius: 3px;
+}
+
+/* Explorer expanded: override black media background for non-media content */
+.roost-card[data-content-type="note"] .roost-expanded-media,
+.roost-card[data-content-type="link"] .roost-expanded-media {
+  background: var(--background-primary);
+}
+
+/* Explorer expanded: markdown preview */
+.roost-expanded-markdown {
+  max-height: 60vh;
+  overflow-y: auto;
+  padding: 12px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--text-normal);
+}
+
+.roost-expanded-markdown img {
+  max-width: 100%;
+  border-radius: 4px;
+}
+
+/* Explorer expanded: link box */
+.roost-expanded-link-box {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.roost-expanded-link-domain {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-normal);
+}
+
+.roost-expanded-link-open {
+  color: var(--interactive-accent);
+  text-decoration: none;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.roost-expanded-link-open:hover {
+  text-decoration: underline;
+}
+
+/* Explorer expanded: rich content blocks */
+.roost-expanded-rich-block {
+  margin: 8px 0;
+}
+
+.roost-expanded-rich-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 4px;
+}
+
+.roost-expanded-rich-text {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-normal);
+}
+
+.roost-expanded-quote {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-muted);
+  font-style: italic;
+  border-left: 3px solid var(--interactive-accent);
+  padding: 4px 12px;
+  margin: 4px 0;
+}
+
+/* Explorer expanded: property list */
+.roost-expanded-props {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 8px 0;
+}
+
+.roost-expanded-prop {
+  display: flex;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.roost-expanded-prop-key {
+  color: var(--text-faint);
+  min-width: 80px;
+  flex-shrink: 0;
+}
+
+.roost-expanded-prop-val {
+  color: var(--text-normal);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

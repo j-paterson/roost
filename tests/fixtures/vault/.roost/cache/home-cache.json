@@ -1,0 +1,62 @@
+{
+  "bm_30": {
+    "triage": "home",
+    "extraction": {
+      "idea": "Reading corner",
+      "room": "living-room",
+      "style": "mid-century",
+      "products": [],
+      "tips": [
+        "Warm lamp + armchair + shelf."
+      ]
+    }
+  },
+  "bm_31": {
+    "triage": "home",
+    "extraction": {
+      "idea": "Work-from-home desk",
+      "room": "office",
+      "style": "minimal",
+      "products": [],
+      "tips": [
+        "Standing desk and cable management."
+      ]
+    }
+  },
+  "bm_32": {
+    "triage": "home",
+    "extraction": {
+      "idea": "Guest room",
+      "room": "bedroom",
+      "style": "scandinavian",
+      "products": [],
+      "tips": [
+        "Neutral linens and plants."
+      ]
+    }
+  },
+  "bm_33": {
+    "triage": "home",
+    "extraction": {
+      "idea": "Open shelves",
+      "room": "kitchen",
+      "style": "industrial",
+      "products": [],
+      "tips": [
+        "Display ceramics and cookbooks."
+      ]
+    }
+  },
+  "bm_34": {
+    "triage": "home",
+    "extraction": {
+      "idea": "Container garden",
+      "room": "outdoor",
+      "style": "bohemian",
+      "products": [],
+      "tips": [
+        "Herbs in planters."
+      ]
+    }
+  }
+}

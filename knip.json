@@ -1,0 +1,7 @@
+{
+  "entry": ["packages/core/src/main.ts"],
+  "project": ["packages/core/src/**/*.{ts,tsx}"],
+  "ignoreDependencies": ["obsidian", "builtin-modules"],
+  "ignore": ["packages/core/src/**/*.d.ts"],
+  "ignoreBinaries": ["vite", "vitest", "tsc"]
+}

@@ -1,0 +1,6 @@
+filters:
+  and:
+    - file.inFolder("Bookmarks")
+views:
+  - type: roost-explorer
+    name: Explorer
