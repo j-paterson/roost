@@ -74,8 +74,13 @@ export async function exportXCookies(getWebviewManager: () => WebviewManager): P
   try {
     await navigator.clipboard.writeText(json);
   } catch (e) {
-    new Notice(`Clipboard write failed (${String(e)}). Cookie JSON logged to console — copy from there.`);
-    console.log("[roost export-x-cookies]", json);
+    new Notice(
+      `Clipboard write failed (${String(e)}).\n\n` +
+        `Cookies were NOT logged anywhere. Manual export: open DevTools ` +
+        `(Ctrl+Shift+I) → Application → Cookies → x.com and copy auth_token ` +
+        `and ct0 into tests/e2e/.x-cookies.json yourself.`,
+      12000,
+    );
     return;
   }
 
