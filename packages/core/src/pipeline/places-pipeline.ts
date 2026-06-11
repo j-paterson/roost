@@ -508,7 +508,7 @@ export function computePlaceBackfillFields(
   return updates;
 }
 
-export async function writePlaceToBookmark(
+async function writePlaceToBookmark(
   app: App,
   file: TFile,
   extraction: PlaceExtraction,

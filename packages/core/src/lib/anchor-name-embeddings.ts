@@ -5,7 +5,7 @@ import { vaultBasePath } from "@/lib/vault-utils";
 import { cachePath as roostCachePath, cacheDir } from "@/lib/roost-paths";
 
 /** Current embed model version. Bump if the embedding model changes. */
-export const EMBED_MODEL_VERSION = 1;
+const EMBED_MODEL_VERSION = 1;
 
 export interface AnchorNameEmbeddingEntry {
   vec: number[];

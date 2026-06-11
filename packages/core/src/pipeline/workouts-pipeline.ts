@@ -92,7 +92,7 @@ const CONCURRENCY = 3;
 
 const WORKOUT_PIPELINE_VERSION = 1;
 
-export const WORKOUT_FIELDS = {
+const WORKOUT_FIELDS = {
   name: "workout_name",
   type: "workout_type",
   targetArea: "workout_target_area",
@@ -336,7 +336,7 @@ export function computeWorkoutBackfillFields(
   return updates;
 }
 
-export async function writeWorkoutToBookmark(
+async function writeWorkoutToBookmark(
   app: App,
   file: TFile,
   extraction: WorkoutExtraction,

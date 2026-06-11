@@ -44,11 +44,11 @@ import {
   type IndexConcept,
 } from "./index-writer";
 
-export const MEMORY_ROOT = "Memory";
-export const TOPICS_DIR = `${MEMORY_ROOT}/topics`;
-export const INDEX_PATH = `${MEMORY_ROOT}/MEMORY.md`;
-export const ARCHIVE_PATH = `${MEMORY_ROOT}/MEMORY-archive.md`;
-export const ALIASES_PATH = `${MEMORY_ROOT}/aliases.json`;
+const MEMORY_ROOT = "Memory";
+const TOPICS_DIR = `${MEMORY_ROOT}/topics`;
+const INDEX_PATH = `${MEMORY_ROOT}/MEMORY.md`;
+const ARCHIVE_PATH = `${MEMORY_ROOT}/MEMORY-archive.md`;
+const ALIASES_PATH = `${MEMORY_ROOT}/aliases.json`;
 export const CACHE_PATH = `${MEMORY_ROOT}/.roost-memory-cache.json`;
 
 const DEFAULT_THRESHOLDS = {
@@ -113,7 +113,7 @@ async function writeFileAtomic(app: App, path: string, content: string): Promise
   await app.vault.adapter.rename(tmp, path);
 }
 
-export async function loadAllConcepts(app: App): Promise<ConceptNode[]> {
+async function loadAllConcepts(app: App): Promise<ConceptNode[]> {
   if (!(await app.vault.adapter.exists(TOPICS_DIR))) return [];
   let listing: { files: string[]; folders: string[] };
   try {

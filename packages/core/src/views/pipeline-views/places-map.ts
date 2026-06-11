@@ -25,7 +25,7 @@ import {
   type GalleryRenderContext,
 } from "./registry";
 
-export const placesMapView: PipelineGalleryView = {
+const placesMapView: PipelineGalleryView = {
   mode: "above",
   render(container, ctx: GalleryRenderContext) {
     container.addClass("roost-places-map-wrap");

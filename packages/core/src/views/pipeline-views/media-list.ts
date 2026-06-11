@@ -152,7 +152,7 @@ function sortRows(rows: MediaRow[]): void {
   });
 }
 
-export const mediaListView: PipelineGalleryView = {
+const mediaListView: PipelineGalleryView = {
   mode: "substitute",
   render(container, ctx: GalleryRenderContext) {
     container.empty();

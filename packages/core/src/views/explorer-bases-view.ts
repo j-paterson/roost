@@ -17,8 +17,6 @@ import {
   type ExplorerExpandedHost,
 } from "@/views/explorer-expanded-panel";
 
-export { explorerViewOptions } from "@/views/explorer-view-options";
-
 export const EXPLORER_VIEW_ID = "roost-explorer";
 
 export class ExplorerBasesView extends BaseCardView {

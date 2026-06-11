@@ -15,6 +15,7 @@
     "verify:agents": "tsx scripts/verify-agents.ts",
     "fixture:vault": "node tests/fixtures/build-fixture-vault.mjs",
     "fixture:vault:import": "node tests/fixtures/build-fixture-vault.mjs --from-vault",
+    "knip": "knip",
     "test": "vitest run",
     "e2e:stage": "cp dist/main.js dist/styles.css .",
     "test:e2e": "npm run build && npm run e2e:stage && wdio run tests/e2e/wdio.conf.mts",

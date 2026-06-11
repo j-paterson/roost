@@ -48,7 +48,7 @@ const PROMPT_VERSION_NONE = "v1-none";
 
 /** Default α for CLIP-text fusion in Smart Assign top-K candidate selection.
  *  Matches the +4pp top-1 lift measured in the 119-item LOO eval (clip-eval-results.json). */
-export const DEFAULT_CLIP_FUSION_ALPHA = 0.5;
+const DEFAULT_CLIP_FUSION_ALPHA = 0.5;
 
 /**
  * Score-cache key digest. Includes:

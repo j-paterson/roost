@@ -23,7 +23,7 @@ interface OverlayProps {
   onCancel: () => void;
 }
 
-export function ConfirmDeleteOverlay({ kind, categoryName, subcategoryName, itemCount, onConfirm, onCancel }: OverlayProps) {
+function ConfirmDeleteOverlay({ kind, categoryName, subcategoryName, itemCount, onConfirm, onCancel }: OverlayProps) {
   const isCategory = kind === "category";
   const targetName = isCategory ? categoryName : subcategoryName;
   const title = isCategory

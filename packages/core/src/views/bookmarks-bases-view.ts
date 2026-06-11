@@ -61,8 +61,6 @@ import type { PipelineGalleryHost } from "@/views/gallery-pipeline-host";
 import { isPipelineSubstituteView } from "@/views/pipeline-views/registry";
 import { isCategoryPipelineActive } from "@/lib/pipeline-gate-plugin";
 
-export { bookmarksViewOptions } from "@/views/bookmarks-view-options";
-
 export const BASES_VIEW_ID = "roost-bookmarks";
 
 export class BookmarksBasesView extends BasesView

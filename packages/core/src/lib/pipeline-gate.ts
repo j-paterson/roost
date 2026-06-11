@@ -1,12 +1,9 @@
 import type { PipelineFlags } from "@/settings";
 import {
-  PIPELINE_ENRICHMENT_IDS,
   type PipelineId,
-  isPipelineEnrichmentId,
 } from "@/lib/enrichments";
 
 export type { PipelineId };
-export { PIPELINE_ENRICHMENT_IDS, isPipelineEnrichmentId };
 
 export interface LlmAvailabilityInput {
   llmBackend: "local" | "cloud" | "skip";

@@ -333,7 +333,7 @@ export function computeRecipeBackfillFields(
   return updates;
 }
 
-export async function writeRecipeToBookmark(
+async function writeRecipeToBookmark(
   app: App,
   file: TFile,
   extraction: RecipeExtraction,
