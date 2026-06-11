@@ -5,6 +5,7 @@ import { VaultIndex, type IncompleteIdsResult } from "./vault-writer/vault-index
 export type { IncompleteByCategory, IncompleteIdsResult } from "./vault-writer/vault-index";
 import { NoteFileWriter, articleFrontmatterFields } from "./vault-writer/note-file-writer";
 export { articleFrontmatterFields } from "./vault-writer/note-file-writer";
+import { MediaDownloader } from "./vault-writer/media-downloader";
 import { type NormalizedRecord } from "../lib/normalize";
 import { type EnrichmentId } from "@/lib/enrichments";
 import { renderCardAsync } from "./card-renderer";
@@ -41,10 +42,6 @@ interface ThreadMeta {
   segments: ThreadSegmentMeta[];
 }
 
-function noteDirPath(filePath: string): string {
-  return filePath.replace(/\/[^/]+\.md$/, "");
-}
-
 async function loadQuotedTweetBitmap(url: string | null | undefined): Promise<ImageBitmap | null> {
   if (!url) return null;
   try {
@@ -79,10 +76,9 @@ export class VaultWriter {
   private index: VaultIndex;
   private ensuredFolders = new Set<string>();
   private noteWriter: NoteFileWriter;
+  private mediaDownloader: MediaDownloader;
   /** Cumulative counters across all writeBatch calls */
   private cumulative = { pushed: 0, resynced: 0, skipped: 0, processed: 0 };
-  /** Current stop signal — checked during downloads */
-  private currentStopSignal: { stopped: boolean } | null = null;
 
   constructor(opts: VaultWriterOpts) {
     this.vault = opts.vault;
@@ -101,6 +97,13 @@ export class VaultWriter {
       syncFolder: opts.syncFolder,
       log: this.log,
       index: this.index,
+      ensuredFolders: this.ensuredFolders,
+    });
+    this.mediaDownloader = new MediaDownloader({
+      vault: opts.vault,
+      log: this.log,
+      index: this.index,
+      noteWriter: this.noteWriter,
       ensuredFolders: this.ensuredFolders,
     });
   }
@@ -151,7 +154,7 @@ export class VaultWriter {
     let pushed = 0, skipped = 0, resynced = 0;
     const batchT0 = Date.now();
     const cum = this.cumulative;
-    this.currentStopSignal = stopSignal || null;
+    this.mediaDownloader.setStopSignal(stopSignal || null);
 
     for (let i = 0; i < records.length; i++) {
       if (stopSignal?.stopped) break;
@@ -205,47 +208,6 @@ export class VaultWriter {
     return { pushed, skipped, resynced };
   }
 
-  private async clearLegacyCarousel(attachFolder: string): Promise<void> {
-    const folder = this.vault.getAbstractFileByPath(attachFolder);
-    if (!(folder instanceof TFolder)) return;
-    const victims = folder.children.filter(c =>
-      c instanceof TFile && (/^\d+\.(jpg|png)$/.test(c.name) || c.name === "card.png")
-    );
-    for (const v of victims) {
-      try { await this.vault.delete(v); } catch { /* ignore */ }
-    }
-  }
-
-  private async downloadAndSave(
-    downloadFn: () => Promise<ArrayBuffer | null>,
-    attachFolder: string,
-    filename: string,
-    skipIfExists = false,
-  ): Promise<string | null> {
-    const destPath = `${attachFolder}/${filename}`;
-    if (skipIfExists && this.vault.getAbstractFileByPath(destPath)) {
-      return `![[${destPath}]]`;
-    }
-    if (this.currentStopSignal?.stopped) return null;
-    const t0 = Date.now();
-    const data = await downloadFn();
-    const dlMs = Date.now() - t0;
-    if (!data) {
-      if (dlMs > 5000) this.log(`[timeout?] ${filename} download returned null after ${(dlMs / 1000).toFixed(1)}s`);
-      return null;
-    }
-    if (dlMs > 5000) {
-      const sizeMB = (data.byteLength / 1024 / 1024).toFixed(1);
-      this.log(`[slow] ${filename} download: ${(dlMs / 1000).toFixed(1)}s (${sizeMB} MB)`);
-    }
-    await ensureFolder(this.vault, attachFolder, this.ensuredFolders);
-    if (this.vault.getAbstractFileByPath(destPath)) {
-      return `![[${destPath}]]`;
-    }
-    await this.vault.createBinary(destPath, data);
-    return `![[${destPath}]]`;
-  }
-
   private async writeTwitterRecord(record: NormalizedRecord): Promise<void> {
     const { text, url, published, itemId, handle, username } = this.noteWriter.extractCommon(record);
     const media = extractTwitterMedia(record);
@@ -278,25 +240,25 @@ export class VaultWriter {
       if (media.photos.length > 0) {
         const results = await Promise.all(
           media.photos.map(photo =>
-            this.downloadAndSave(() => downloadTwitterImage(photo.url), attachFolder, `${photo.index + 1}.jpg`)
+            this.mediaDownloader.downloadAndSave(() => downloadTwitterImage(photo.url), attachFolder, `${photo.index + 1}.jpg`)
           )
         );
         const firstOk = results.findIndex(r => r);
         if (firstOk >= 0) coverFile = `${attachFolder}/${media.photos[firstOk].index + 1}.jpg`;
       } else if (media.videoUrl) {
-        await this.downloadAndSave(() => downloadTwitterVideo(media.videoUrl!), attachFolder, "video.mp4");
+        await this.mediaDownloader.downloadAndSave(() => downloadTwitterVideo(media.videoUrl!), attachFolder, "video.mp4");
         // Poster JPG lives on the media entry and is the only thing the gallery
         // can render via <img> — the mp4 scrub video layers on top of it.
         if (media.videoPosterUrl) {
-          const posterOk = await this.downloadAndSave(() => downloadTwitterImage(media.videoPosterUrl!), attachFolder, "video-poster.jpg");
+          const posterOk = await this.mediaDownloader.downloadAndSave(() => downloadTwitterImage(media.videoPosterUrl!), attachFolder, "video-poster.jpg");
           if (posterOk) coverFile = `${attachFolder}/video-poster.jpg`;
         }
         if (!coverFile && media.cardMeta?.thumbnail) {
-          const embed = await this.downloadAndSave(() => downloadTwitterImage(media.cardMeta!.thumbnail!), attachFolder, "card-thumb.jpg");
+          const embed = await this.mediaDownloader.downloadAndSave(() => downloadTwitterImage(media.cardMeta!.thumbnail!), attachFolder, "card-thumb.jpg");
           if (embed) coverFile = `${attachFolder}/card-thumb.jpg`;
         }
       } else if (media.cardMeta?.thumbnail) {
-        const embed = await this.downloadAndSave(() => downloadTwitterImage(media.cardMeta!.thumbnail!), attachFolder, "card-thumb.jpg");
+        const embed = await this.mediaDownloader.downloadAndSave(() => downloadTwitterImage(media.cardMeta!.thumbnail!), attachFolder, "card-thumb.jpg");
         if (embed) coverFile = `${attachFolder}/card-thumb.jpg`;
       } else if (text) {
         const quotedBitmap = await loadQuotedTweetBitmap(media.quotedTweet?.photoUrl);
@@ -307,7 +269,7 @@ export class VaultWriter {
           : null;
         const cardData = await renderCardAsync({ author: handle.replace(/^@/, ""), username, text, publishedAt: published, subContext });
         if (cardData) {
-          const embed = await this.downloadAndSave(() => Promise.resolve(cardData), attachFolder, "card.png");
+          const embed = await this.mediaDownloader.downloadAndSave(() => Promise.resolve(cardData), attachFolder, "card.png");
           if (embed) coverFile = `${attachFolder}/card.png`;
         }
       }
@@ -398,7 +360,7 @@ export class VaultWriter {
       if (segMedia.photos.length > 0) {
         for (const photo of segMedia.photos) {
           pageCounter++;
-          await this.downloadAndSave(
+          await this.mediaDownloader.downloadAndSave(
             () => downloadTwitterImage(photo.url),
             attachFolder,
             `${pageCounter}.jpg`,
@@ -423,7 +385,7 @@ export class VaultWriter {
         });
         if (cardData) {
           pageCounter++;
-          await this.downloadAndSave(
+          await this.mediaDownloader.downloadAndSave(
             () => Promise.resolve(cardData),
             attachFolder,
             `${pageCounter}.png`,
@@ -450,7 +412,7 @@ export class VaultWriter {
       if (segMedia.photos.length > 0) {
         for (const photo of segMedia.photos) {
           pageCounter++;
-          await this.downloadAndSave(
+          await this.mediaDownloader.downloadAndSave(
             () => downloadTwitterImage(photo.url),
             attachFolder,
             `${pageCounter}.jpg`,
@@ -468,7 +430,7 @@ export class VaultWriter {
         });
         if (cardData) {
           pageCounter++;
-          await this.downloadAndSave(
+          await this.mediaDownloader.downloadAndSave(
             () => Promise.resolve(cardData),
             attachFolder,
             `${pageCounter}.png`,
@@ -530,7 +492,7 @@ export class VaultWriter {
     if (media.images.length > 0) {
       const results = await Promise.all(
         media.images.map(img =>
-          this.downloadAndSave(() => downloadTikTokImage(img.url), attachFolder, `${img.index + 1}.jpg`)
+          this.mediaDownloader.downloadAndSave(() => downloadTikTokImage(img.url), attachFolder, `${img.index + 1}.jpg`)
         )
       );
       mediaEmbeds.push(...results.filter(Boolean) as string[]);
@@ -538,17 +500,17 @@ export class VaultWriter {
       if (firstOk >= 0) coverFile = `${attachFolder}/${media.images[firstOk].index + 1}.jpg`;
     } else if (media.videoUrl && this.tiktokWc) {
       const wc = this.tiktokWc;
-      const embed = await this.downloadAndSave(() => downloadTikTokVideo(wc, media.videoUrl!), attachFolder, "video.mp4");
+      const embed = await this.mediaDownloader.downloadAndSave(() => downloadTikTokVideo(wc, media.videoUrl!), attachFolder, "video.mp4");
       if (embed) mediaEmbeds.push(embed);
       if (media.coverUrl) {
-        const coverEmbed = await this.downloadAndSave(() => downloadTikTokImage(media.coverUrl!), attachFolder, "cover.jpg");
+        const coverEmbed = await this.mediaDownloader.downloadAndSave(() => downloadTikTokImage(media.coverUrl!), attachFolder, "cover.jpg");
         if (coverEmbed) {
           mediaEmbeds.push(coverEmbed);
           coverFile = `${attachFolder}/cover.jpg`;
         }
       }
     } else if (media.coverUrl) {
-      const embed = await this.downloadAndSave(() => downloadTikTokImage(media.coverUrl!), attachFolder, "cover.jpg");
+      const embed = await this.mediaDownloader.downloadAndSave(() => downloadTikTokImage(media.coverUrl!), attachFolder, "cover.jpg");
       if (embed) {
         mediaEmbeds.push(embed);
         coverFile = `${attachFolder}/cover.jpg`;
@@ -638,15 +600,15 @@ export class VaultWriter {
       if (media.images.length > 0) {
         await Promise.all(
           media.images.map(img =>
-            this.downloadAndSave(() => downloadTikTokImage(img.url), attachFolder, `${img.index + 1}.jpg`, true)
+            this.mediaDownloader.downloadAndSave(() => downloadTikTokImage(img.url), attachFolder, `${img.index + 1}.jpg`, true)
           )
         );
       } else if (media.videoUrl && this.tiktokWc) {
         const wc = this.tiktokWc;
-        await this.downloadAndSave(() => downloadTikTokVideo(wc, media.videoUrl!), attachFolder, "video.mp4", true);
+        await this.mediaDownloader.downloadAndSave(() => downloadTikTokVideo(wc, media.videoUrl!), attachFolder, "video.mp4", true);
       }
       if (media.coverUrl) {
-        await this.downloadAndSave(() => downloadTikTokImage(media.coverUrl!), attachFolder, "cover.jpg", true);
+        await this.mediaDownloader.downloadAndSave(() => downloadTikTokImage(media.coverUrl!), attachFolder, "cover.jpg", true);
       }
       let subtitle: string | undefined;
       const subtitleUrl = extractTikTokSubtitleUrl(record);
@@ -704,7 +666,7 @@ export class VaultWriter {
         // pre-enhancement numbered media so the new carousel can own N.jpg/N.png
         // without colliding with the old single focal image or a leftover card.png.
         if (!this.vault.getAbstractFileByPath(`${attachFolder}/thread.json`)) {
-          await this.clearLegacyCarousel(attachFolder);
+          await this.mediaDownloader.clearLegacyCarousel(attachFolder);
         }
         const result = await this.renderThreadPages({
           record, attachFolder, handle, username,
@@ -716,17 +678,17 @@ export class VaultWriter {
         if (twitterMedia.photos.length > 0) {
           await Promise.all(
             twitterMedia.photos.map(photo =>
-              this.downloadAndSave(() => downloadTwitterImage(photo.url), attachFolder, `${photo.index + 1}.jpg`, true)
+              this.mediaDownloader.downloadAndSave(() => downloadTwitterImage(photo.url), attachFolder, `${photo.index + 1}.jpg`, true)
             )
           );
         } else if (twitterMedia.videoUrl) {
-          await this.downloadAndSave(() => downloadTwitterVideo(twitterMedia.videoUrl!), attachFolder, "video.mp4", true);
+          await this.mediaDownloader.downloadAndSave(() => downloadTwitterVideo(twitterMedia.videoUrl!), attachFolder, "video.mp4", true);
           if (twitterMedia.videoPosterUrl) {
-            await this.downloadAndSave(() => downloadTwitterImage(twitterMedia.videoPosterUrl!), attachFolder, "video-poster.jpg", true);
+            await this.mediaDownloader.downloadAndSave(() => downloadTwitterImage(twitterMedia.videoPosterUrl!), attachFolder, "video-poster.jpg", true);
           }
         }
         if (twitterMedia.cardMeta?.thumbnail) {
-          await this.downloadAndSave(() => downloadTwitterImage(twitterMedia.cardMeta!.thumbnail!), attachFolder, "card-thumb.jpg", true);
+          await this.mediaDownloader.downloadAndSave(() => downloadTwitterImage(twitterMedia.cardMeta!.thumbnail!), attachFolder, "card-thumb.jpg", true);
         }
         if (!twitterMedia.photos.length && !twitterMedia.videoUrl && !twitterMedia.cardMeta?.thumbnail && text) {
           if (!this.vault.getAbstractFileByPath(`${attachFolder}/card.png`)) {
@@ -738,7 +700,7 @@ export class VaultWriter {
               : null;
             const cardData = await renderCardAsync({ author: handle.replace(/^@/, ""), username, text, publishedAt: published, subContext });
             if (cardData) {
-              await this.downloadAndSave(() => Promise.resolve(cardData), attachFolder, "card.png", true);
+              await this.mediaDownloader.downloadAndSave(() => Promise.resolve(cardData), attachFolder, "card.png", true);
             }
           }
         }
@@ -819,74 +781,6 @@ export class VaultWriter {
     incompleteIds: Set<string>,
     stopSignal?: { stopped: boolean },
   ): Promise<{ attempted: number; success: number; failed: number }> {
-    const tiktokIds = [...incompleteIds].filter(id => id.startsWith("tiktok:"));
-    if (tiktokIds.length === 0) return { attempted: 0, success: 0, failed: 0 };
-
-    this.log(`oEmbed backfill: ${tiktokIds.length} TikTok items missing raw.json`);
-    let success = 0, failed = 0;
-
-    for (let i = 0; i < tiktokIds.length; i++) {
-      if (stopSignal?.stopped) break;
-
-      const roostId = tiktokIds[i];
-      const itemId = roostId.split(":")[1];
-      const noteFile = this.index.notePathMap.get(roostId);
-      if (!noteFile) { failed++; continue; }
-
-      const noteDir = noteDirPath(noteFile.path);
-      const attachFolder = `${noteDir}/tiktok-${itemId}`;
-
-      if (this.vault.getAbstractFileByPath(`${attachFolder}/raw.json`)) continue;
-      let content: string;
-      try { content = await this.vault.read(noteFile); } catch { failed++; continue; }
-
-      const fmEnd = content.indexOf("\n---\n", 4);
-      const entries = fmEnd !== -1 ? parseFrontmatterEntries(content.slice(4, fmEnd)) : [];
-      const authorEntry = entries.find(e => e.key === "author");
-      const authorMatch = authorEntry?.fullBlock.match(/\[\[People\/@?([^\]]+)\]\]/);
-      const authorHandle = authorMatch?.[1] || "";
-      const titleEntry = entries.find(e => e.key === "title");
-      const existingTitle = titleEntry?.fullBlock.replace(/^title:\s*"?|"?\s*$/g, "") || "";
-
-      const videoUrl = authorHandle
-        ? buildTikTokVideoUrl(authorHandle, itemId)
-        : null;
-
-      let oembed = null;
-      if (videoUrl) {
-        oembed = await fetchTikTokOembed(videoUrl);
-      }
-
-      const rawData = buildOembedRawJson(itemId, oembed, { author: authorHandle, title: existingTitle });
-      await ensureFolder(this.vault, attachFolder, this.ensuredFolders);
-      await this.noteWriter.writeSidecar(`${attachFolder}/raw.json`, JSON.stringify(rawData, null, 2));
-
-      if (oembed) {
-        const updates: Record<string, FrontmatterValue> = {};
-        if (oembed.title && oembed.title.length > existingTitle.length + 5) {
-          updates.title = oembed.title;
-        }
-        if (rawData.music?.title) {
-          updates.sound = rawData.music.authorName
-            ? `${rawData.music.title} — ${rawData.music.authorName}`
-            : rawData.music.title;
-        }
-        if (Object.keys(updates).length > 0) {
-          const updated = updateNoteFrontmatter(content, updates);
-          if (updated) await this.vault.modify(noteFile, updated);
-        }
-        success++;
-      } else {
-        failed++;
-      }
-
-      if (i > 0 && i % 5 === 0) { // rate limit
-        await new Promise(r => setTimeout(r, 200));
-        if (i % 50 === 0) this.log(`  oEmbed backfill: ${i}/${tiktokIds.length}`);
-      }
-    }
-
-    this.log(`oEmbed backfill done: ${success} enriched, ${failed} failed (${tiktokIds.length} attempted)`);
-    return { attempted: tiktokIds.length, success, failed };
+    return this.mediaDownloader.backfillWithOembed(incompleteIds, stopSignal);
   }
 }
