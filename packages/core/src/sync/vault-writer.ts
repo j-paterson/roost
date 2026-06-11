@@ -482,7 +482,11 @@ export class VaultWriter {
     skipIfExists: boolean;
   }): Promise<{ coverFile: string | null; meta: ThreadMeta; bodyParts: string[] }> {
     const { record, attachFolder, handle, username, mainThread, quotedThread, skipIfExists } = opts;
-    const focalId = record.rawData.rest_id as string;
+    const rawRestId = record.rawData.rest_id;
+    const focalId = typeof rawRestId === "string" && rawRestId ? rawRestId : record.itemId;
+    if (focalId !== rawRestId) {
+      this.log(`[thread] ${record.id}: rawData.rest_id missing/invalid — using itemId ${record.itemId} as focal id`);
+    }
 
     // If main wasn't enriched but quoted was, synthesize a single main segment from the focal tweet.
     const mainSegments: ThreadSegment[] = mainThread.length > 0
