@@ -1,8 +1,9 @@
 import { Vault, TFile, TFolder, MetadataCache } from "obsidian";
 import type { ElectronWebview } from "@/types/sync";
-import { buildFrontmatter, ensureFolder, updateNoteFrontmatter, parseFrontmatterEntries, type FrontmatterValue } from "@/lib/vault-helpers";
+import { ensureFolder, updateNoteFrontmatter, parseFrontmatterEntries, type FrontmatterValue } from "@/lib/vault-helpers";
 import { TwitterRecordWriter, loadQuotedTweetBitmap } from "./vault-writer/twitter-record-writer";
 import type { ThreadMeta } from "./vault-writer/twitter-record-writer";
+import { TikTokRecordWriter } from "./vault-writer/tiktok-record-writer";
 import { VaultIndex, type IncompleteIdsResult } from "./vault-writer/vault-index";
 export type { IncompleteByCategory, IncompleteIdsResult } from "./vault-writer/vault-index";
 import { NoteFileWriter, articleFrontmatterFields } from "./vault-writer/note-file-writer";
@@ -14,17 +15,14 @@ import { renderCardAsync } from "./card-renderer";
 import {
   getBookmarkPlatform, getBookmarkItemId, extractBookmarkText,
   extractBookmarkAuthor, extractBookmarkAuthorUsername, extractBookmarkUrl,
-  extractBookmarkPublishedAt, extractTwitterMedia, extractTikTokMedia,
+  extractTwitterMedia, extractTikTokMedia,
   extractTikTokSubtitleUrl, parseWebVTT,
-  sanitizeFilename, buildTikTokVideoUrl,
-  type BookmarkRecord,
 } from "../lib/extract";
 import {
   downloadTwitterImage, downloadTwitterVideo,
   downloadTikTokVideo, downloadTikTokImage,
   downloadTikTokSubtitle,
 } from "./media-downloader";
-import { fetchTikTokOembed, buildOembedRawJson } from "./oembed-fallback";
 import { type ThreadSegment } from "./thread-fetcher";
 
 
@@ -53,6 +51,7 @@ export class VaultWriter {
   private noteWriter: NoteFileWriter;
   private mediaDownloader: MediaDownloader;
   private twitterWriter: TwitterRecordWriter;
+  private tiktokWriter: TikTokRecordWriter;
   /** Cumulative counters across all writeBatch calls */
   private cumulative = { pushed: 0, resynced: 0, skipped: 0, processed: 0 };
 
@@ -90,6 +89,16 @@ export class VaultWriter {
       noteWriter: this.noteWriter,
       mediaDownloader: this.mediaDownloader,
       ensuredFolders: this.ensuredFolders,
+    });
+    this.tiktokWriter = new TikTokRecordWriter({
+      vault: opts.vault,
+      syncFolder: opts.syncFolder,
+      log: this.log,
+      index: this.index,
+      noteWriter: this.noteWriter,
+      mediaDownloader: this.mediaDownloader,
+      ensuredFolders: this.ensuredFolders,
+      tiktokWc: opts.tiktokWebview,
     });
   }
 
@@ -150,7 +159,7 @@ export class VaultWriter {
         if (platform === "twitter") {
           await this.twitterWriter.writeTwitterRecord(record);
         } else if (platform === "tiktok") {
-          await this.writeTikTokRecord(record);
+          await this.tiktokWriter.writeTikTokRecord(record);
         } else {
           await this.noteWriter.writeGenericRecord(record);
         }
@@ -174,90 +183,6 @@ export class VaultWriter {
       this.log(`Batch done: ${records.length} in ${(batchElapsed / 1000).toFixed(1)}s — total: ${cum.pushed} new, ${cum.resynced} resync, ${cum.skipped - cum.resynced} skip (${cum.processed} processed)`);
     }
     return { pushed, skipped, resynced };
-  }
-
-  private async writeTikTokRecord(record: NormalizedRecord): Promise<void> {
-    const { text, url, published, itemId, handle } = this.noteWriter.extractCommon(record);
-    const media = extractTikTokMedia(record);
-    const folderPath = `${this.syncFolder}/TikTok`;
-    const attachFolder = `${folderPath}/tiktok-${itemId}`;
-
-    await ensureFolder(this.vault, folderPath, this.ensuredFolders);
-    const authorLink = await this.noteWriter.createAuthorNote(handle, "tiktok");
-    const mediaEmbeds: string[] = [];
-
-    // coverFile is set ONLY when the underlying download succeeded — otherwise
-    // frontmatter would reference a file that was never written, producing a
-    // broken-image icon in the gallery. Video still plays because the video
-    // download lives on a separate code path.
-    let coverFile: string | null = null;
-
-    if (media.images.length > 0) {
-      const results = await Promise.all(
-        media.images.map(img =>
-          this.mediaDownloader.downloadAndSave(() => downloadTikTokImage(img.url), attachFolder, `${img.index + 1}.jpg`)
-        )
-      );
-      mediaEmbeds.push(...results.filter(Boolean) as string[]);
-      const firstOk = results.findIndex(r => r);
-      if (firstOk >= 0) coverFile = `${attachFolder}/${media.images[firstOk].index + 1}.jpg`;
-    } else if (media.videoUrl && this.tiktokWc) {
-      const wc = this.tiktokWc;
-      const embed = await this.mediaDownloader.downloadAndSave(() => downloadTikTokVideo(wc, media.videoUrl!), attachFolder, "video.mp4");
-      if (embed) mediaEmbeds.push(embed);
-      if (media.coverUrl) {
-        const coverEmbed = await this.mediaDownloader.downloadAndSave(() => downloadTikTokImage(media.coverUrl!), attachFolder, "cover.jpg");
-        if (coverEmbed) {
-          mediaEmbeds.push(coverEmbed);
-          coverFile = `${attachFolder}/cover.jpg`;
-        }
-      }
-    } else if (media.coverUrl) {
-      const embed = await this.mediaDownloader.downloadAndSave(() => downloadTikTokImage(media.coverUrl!), attachFolder, "cover.jpg");
-      if (embed) {
-        mediaEmbeds.push(embed);
-        coverFile = `${attachFolder}/cover.jpg`;
-      }
-    }
-
-    // Fetch subtitle transcript (best-effort, non-blocking on failure)
-    let subtitle: string | undefined;
-    const subtitleUrl = extractTikTokSubtitleUrl(record);
-    if (subtitleUrl) {
-      const vtt = await downloadTikTokSubtitle(subtitleUrl);
-      if (vtt) {
-        // Cache raw VTT before parsing
-        await ensureFolder(this.vault, attachFolder, this.ensuredFolders);
-        await this.noteWriter.writeSidecar(`${attachFolder}/subtitle.vtt`, vtt);
-        const parsed = parseWebVTT(vtt);
-        if (parsed.length > 10) subtitle = parsed;
-      }
-    }
-
-    await ensureFolder(this.vault, attachFolder, this.ensuredFolders);
-    await this.noteWriter.writeSidecar(`${attachFolder}/raw.json`, JSON.stringify(record.rawData, null, 2));
-
-    const tags = [...new Set(["tiktok", ...media.hashtags, ...(media.collection ? [`collection/${sanitizeFilename(media.collection)}`] : [])])];
-    const fm = buildFrontmatter({
-      roost_id: record.id,
-      title: text.replace(/\n/g, " "),
-      cover: coverFile ? `[[${coverFile}]]` : undefined,
-      platform: "tiktok",
-      author: authorLink,
-      url,
-      collection: media.collection,
-      sound: media.sound ? `${media.sound.title} — ${media.sound.author}` : undefined,
-      published: published ? published.split("T")[0] : undefined,
-      saved: record.saved_at?.split("T")[0],
-      subtitle,
-      tags,
-      stats_plays: media.stats?.plays || undefined,
-      stats_likes: media.stats?.likes || undefined,
-      stats_comments: media.stats?.comments || undefined,
-      stats_shares: media.stats?.shares || undefined,
-      stats_saves: media.stats?.saves || undefined,
-    });
-    await this.noteWriter.writeNote(folderPath, sanitizeFilename(`${handle} - ${itemId}`) + ".md", fm, []);
   }
 
   /**
