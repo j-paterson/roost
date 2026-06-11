@@ -1,5 +1,4 @@
 import * as fs from "fs";
-import * as path from "path";
 import type { Vault } from "obsidian";
 import { vaultBasePath } from "@/lib/vault-utils";
 import { cachePath as roostCachePath, cacheDir } from "@/lib/roost-paths";

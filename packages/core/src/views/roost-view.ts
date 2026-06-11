@@ -1,4 +1,4 @@
-import { ItemView, WorkspaceLeaf, Notice } from "obsidian";
+import { ItemView, WorkspaceLeaf } from "obsidian";
 import { createRoot, type Root } from "react-dom/client";
 import { createElement } from "react";
 import { RoostView as RoostViewComponent } from "@/ui/components/RoostView";

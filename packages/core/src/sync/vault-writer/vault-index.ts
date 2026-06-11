@@ -3,7 +3,7 @@ import type { ElectronWebview } from "@/types/sync";
 import { getSyncFiles, parseRoostId, loadDeletedIds } from "@/lib/vault-utils";
 import { MUSIC_SUBCATEGORIES } from "@/config";
 import { MEDIA_FIELDS } from "@/pipeline/media-pipeline";
-import { ENRICHMENTS, enrichmentVersionField, isVersionStale } from "@/lib/enrichments";
+import { ENRICHMENTS, isVersionStale } from "@/lib/enrichments";
 import { needsArticleBodyBackfill } from "@/lib/article-utils";
 import { sanitizeFilename } from "@/lib/extract";
 import { threadAnchor } from "../thread-fetcher";
@@ -215,7 +215,6 @@ export class VaultIndex {
             }
           }
           if (!threadJsonBlocks) {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const raw = await getRaw() as any;
             if (raw && raw._thread_probed !== true) {
               const hasTail = threadAnchor(raw) || threadAnchor(raw.quoted_status_result?.result);

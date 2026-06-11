@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect } from "vitest";
 import type { App, TFile, BasesEntry } from "obsidian";
 import { TFile as RealTFile } from "obsidian";
 import { resolveImageUrl, resolveVideoUrl, getCoverFolder } from "@/views/feed/card-helpers";

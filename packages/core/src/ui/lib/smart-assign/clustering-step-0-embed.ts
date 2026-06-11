@@ -1,5 +1,4 @@
 import { EMBED_URL } from "@/config";
-import type { EmbeddingCacheEntry, SmartAssignInput } from "@/types/roost";
 import type { StopSignal } from "@/types/sync";
 import { describeItems, resolveFfmpeg } from "@/pipeline/describe-items";
 import { findBinary } from "@/integrations/detect";

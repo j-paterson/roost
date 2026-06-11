@@ -25,7 +25,6 @@ interface OverlayProps {
 
 function ConfirmDeleteOverlay({ kind, categoryName, subcategoryName, itemCount, onConfirm, onCancel }: OverlayProps) {
   const isCategory = kind === "category";
-  const targetName = isCategory ? categoryName : subcategoryName;
   const title = isCategory
     ? `Remove category "${categoryName}"?`
     : `Remove subcategory "${subcategoryName}" from "${categoryName}"?`;

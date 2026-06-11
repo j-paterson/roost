@@ -47,7 +47,6 @@ interface CacheEntry {
   extraction: RecipeExtraction | null;
 }
 
-type RecipeCache = Record<string, CacheEntry>;
 
 interface RecipeCandidate {
   roostId: string;
@@ -156,29 +155,6 @@ function gatherCandidates(app: App, syncFolder: string): RecipeCandidate[] {
   }
 
   return candidates;
-}
-
-// ── Quality scoring ──
-
-type RecipeQuality = "complete" | "partial" | "minimal";
-
-function scoreQuality(recipe: RecipeExtraction, c: RecipeCandidate): RecipeQuality {
-  const ings = recipe.ingredients;
-  if (ings.length === 0) return "minimal";
-
-  const VAGUE = new Set(["null", "none", "as needed", "to taste", "some", "a little", "a bit"]);
-  const withQty = ings.filter(i =>
-    i.qty && !VAGUE.has(i.qty.toLowerCase()),
-  ).length;
-  const qtyRatio = withQty / ings.length;
-
-  const hasSteps = recipe.steps.length >= 2;
-  const hasTranscript = c.subtitle.length > 50;
-  const hasDescription = c.description.length > 100;
-
-  if (qtyRatio >= 0.6 && hasSteps) return "complete";
-  if (qtyRatio >= 0.3 || (hasSteps && (hasTranscript || hasDescription))) return "partial";
-  return "minimal";
 }
 
 // ── Triage ──

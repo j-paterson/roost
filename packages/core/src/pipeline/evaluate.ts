@@ -17,7 +17,6 @@ import { cosineSimilarity, computeCentroid, computeWeightedCentroid, computeCohe
 import type { AssignedBy } from "@/lib/vault-utils";
 import { resolveTaxonomy, type CategoryTaxonomy } from "@/pipeline/taxonomy";
 import * as fs from "fs";
-import * as path from "path";
 import * as crypto from "crypto";
 
 // Ensemble rerank (Phase 3): T1_letter on top-5 + T2_json on top-7, fused

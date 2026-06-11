@@ -1,6 +1,5 @@
 import { describe, it, expect, afterEach, beforeEach } from "vitest";
 import { __setRequestUrlImpl, __resetRequestUrlImpl } from "obsidian";
-import type { RequestUrlResponse } from "obsidian";
 import { writeClusterToMemory, type WriterCluster } from "../writer";
 import { parseConcept } from "../parser";
 
@@ -47,15 +46,6 @@ function makeFakeApp() {
   };
 }
 
-function mkOllamaResponse(text: string): RequestUrlResponse {
-  return {
-    status: 200,
-    headers: {},
-    arrayBuffer: new ArrayBuffer(0),
-    json: { response: text, done: true },
-    text: JSON.stringify({ response: text, done: true }),
-  };
-}
 
 function mkCluster(overrides: Partial<WriterCluster> = {}): WriterCluster {
   return {

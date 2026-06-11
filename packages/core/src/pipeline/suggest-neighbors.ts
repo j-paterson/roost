@@ -3,7 +3,7 @@
  * find similar items in the source group that might also belong in the target.
  */
 import type { EmbeddingCacheEntry } from "@/types/roost";
-import { cosineSimilarity, computeCentroid, fusedSimilarity } from "@/pipeline/shared";
+import { computeCentroid, fusedSimilarity } from "@/pipeline/shared";
 
 export interface NeighborSuggestion {
   itemId: string;

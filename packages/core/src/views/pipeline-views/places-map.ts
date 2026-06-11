@@ -14,7 +14,6 @@
  * Leaflet integration) inside the registry shape so the gallery can
  * dispatch to it via the same path as Media's substitute view.
  */
-import type { BasesEntry } from "obsidian";
 import { getRoostId } from "@/lib/bases-entry";
 import { loadPipelineCache } from "@/pipeline/shared";
 import { buildMapPins, renderPlacesMap, type PlacesMapController } from "@/views/places-map";

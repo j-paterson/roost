@@ -27,7 +27,7 @@ interface StagingPanelProps {
 
 export function StagingPanel({
   store, forceToggle, sliderSplitIds, absorbedIds, nodeCollectionMap,
-  collections, proposedCollections, matchedToCollections, matchDetailMap, topicNames, proposedFolders, noiseFolder,
+  proposedCollections, matchedToCollections, matchDetailMap, topicNames, proposedFolders, noiseFolder,
   assignedSubcategories,
   itemTitles,
   editableFolderIds,

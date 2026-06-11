@@ -15,7 +15,6 @@ import { vaultBasePath } from "@/lib/vault-utils";
 import { cachePath, cacheDir } from "@/lib/roost-paths";
 import { EMBED_CONCURRENCY, TAXONOMY_MIN_CLUSTER_SIZE } from "@/config";
 import * as fs from "fs";
-import * as path from "path";
 import * as crypto from "crypto";
 
 export interface CategoryTaxonomy {

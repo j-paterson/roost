@@ -1,4 +1,4 @@
-import { Notice, TFile } from "obsidian";
+import { Notice } from "obsidian";
 import type { IRoostPlugin } from "@/types/plugin";
 import { updateNoteFrontmatter, type FrontmatterValue } from "@/lib/vault-helpers";
 

@@ -30,7 +30,6 @@ function setFeedMuted(next: boolean) {
   feedMuted = next;
   for (const l of muteListeners) l(next);
 }
-function isFeedMuted(): boolean { return feedMuted; }
 
 export type FeedPlatform = "tiktok" | "x" | "default";
 
@@ -208,29 +207,4 @@ function renderFeedTikTok(
       container.removeClass("roost-feed-item-tiktok");
     },
   };
-}
-
-/** @deprecated Use renderFeedItem */
-function renderFeedX(
-  container: HTMLElement,
-  entry: BasesEntry,
-  ctx: FeedRenderContext,
-): FeedItemHandle {
-  return renderFeedExpandedItem(container, entry, ctx, {
-    itemClass: "roost-feed-item-x",
-    frameClass: "roost-feed-x-frame",
-    cardClass: "roost-feed-x-card",
-  });
-}
-
-/** @deprecated Use renderFeedItem */
-function renderFeedDefault(
-  container: HTMLElement,
-  entry: BasesEntry,
-  ctx: FeedRenderContext,
-): FeedItemHandle {
-  return renderFeedExpandedItem(container, entry, ctx, {
-    itemClass: "roost-feed-item-default",
-    cardClass: "roost-feed-item-default-card",
-  });
 }

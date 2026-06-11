@@ -1,5 +1,5 @@
 import { Vault, TFile } from "obsidian";
-import { buildFrontmatter, ensureFolder, ensureAuthorNote, updateNoteFrontmatter, type FrontmatterValue } from "@/lib/vault-helpers";
+import { buildFrontmatter, ensureAuthorNote, updateNoteFrontmatter, type FrontmatterValue } from "@/lib/vault-helpers";
 import { getEnrichmentById, enrichmentVersionField, type EnrichmentId } from "@/lib/enrichments";
 import { getBookmarkPlatform, getBookmarkItemId, extractBookmarkText, extractBookmarkAuthor, extractBookmarkAuthorUsername, extractBookmarkUrl, extractBookmarkPublishedAt, sanitizeFilename } from "../../lib/extract";
 import { articleWordCount, type ArticleResultRaw } from "@/lib/article-extract";

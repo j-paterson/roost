@@ -12,11 +12,8 @@ export class TFile {}
 export class TFolder {}
 export class Modal {}
 export class SuggestModal<T> extends Modal {
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   getSuggestions(_query: string): T[] { return []; }
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   renderSuggestion(_item: T, _el: HTMLElement): void {}
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   onChooseSuggestion(_item: T, _evt: MouseEvent | KeyboardEvent): void {}
 }
 export class Notice {}

@@ -133,7 +133,6 @@ export class RoostSettingTab extends PluginSettingTab {
   constructor(app: App, plugin: IPlugin) {
     // PluginSettingTab requires Plugin (concrete class), but IPlugin is a structural
     // interface — the cast is unavoidable without coupling settings to main.ts.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     super(app, plugin as any);
     this.plugin = plugin;
   }

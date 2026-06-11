@@ -14,10 +14,8 @@ export async function exportXCookies(getWebviewManager: () => WebviewManager): P
     return;
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let remote: any;
   try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
     remote = require("@electron/remote");
   } catch (e) {
     new Notice(
@@ -26,7 +24,6 @@ export async function exportXCookies(getWebviewManager: () => WebviewManager): P
     return;
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const wvEl = wv as any;
   let wcId: number;
   try {
@@ -42,7 +39,6 @@ export async function exportXCookies(getWebviewManager: () => WebviewManager): P
     return;
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let rawCookies: any[];
   try {
     rawCookies = await webContents.session.cookies.get({ url: "https://x.com" });

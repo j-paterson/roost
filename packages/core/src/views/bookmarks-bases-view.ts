@@ -25,7 +25,6 @@ import { rebuildGalleryGrid } from "@/views/gallery-grid-render";
 import {
   bindGalleryGridRenderHost,
   bindGalleryGridStateSource,
-  type GalleryGridConfigAccess,
 } from "@/views/gallery-grid-host";
 import { galleryEntryAtIndex, findGalleryEntryByRoostId } from "@/views/gallery-entry-index";
 import {

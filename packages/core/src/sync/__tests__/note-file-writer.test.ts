@@ -49,20 +49,6 @@ function makeGenericRecord(overrides?: Partial<NormalizedRecord>): NormalizedRec
   };
 }
 
-function makeWriter(files: Map<string, string>): NoteFileWriter {
-  const { vault } = makeFakeVault();
-  // Share the same files map so seedNote works with the index too
-  const ensuredFolders = new Set<string>();
-  const index = makeMinimalIndex(files);
-  return new NoteFileWriter({
-    vault: vault as any,
-    syncFolder: "Bookmarks",
-    log: () => {},
-    index,
-    ensuredFolders,
-  });
-}
-
 // ── Test 1: writeGenericRecord output ─────────────────────────────────────────
 
 describe("NoteFileWriter.writeGenericRecord", () => {

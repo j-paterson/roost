@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import type { App, TFile, BasesEntry } from "obsidian";
+import type { App, TFile } from "obsidian";
 import { TFile as RealTFile } from "obsidian";
 import {
   sourceUrlFromFrontmatter,

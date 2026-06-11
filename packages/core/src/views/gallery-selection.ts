@@ -196,7 +196,6 @@ export class GallerySelectionController {
       setTimeout(() => {
         const targetX = sidebarRect.left + sidebarRect.width / 2;
         const targetY = sidebarRect.top + sidebarRect.height / 2;
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (animate as any)(clone, {
           left: `${targetX - 16}px`,
           top: `${targetY - 8}px`,

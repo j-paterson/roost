@@ -91,7 +91,6 @@ interface CacheEntry {
   deepLink?: DeepLinkResolution;
 }
 
-type MediaCache = Record<string, CacheEntry>;
 
 interface MediaCandidate {
   roostId: string;

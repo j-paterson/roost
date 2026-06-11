@@ -11,7 +11,7 @@
  *
  * See plans/006-vault-writer-characterization-tests.md for the full plan.
  */
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect } from "vitest";
 import { VaultWriter } from "../vault-writer";
 import { makeFakeVault } from "./fake-vault";
 import type { NormalizedRecord } from "@/lib/normalize";
@@ -123,7 +123,7 @@ describe("VaultWriter.rewriteNoteBody — guard-rails", () => {
     "note exists but has NO frontmatter: resolves, content is unchanged " +
     "(fmEnd < 0 → skip-rather-than-corrupt guard)",
     async () => {
-      const { vault, files, seedNote } = makeFakeVault();
+      const { vault, files } = makeFakeVault();
       const writer = new VaultWriter({ vault: vault as any, syncFolder: "Bookmarks", onLog: () => {} });
 
       // First write a proper note so the note path is known in the vault.
@@ -149,7 +149,7 @@ describe("VaultWriter.rewriteNoteBody — guard-rails", () => {
 
 describe("VaultWriter.getExistingIds", () => {
   it("returns IDs of notes inside the sync folder, excludes notes outside", async () => {
-    const { vault, files, seedNote } = makeFakeVault();
+    const { vault, seedNote } = makeFakeVault();
 
     // Two notes inside the sync folder with roost_id frontmatter
     seedNote(

@@ -17,10 +17,6 @@ export interface FolderData {
 
 const COLLECTION_PREFIX = "collection-";
 
-function isCollectionId(id: string): boolean {
-  return id.startsWith(COLLECTION_PREFIX);
-}
-
 export function makeCollectionId(name: string): string {
   return `${COLLECTION_PREFIX}${name}`;
 }
