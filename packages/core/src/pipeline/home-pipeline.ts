@@ -22,6 +22,10 @@ import {
   loadPipelineCache,
   savePipelineCache,
 } from "@/pipeline/shared";
+import {
+  runCategoryPipeline,
+  type CategoryPipelineConfig,
+} from "@/pipeline/run-category-pipeline";
 
 // ── Types ──
 
@@ -392,111 +396,54 @@ interface HomePipelineResult {
   errors: number;
 }
 
+/** Home wiring for {@link runCategoryPipeline} — products family (tag
+ *  fast-path, triage-throw → skip, extract-failure → demote); result key is `ideas`. */
+const HOME_CONFIG: CategoryPipelineConfig<
+  HomeCandidate,
+  HomeExtraction,
+  "home" | "skip",
+  HomePipelineResult
+> = {
+  cacheFile: CACHE_FILE,
+  concurrency: CONCURRENCY,
+  extractVerdict: "home",
+  skipVerdict: "skip",
+  onExtractFailure: "demote",
+  onTriageFailure: "skip",
+  gatherCandidates,
+  fastPathTriage: c => (hasHomeFastPath(c.tags) ? "home" : null),
+  triageItem,
+  extractItem: extractHome,
+  onExtractError: (roostId, err) =>
+    console.warn(`[roost] home: extraction error for ${roostId}:`, err),
+  writeToBookmark: (app, c, ex) => writeHomeToBookmark(app, c.file, ex),
+  buildResult: (candidates, cache, errors) => ({
+    candidates: candidates.length,
+    ideas: candidates.filter(
+      c => cache[c.roostId]?.triage === "home" && cache[c.roostId]?.extraction,
+    ).length,
+    skipped: candidates.filter(c => cache[c.roostId]?.triage === "skip").length,
+    errors,
+  }),
+  log: {
+    candidatesFound: n => `Found ${n} home/interior candidates`,
+    triageExtractCounts: (uncached, needExtract, complete) =>
+      `${uncached} need triage, ${needExtract} need extraction (${complete} complete)`,
+    fastPath: n => `Tag fast-path: ${n} items auto-triaged as home`,
+    triageProgress: (done, total) => `Triaged ${done}/${total}`,
+    wroteCached: n => `Wrote ${n} cached home ideas`,
+    extracting: n => `Extracting ${n} home ideas...`,
+    extractProgress: (done, total) => `Extracted ${done}/${total}`,
+    done: r => `Done: ${r.ideas} home ideas, ${r.skipped} skipped, ${r.errors} errors`,
+  },
+};
+
 export async function runHomePipeline(
   app: App,
   syncFolder: string,
   onLog?: (msg: string) => void,
 ): Promise<HomePipelineResult> {
-  const log = onLog || (() => {});
-  const vault = app.vault;
-  const cache = loadPipelineCache<CacheEntry>(vault, CACHE_FILE);
-
-  // 1. Gather candidates
-  log("Scanning bookmarks...");
-  const candidates = gatherCandidates(app, syncFolder);
-  log(`Found ${candidates.length} home/interior candidates`);
-
-  const uncached = candidates.filter(c => !cache[c.roostId]);
-  const needExtract = candidates.filter(
-    c => cache[c.roostId]?.triage === "home" && !cache[c.roostId]?.extraction,
-  ).length;
-  log(`${uncached.length} need triage, ${needExtract} need extraction (${candidates.length - uncached.length - needExtract} complete)`);
-
-  // 2. Triage — tag fast-path + LLM
-  let fastCount = 0;
-  for (const c of uncached) {
-    if (hasHomeFastPath(c.tags)) {
-      cache[c.roostId] = { triage: "home", extraction: null };
-      fastCount++;
-    }
-  }
-  if (fastCount > 0) {
-    savePipelineCache(vault, CACHE_FILE, cache);
-    log(`Tag fast-path: ${fastCount} items auto-triaged as home`);
-  }
-
-  const needTriage = uncached.filter(c => !cache[c.roostId]);
-  if (needTriage.length > 0) {
-    log(`Triaging ${needTriage.length} items...`);
-    for (let i = 0; i < needTriage.length; i += CONCURRENCY) {
-      const batch = needTriage.slice(i, i + CONCURRENCY);
-      const results = await Promise.all(
-        batch.map(c => triageItem(c).catch(() => "skip" as const)),
-      );
-      for (let j = 0; j < batch.length; j++) {
-        cache[batch[j].roostId] = { triage: results[j], extraction: null };
-      }
-      savePipelineCache(vault, CACHE_FILE, cache);
-      log(`Triaged ${Math.min(i + CONCURRENCY, needTriage.length)}/${needTriage.length}`);
-    }
-  }
-
-  // 3. Backfill previously cached home ideas onto their source bookmarks
-  const alreadyCached = candidates.filter(
-    c => cache[c.roostId]?.triage === "home" && cache[c.roostId]?.extraction,
-  );
-  let writtenCount = 0;
-  for (const c of alreadyCached) {
-    const extraction = cache[c.roostId].extraction!;
-    await writeHomeToBookmark(app, c.file, extraction);
-    writtenCount++;
-  }
-  if (alreadyCached.length > 0) {
-    log(`Wrote ${alreadyCached.length} cached home ideas`);
-  }
-
-  // 4. Extract new ideas
-  const toExtract = candidates.filter(
-    c => cache[c.roostId]?.triage === "home" && !cache[c.roostId]?.extraction,
-  );
-  let errors = 0;
-
-  if (toExtract.length > 0) {
-    log(`Extracting ${toExtract.length} home ideas...`);
-    for (let i = 0; i < toExtract.length; i += CONCURRENCY) {
-      const batch = toExtract.slice(i, i + CONCURRENCY);
-      const results = await Promise.all(
-        batch.map(c => extractHome(c).catch((err) => {
-          console.warn(`[roost] home: extraction error for ${c.roostId}:`, err);
-          return null;
-        })),
-      );
-
-      for (let j = 0; j < batch.length; j++) {
-        const extraction = results[j];
-        if (extraction) {
-          cache[batch[j].roostId] = { triage: "home", extraction };
-          await writeHomeToBookmark(app, batch[j].file, extraction);
-          writtenCount++;
-        } else {
-          cache[batch[j].roostId] = { triage: "skip", extraction: null };
-          errors++;
-        }
-      }
-
-      savePipelineCache(vault, CACHE_FILE, cache);
-      log(`Extracted ${Math.min(i + CONCURRENCY, toExtract.length)}/${toExtract.length}`);
-    }
-  }
-
-  const skipped = candidates.filter(c => cache[c.roostId]?.triage === "skip").length;
-
-  return {
-    candidates: candidates.length,
-    ideas: writtenCount,
-    skipped,
-    errors,
-  };
+  return runCategoryPipeline(app, syncFolder, HOME_CONFIG, onLog);
 }
 
 // ─── Cache reconstruction ─────────────────────────────────────────────────────
