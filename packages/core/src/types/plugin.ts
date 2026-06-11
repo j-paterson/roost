@@ -56,6 +56,17 @@ export interface IRoostPlugin {
   /** Subscribe to bulkWriteInProgress flag changes. Returns an unsubscribe function. */
   onBulkWriteChange(fn: (value: boolean) => void): () => void;
 
+  /** Auth-cookie probe result per platform — the real "logged in?" signal,
+   *  independent of whether a sync has ever completed. "unknown" until probed.
+   *  Updated by refreshAuthStatus(); read by the hub's useHubState. */
+  authStatus: Record<"tiktok" | "twitter", "connected" | "logged-out" | "unknown">;
+  /** Re-probe webview auth cookies, update authStatus, trigger a Hub re-render.
+   *  Safe to call repeatedly. */
+  refreshAuthStatus(): Promise<void>;
+  /** Disconnect a platform: clear its webview session (cookies) + stored sync
+   *  state so it returns to the unconfigured/Connect state. */
+  disconnectPlatform(platform: "tiktok" | "twitter"): Promise<void>;
+
   runSync(platform: "tiktok" | "twitter"): Promise<void>;
   runEagleImport(): Promise<void>;
   activateHubLeaf(): Promise<void>;

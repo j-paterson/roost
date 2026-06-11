@@ -30,6 +30,18 @@ type ProductCategory =
   | "tech" | "fashion" | "beauty" | "kitchen" | "fitness"
   | "home" | "outdoor" | "office" | "kids" | "other";
 
+const PRODUCT_CATEGORY_VALUES: readonly ProductCategory[] = [
+  "tech", "fashion", "beauty", "kitchen", "fitness", "home", "outdoor", "office", "kids", "other",
+];
+
+/** Narrow an arbitrary frontmatter value to a ProductCategory, defaulting to
+ *  "other" for missing/unknown values (the union's catch-all). */
+function asProductCategory(v: unknown): ProductCategory {
+  return typeof v === "string" && (PRODUCT_CATEGORY_VALUES as readonly string[]).includes(v)
+    ? (v as ProductCategory)
+    : "other";
+}
+
 interface ProductExtraction {
   productType: ProductCategory;
   name: string;
@@ -88,7 +100,7 @@ const CONCURRENCY = 3;
 
 const PRODUCT_PIPELINE_VERSION = 1;
 
-export const PRODUCT_FIELDS = {
+const PRODUCT_FIELDS = {
   name: "product_name",
   brand: "product_brand",
   type: "product_type",
@@ -324,7 +336,7 @@ export function computeProductBackfillFields(
   return updates;
 }
 
-export async function writeProductToBookmark(
+async function writeProductToBookmark(
   app: App,
   file: TFile,
   extraction: ProductExtraction,
@@ -474,7 +486,7 @@ export function reconstructProductsCache(
       extraction: {
         name: String(fm.product_name ?? "Unknown"),
         brand: typeof fm.product_brand === "string" ? fm.product_brand : "",
-        productType: typeof fm.product_type === "string" ? fm.product_type : "",
+        productType: asProductCategory(fm.product_type),
         price: typeof fm.product_price === "string" ? fm.product_price : null,
         rating: typeof fm.product_rating === "string" ? fm.product_rating : null,
         whereToBuy: typeof fm.product_where_to_buy === "string" ? fm.product_where_to_buy : null,

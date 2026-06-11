@@ -38,7 +38,6 @@ const MUSIC_SERVICES: Array<{
   { label: "Bandcamp", match: "bandcamp", buildUrl: (q) => `https://bandcamp.com/search?q=${q}` },
 ];
 
-type SourceKind = "spotify" | "tiktok" | "x-post";
 type SourceDescriptor =
   | { kind: "spotify"; trackId: string }
   | { kind: "tiktok"; videoUrl: string }

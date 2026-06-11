@@ -10,7 +10,6 @@ import type { EmbeddingCacheEntry } from "@/types/roost";
 import type { StopSignal } from "@/types/sync";
 import type { Embedder } from "@/lib/embedder";
 import { loadEmbeddingCache, saveEmbeddingCache } from "@/pipeline/shared";
-import { extractTikTokSubtitleUrl, parseWebVTT } from "@/lib/extract";
 
 import { OLLAMA_URL, EMBED_CONCURRENCY, VISION_MODEL, EVAL_MODEL, TOPIC_MODEL, OLLAMA_NUM_CTX } from "@/config";
 import * as fs from "fs";
@@ -65,7 +64,6 @@ export async function describeItems(opts: DescribeOpts): Promise<{ processed: nu
 
   // Fast scan: use metadata cache to find items needing embedding (no file reads)
   // vault.app is a private Obsidian property with no public type — cast is necessary.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const app: App | undefined = opts.app || (vault as any).app;
   const files = getSyncFiles(vault, syncFolder);
   const needsEmbedding: TFile[] = [];
@@ -176,27 +174,29 @@ async function embedItem(
       try {
         const duration = getVideoDuration(ff.ffprobe, item.mp4Path);
         if (duration && duration >= 1) {
-          const framePaths = extractKeyframes(ff.ffmpeg, item.mp4Path, duration);
-          if (framePaths.length > 0) {
-            const images = framePaths.map(fp => {
-              const data = fs.readFileSync(fp);
-              return data.toString("base64");
-            });
-            const res = await requestUrl({
-              url: `${ollama}/api/generate`,
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                model: EVAL_MODEL,
-                prompt: "These are frames from the beginning, middle, and end of a short video. Describe what happens in 2-3 sentences. Start with the subject, not 'The video shows'. Be specific about the subject matter, actions, and any changes between frames.",
-                images,
-                stream: false,
-                options: { num_ctx: OLLAMA_NUM_CTX },
-              }),
-            });
-            entry.vision = (res.json?.response || "").trim().slice(0, 800) || null;
-            // Clean up temp frames
-            for (const fp of framePaths) try { fs.unlinkSync(fp); } catch {}
+          const { tmpDir, framePaths } = extractKeyframes(ff.ffmpeg, item.mp4Path, duration);
+          try {
+            if (framePaths.length > 0) {
+              const images = framePaths.map(fp => {
+                const data = fs.readFileSync(fp);
+                return data.toString("base64");
+              });
+              const res = await requestUrl({
+                url: `${ollama}/api/generate`,
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  model: EVAL_MODEL,
+                  prompt: "These are frames from the beginning, middle, and end of a short video. Describe what happens in 2-3 sentences. Start with the subject, not 'The video shows'. Be specific about the subject matter, actions, and any changes between frames.",
+                  images,
+                  stream: false,
+                  options: { num_ctx: OLLAMA_NUM_CTX },
+                }),
+              });
+              entry.vision = (res.json?.response || "").trim().slice(0, 800) || null;
+            }
+          } finally {
+            fs.rmSync(tmpDir, { recursive: true, force: true });
           }
         }
       } catch {
@@ -291,7 +291,7 @@ function getVideoDuration(ffprobe: string, mp4Path: string): number | null {
   } catch { return null; }
 }
 
-function extractKeyframes(ffmpeg: string, mp4Path: string, duration: number): string[] {
+function extractKeyframes(ffmpeg: string, mp4Path: string, duration: number): { tmpDir: string; framePaths: string[] } {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "roost-frames-"));
   const framePaths: string[] = [];
   for (const [i, pos] of [0.25, 0.5, 0.75].entries()) {
@@ -308,7 +308,7 @@ function extractKeyframes(ffmpeg: string, mp4Path: string, duration: number): st
       }
     } catch {}
   }
-  return framePaths;
+  return { tmpDir, framePaths };
 }
 
 function filterTags(tags: string[]): string[] {

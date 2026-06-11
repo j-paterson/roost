@@ -16,7 +16,7 @@ export interface ExplorerFolderFilterHost {
   onDataUpdated(): void;
 }
 
-export function applyExplorerFolderFilter(host: ExplorerFolderFilterHost): void {
+function applyExplorerFolderFilter(host: ExplorerFolderFilterHost): void {
   const entries = host.getEntries();
   if (!entries) return;
   const folder = host.getFolderFilter();

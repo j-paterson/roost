@@ -21,7 +21,7 @@ export interface GalleryToolbarHandlers {
   onViewModeToggle: () => void;
 }
 
-export function filterToolbarTitle(filter: RoostFilter): string {
+function filterToolbarTitle(filter: RoostFilter): string {
   if (!filter) return "All Bookmarks";
   if (filter.category !== undefined) {
     const cat = filter.category;

@@ -1,8 +1,6 @@
-import * as fs from "fs";
-import * as path from "path";
 import type {
   RecipeExtraction, PlaceExtraction, MediaExtraction, ProductExtraction,
-  WorkoutExtraction, TutorialExtraction, HomeExtraction, PipelineCacheEntry,
+  WorkoutExtraction, TutorialExtraction, HomeExtraction,
 } from "@/types/roost";
 
 export function makeRecipeExtraction(overrides: Partial<RecipeExtraction> = {}): RecipeExtraction {
@@ -128,31 +126,3 @@ export function makeHomeExtraction(overrides: Partial<HomeExtraction> = {}): Hom
   };
 }
 
-export interface RawPost {
-  id: string;
-  text: string;
-  author: string;
-  url?: string;
-  platform?: "tiktok" | "x";
-}
-
-export function makeRawPost(overrides: Partial<RawPost> = {}): RawPost {
-  return {
-    id: "post_abc12345",
-    text: "How to make perfect cacio e pepe at home.",
-    author: "@pastanight",
-    url: "https://example.com/post/1",
-    platform: "tiktok",
-    ...overrides,
-  };
-}
-
-export function seedPipelineCache(
-  vaultBase: string,
-  cacheFile: string,
-  entries: Record<string, PipelineCacheEntry>,
-): void {
-  const dir = path.join(vaultBase, ".roost", "cache");
-  fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(path.join(dir, cacheFile), JSON.stringify(entries, null, 2));
-}

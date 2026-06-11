@@ -74,6 +74,11 @@ function progressDetail(p: SyncProgress): string {
   if (p.phase === "scoring") return `${p.written} / ${p.count} items scored`;
   if (p.phase === "writing") return `${p.written} / ${p.count} items written`;
   if (p.phase === "renaming") return `${p.written} / ${p.count} items renamed`;
+  // enrich/articles report `count` as the current-item index against `total`
+  // (the opposite of scroll phases), so render count/total directly rather
+  // than the cumulative processed-count default below.
+  if (p.phase === "enrich") return `enriching threads ${p.count} / ${p.total ?? p.count}`;
+  if (p.phase === "articles") return `fetching articles ${p.count} / ${p.total ?? p.count}`;
   const total = p.written + p.resynced + p.skipped;
   const parts = [
     p.written > 0 && `${p.written} new`,
@@ -86,6 +91,11 @@ function progressDetail(p: SyncProgress): string {
 }
 
 function progressBarPct(p: SyncProgress): number {
+  // enrich/articles: count is the current-item index against `total`.
+  if (p.phase === "enrich" || p.phase === "articles") {
+    const denom = p.total ?? 0;
+    return denom > 0 ? Math.min(100, (p.count / denom) * 100) : 0;
+  }
   if (p.count <= 0) return 0;
   const done = p.written + p.resynced + p.skipped;
   return Math.min(100, (done / p.count) * 100);
@@ -158,22 +168,32 @@ export function PlatformCard({
   platform,
   state,
   live,
+  loginActive,
   webviewMountRef,
   onConnect,
   onSync,
   onReconnect,
+  onCancelLogin,
+  onDisconnect,
   onBackfill,
   onCancel,
 }: {
   platform: PlatformId;
   state: PlatformState;
-  live: LiveSync | null;
-  webviewMountRef: RefObject<HTMLDivElement | null> | null;
+  live?: LiveSync | null;
+  /** True while the login webview is mounted inline in this card. */
+  loginActive?: boolean;
+  webviewMountRef?: RefObject<HTMLDivElement | null> | null;
   onConnect: () => void;
   onSync: () => void;
   onReconnect: () => void;
+  /** Stop/cancel an in-progress inline login. */
+  onCancelLogin?: () => void;
+  /** Clear session + sync state. Omitted for platforms without a session
+   *  (e.g. Eagle); the Disconnect button only renders when provided. */
+  onDisconnect?: () => void;
   onBackfill: (id: string) => void;
-  onCancel: () => void;
+  onCancel?: () => void;
 }) {
   const title = TITLES[platform];
 
@@ -183,7 +203,24 @@ export function PlatformCard({
   if (live && webviewMountRef) {
     return (
       <>
-        <LiveSyncRow platform={platform} live={live} onCancel={onCancel} />
+        <LiveSyncRow platform={platform} live={live} onCancel={onCancel ?? (() => {})} />
+        <LiveSyncPane mountRef={webviewMountRef} />
+      </>
+    );
+  }
+
+  // Inline login: show the embedded platform site (which displays its login
+  // screen while logged out) until the auth probe detects the session.
+  if (loginActive && webviewMountRef) {
+    return (
+      <>
+        <HubRow
+          icon="…"
+          iconTone="text-muted-foreground animate-pulse"
+          title={title}
+          detail="Log in below — Roost will detect it automatically"
+          action={<Button variant="outline" size="sm" onClick={onCancelLogin}>Cancel</Button>}
+        />
         <LiveSyncPane mountRef={webviewMountRef} />
       </>
     );
@@ -229,7 +266,16 @@ export function PlatformCard({
           iconTone="text-emerald-500"
           title={title}
           detail={detail}
-          action={<Button variant="default" size="sm" onClick={onSync}>Sync</Button>}
+          action={
+            <div className="flex items-center gap-2">
+              <Button variant="default" size="sm" onClick={onSync}>Sync</Button>
+              {onDisconnect && (
+                <Button variant="outline" size="xs" onClick={onDisconnect} title="Clear login + sync state for this platform">
+                  Disconnect
+                </Button>
+              )}
+            </div>
+          }
         />
         {backlogRowsFor(platform, state.backlogs).map((row) => (
           <HubRow

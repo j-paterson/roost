@@ -32,7 +32,7 @@ export function resolveBinary(name: string, opts: ResolveBinaryOpts): string | n
 }
 
 /** Common non-PATH install locations for CLI tools (macOS/Linux). */
-export const COMMON_BIN_DIRS = ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin"];
+const COMMON_BIN_DIRS = ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin"];
 
 /** Production binary check: scans real $PATH + COMMON_BIN_DIRS using fs. */
 export function findBinary(name: string): string | null {

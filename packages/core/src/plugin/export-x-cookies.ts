@@ -14,10 +14,8 @@ export async function exportXCookies(getWebviewManager: () => WebviewManager): P
     return;
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let remote: any;
   try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
     remote = require("@electron/remote");
   } catch (e) {
     new Notice(
@@ -26,7 +24,6 @@ export async function exportXCookies(getWebviewManager: () => WebviewManager): P
     return;
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const wvEl = wv as any;
   let wcId: number;
   try {
@@ -42,7 +39,6 @@ export async function exportXCookies(getWebviewManager: () => WebviewManager): P
     return;
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let rawCookies: any[];
   try {
     rawCookies = await webContents.session.cookies.get({ url: "https://x.com" });
@@ -74,8 +70,13 @@ export async function exportXCookies(getWebviewManager: () => WebviewManager): P
   try {
     await navigator.clipboard.writeText(json);
   } catch (e) {
-    new Notice(`Clipboard write failed (${String(e)}). Cookie JSON logged to console — copy from there.`);
-    console.log("[roost export-x-cookies]", json);
+    new Notice(
+      `Clipboard write failed (${String(e)}).\n\n` +
+        `Cookies were NOT logged anywhere. Manual export: open DevTools ` +
+        `(Ctrl+Shift+I) → Application → Cookies → x.com and copy auth_token ` +
+        `and ct0 into tests/e2e/.x-cookies.json yourself.`,
+      12000,
+    );
     return;
   }
 

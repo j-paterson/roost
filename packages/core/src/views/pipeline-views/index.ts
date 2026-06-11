@@ -9,4 +9,3 @@
 import "./media-list";
 import "./places-map";
 
-export { getPipelineGalleryView, type PipelineGalleryView, type PipelineGalleryHandle } from "./registry";

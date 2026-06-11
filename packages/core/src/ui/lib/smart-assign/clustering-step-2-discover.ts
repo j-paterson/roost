@@ -1,13 +1,13 @@
 import { TAXONOMY_EPSILON_DEFAULT } from "@/config";
-import type { EmbeddingCacheEntry, ClassifyProposalData, MatchDetail, SmartAssignInput } from "@/types/roost";
+import type { ClassifyProposalData } from "@/types/roost";
 import type { StopSignal } from "@/types/sync";
 import {
   saveAnchorNameEmbeddings,
   lookupAnchorNameVec,
   fillMissingAnchorNames,
-  type AnchorNameEmbeddingCache,
 } from "@/lib/anchor-name-embeddings";
-import { computeCentroid, computeCohesion, cosineSimilarity } from "@/pipeline/shared";
+import { computeCentroid, computeCohesion } from "@/pipeline/shared";
+import { dedupDiscoveredByCentroid, CENTROID_DEDUP_THRESHOLD } from "@/ui/lib/smart-assign/dedup-discovered";
 import { embedCategories, clusterCategories } from "@/pipeline/taxonomy";
 import {
   discoverCategories,
@@ -58,43 +58,12 @@ export async function runClusteringStep2DiscoverAndScore(
     const existingNames = new Set(Object.keys(ctx.collections));
     let discovered = discoverCategories(ctx.phase1Unmatched, ctx.cache, existingNames, host.log, taxonomy);
 
-    if (discovered.length > 1) {
-      const DEDUP_THRESHOLD = 0.90;
-      type Entry = { d: typeof discovered[number]; centroid: number[] };
-      const entries: Entry[] = [];
-      for (const d of discovered) {
-        const vecs = d.itemIds.map(id => ctx.cache[id]?.vec).filter((v): v is number[] => !!v);
-        if (vecs.length === 0) { entries.push({ d, centroid: [] }); continue; }
-        entries.push({ d, centroid: computeCentroid(vecs) });
-      }
-      entries.sort((a, b) => b.d.itemIds.length - a.d.itemIds.length);
-      const merged = new Set<number>();
-      const mergeLog: string[] = [];
-      for (let i = 0; i < entries.length; i++) {
-        if (merged.has(i) || entries[i].centroid.length === 0) continue;
-        for (let j = i + 1; j < entries.length; j++) {
-          if (merged.has(j) || entries[j].centroid.length === 0) continue;
-          const sim = cosineSimilarity(entries[i].centroid, entries[j].centroid);
-          if (sim >= DEDUP_THRESHOLD) {
-            const keeper = entries[i].d;
-            const absorbed = entries[j].d;
-            const before = keeper.itemIds.length;
-            const seen = new Set(keeper.itemIds);
-            for (const id of absorbed.itemIds) if (!seen.has(id)) keeper.itemIds.push(id);
-            merged.add(j);
-            mergeLog.push(
-              `  merged ${absorbed.name} (${absorbed.itemIds.length}) → ${keeper.name} ` +
-              `(${before}→${keeper.itemIds.length}, sim ${sim.toFixed(3)})`,
-            );
-          }
-        }
-      }
-      if (merged.size > 0) {
-        host.log(`\nCentroid dedup: merged ${merged.size} proposal(s) at cosine ≥${DEDUP_THRESHOLD}`);
-        for (const line of mergeLog) host.log(line);
-        discovered = entries.filter((_, i) => !merged.has(i)).map(e => e.d);
-      }
+    const dedup = dedupDiscoveredByCentroid(discovered, ctx.cache);
+    if (dedup.mergedCount > 0) {
+      host.log(`\nCentroid dedup: merged ${dedup.mergedCount} proposal(s) at cosine ≥${CENTROID_DEDUP_THRESHOLD}`);
+      for (const line of dedup.mergeLog) host.log(line);
     }
+    discovered = dedup.discovered;
 
     if (discovered.length > 0) {
       host.setPipelineStep(3);

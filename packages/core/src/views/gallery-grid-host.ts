@@ -10,7 +10,9 @@ import type { GalleryCardConfig } from "@/views/gallery-cards";
 
 export interface GalleryGridConfigAccess {
   get(key: string): unknown;
-  getAsPropertyId(key: string): string;
+  // Matches Obsidian's BasesViewConfig.getAsPropertyId, which returns
+  // `BasesPropertyId | null`. Consumers already coalesce with `?? "note.cover"`.
+  getAsPropertyId(key: string): string | null;
 }
 
 /** Mutable + readonly inputs for a single grid rebuild pass. */

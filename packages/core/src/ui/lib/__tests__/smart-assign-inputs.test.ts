@@ -137,11 +137,8 @@ describe("buildSubcategorizeInput", () => {
     ]);
     const result = buildSubcategorizeInput(app, "Bookmarks", "Media List", [], {
       embeddingCache: {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         a: { vision: null, summary: null, category: "Music", vec: null } as any,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         b: { vision: null, summary: null, category: "Music", vec: null } as any,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         c: { vision: null, summary: null, category: "Book", vec: null } as any,
       },
       minCount: 1,
@@ -157,7 +154,6 @@ describe("buildSubcategorizeInput", () => {
       { path: "Bookmarks/a.md", fm: { roost_id: "a", roost_category: "Media List" } },
     ]);
     const result = buildSubcategorizeInput(app, "Bookmarks", "Media List", [], {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       embeddingCache: { a: { vision: null, summary: null, category: null, vec: null } as any },
       minCount: 1,
     });

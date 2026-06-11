@@ -25,12 +25,11 @@ import { resolveImageUrl, resolveVideoUrl, resolveAllImages } from "@/views/feed
  *  Persisted only for the lifetime of the plugin process. */
 let feedMuted = true;
 const muteListeners = new Set<(muted: boolean) => void>();
-export function setFeedMuted(next: boolean) {
+function setFeedMuted(next: boolean) {
   if (next === feedMuted) return;
   feedMuted = next;
   for (const l of muteListeners) l(next);
 }
-export function isFeedMuted(): boolean { return feedMuted; }
 
 export type FeedPlatform = "tiktok" | "x" | "default";
 
@@ -136,7 +135,7 @@ export function renderFeedItem(
   });
 }
 
-export function renderFeedTikTok(
+function renderFeedTikTok(
   container: HTMLElement,
   entry: BasesEntry,
   ctx: FeedRenderContext,
@@ -208,29 +207,4 @@ export function renderFeedTikTok(
       container.removeClass("roost-feed-item-tiktok");
     },
   };
-}
-
-/** @deprecated Use renderFeedItem — kept for tests that import platform renderers directly. */
-export function renderFeedX(
-  container: HTMLElement,
-  entry: BasesEntry,
-  ctx: FeedRenderContext,
-): FeedItemHandle {
-  return renderFeedExpandedItem(container, entry, ctx, {
-    itemClass: "roost-feed-item-x",
-    frameClass: "roost-feed-x-frame",
-    cardClass: "roost-feed-x-card",
-  });
-}
-
-/** @deprecated Use renderFeedItem */
-export function renderFeedDefault(
-  container: HTMLElement,
-  entry: BasesEntry,
-  ctx: FeedRenderContext,
-): FeedItemHandle {
-  return renderFeedExpandedItem(container, entry, ctx, {
-    itemClass: "roost-feed-item-default",
-    cardClass: "roost-feed-item-default-card",
-  });
 }

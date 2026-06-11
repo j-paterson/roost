@@ -17,7 +17,6 @@ import { cosineSimilarity, computeCentroid, computeWeightedCentroid, computeCohe
 import type { AssignedBy } from "@/lib/vault-utils";
 import { resolveTaxonomy, type CategoryTaxonomy } from "@/pipeline/taxonomy";
 import * as fs from "fs";
-import * as path from "path";
 import * as crypto from "crypto";
 
 // Ensemble rerank (Phase 3): T1_letter on top-5 + T2_json on top-7, fused
@@ -48,7 +47,7 @@ const PROMPT_VERSION_NONE = "v1-none";
 
 /** Default α for CLIP-text fusion in Smart Assign top-K candidate selection.
  *  Matches the +4pp top-1 lift measured in the 119-item LOO eval (clip-eval-results.json). */
-export const DEFAULT_CLIP_FUSION_ALPHA = 0.5;
+const DEFAULT_CLIP_FUSION_ALPHA = 0.5;
 
 /**
  * Score-cache key digest. Includes:

@@ -96,7 +96,6 @@ function digestHasThreadJson(app: App, folder: string): boolean {
 function resolveDigestAllImages(app: App, entry: BasesEntry): string[] {
   const folder = getCoverFolder(entry);
   if (!folder || resolveVideoUrl(app, entry)) return [];
-  const coverRaw = digestCoverRaw(entry);
   const hasThreadJson = digestHasThreadJson(app, folder);
   const urls: string[] = [];
   for (let i = 1; i <= 20; i++) {

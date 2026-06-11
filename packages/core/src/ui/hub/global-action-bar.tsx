@@ -57,6 +57,25 @@ export function GlobalActionBar({
     );
   }
 
+  // No connected platform yet → a global sync would have nothing to do. Show
+  // guidance + a disabled button instead of a button that silently no-ops.
+  if (!state.global.anythingToUpdate) {
+    return (
+      <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-muted/30">
+        <span className="text-sm text-muted-foreground">Connect a platform below to start syncing</span>
+        <Button
+          variant="secondary"
+          size="sm"
+          disabled
+          aria-label="Connect a platform first"
+          title="Connect TikTok or X/Twitter in the Platforms section below first."
+        >
+          Connect a platform first
+        </Button>
+      </div>
+    );
+  }
+
   const backlogs = countBacklogs(state);
   const platformsReady = countReadyPlatforms(state);
   const subParts: string[] = [];

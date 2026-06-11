@@ -33,7 +33,7 @@ interface ConfirmMergeOverlayProps {
   onCancel: () => void;
 }
 
-export function ConfirmMergeOverlay({ sourceName, targetName, previewTitles, itemCount, title, body, confirmLabel, onConfirm, onCancel }: ConfirmMergeOverlayProps) {
+function ConfirmMergeOverlay({ sourceName, targetName, previewTitles, itemCount, title, body, confirmLabel, onConfirm, onCancel }: ConfirmMergeOverlayProps) {
   const [busy, setBusy] = React.useState(false);
   const handleConfirm = async () => {
     setBusy(true);

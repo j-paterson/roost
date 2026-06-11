@@ -14,7 +14,6 @@
  */
 import { App, TFile, Vault } from "obsidian";
 import * as fs from "fs";
-import * as path from "path";
 import { buildFileIndex, stripWikilink, vaultBasePath } from "@/lib/vault-utils";
 import { cachePath, cacheDir } from "@/lib/roost-paths";
 import { updateNoteFrontmatter, type FrontmatterValue } from "@/lib/vault-helpers";
@@ -508,7 +507,7 @@ export function computePlaceBackfillFields(
   return updates;
 }
 
-export async function writePlaceToBookmark(
+async function writePlaceToBookmark(
   app: App,
   file: TFile,
   extraction: PlaceExtraction,

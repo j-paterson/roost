@@ -88,6 +88,55 @@ describe("deriveHubState — platforms", () => {
   });
 });
 
+describe("deriveHubState — auth-driven connection", () => {
+  it("connected (cookie present) with no sync history → connected-idle, 0 items", () => {
+    const s = deriveHubState({
+      ...baseInputs(),
+      authByPlatform: { tiktok: "connected" },
+    });
+    expect(s.platforms.tiktok.kind).toBe("connected-idle");
+    if (s.platforms.tiktok.kind === "connected-idle") expect(s.platforms.tiktok.itemCount).toBe(0);
+  });
+
+  it("logged-out (cookie gone) with prior sync history → expired-auth", () => {
+    const s = deriveHubState({
+      ...baseInputs(),
+      syncStateByPlatform: { twitter: { complete: true, count: 50, timestamp: 1 } },
+      authByPlatform: { twitter: "logged-out" },
+    });
+    expect(s.platforms.x.kind).toBe("expired-auth");
+    expect(s.global.anythingNeedsAttention).toBe(true);
+  });
+
+  it("logged-out with no history → unconfigured", () => {
+    const s = deriveHubState({ ...baseInputs(), authByPlatform: { tiktok: "logged-out" } });
+    expect(s.platforms.tiktok.kind).toBe("unconfigured");
+  });
+
+  it("connected but last sync incomplete → error (retry)", () => {
+    const s = deriveHubState({
+      ...baseInputs(),
+      syncStateByPlatform: { tiktok: { complete: false, count: 10, timestamp: 1 } },
+      authByPlatform: { tiktok: "connected" },
+    });
+    expect(s.platforms.tiktok.kind).toBe("error");
+  });
+
+  it("unknown auth falls back to sync-history derivation (unchanged behavior)", () => {
+    const s = deriveHubState({
+      ...baseInputs(),
+      syncStateByPlatform: { tiktok: { complete: true, count: 7, timestamp: 1 } },
+      authByPlatform: { tiktok: "unknown" },
+    });
+    expect(s.platforms.tiktok.kind).toBe("connected-idle");
+  });
+
+  it("connected platform makes global.anythingToUpdate true even before first sync", () => {
+    const s = deriveHubState({ ...baseInputs(), authByPlatform: { tiktok: "connected" } });
+    expect(s.global.anythingToUpdate).toBe(true);
+  });
+});
+
 describe("deriveHubState — backlogs", () => {
   it("attaches backlog counts to connected platforms", () => {
     const s = deriveHubState({

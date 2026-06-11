@@ -177,3 +177,31 @@ describe("fetchWithRetry", () => {
     expect(count).toBe(2);
   });
 });
+
+describe("fetchWithRetry timeout", () => {
+  afterEach(() => {
+    __resetRequestUrlImpl();
+  });
+
+  it("times out a hung request and retries the full budget", async () => {
+    let calls = 0;
+    __setRequestUrlImpl(() => {
+      calls++;
+      return new Promise(() => {});
+    });
+
+    await expect(
+      fetchWithRetry({ url: "https://x" }, { timeoutMs: 10, retries: 1, sleep: async () => {} }),
+    ).rejects.toThrow(/timed out/);
+
+    expect(calls).toBe(2);
+  });
+
+  it("fast success is unaffected by the timeout race", async () => {
+    const fakeResponse = mkResponse(200, {});
+    __setRequestUrlImpl(async () => fakeResponse);
+
+    const res = await fetchWithRetry({ url: "https://x" }, { timeoutMs: 1000 });
+    expect(res.status).toBe(200);
+  });
+});

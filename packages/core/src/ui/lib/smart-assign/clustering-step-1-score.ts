@@ -1,5 +1,5 @@
 import type { StopSignal } from "@/types/sync";
-import type { MatchDetail, EmbeddingCacheEntry } from "@/types/roost";
+import type { MatchDetail } from "@/types/roost";
 import type { AssignedBy } from "@/lib/vault-utils";
 import { vaultRoostDir, buildSubcatsByParent } from "@/ui/lib/smart-assign/helpers";
 import {
@@ -7,7 +7,6 @@ import {
   saveAnchorNameEmbeddings,
   lookupAnchorNameVec,
   fillMissingAnchorNames,
-  type AnchorNameEmbeddingCache,
 } from "@/lib/anchor-name-embeddings";
 import {
   scoreAgainstCategories,
