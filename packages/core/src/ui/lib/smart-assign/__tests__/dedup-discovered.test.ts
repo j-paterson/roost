@@ -106,17 +106,7 @@ describe("dedupDiscoveredByCentroid", () => {
   });
 
   it("case 6: de-dups overlapping itemIds on merge", () => {
-    const cache: Record<string, EmbeddingCacheEntry> = {
-      x: entry(vec(1)),
-      y: entry(vec(1)),
-      z: entry(vec(1)),
-    };
-    // keeper has ["x", "y"], absorbed has ["y", "z"] — "y" must not appear twice
-    const keeper = { name: "Keeper", itemIds: ["x", "y"] };
-    const absorbed = { name: "Absorbed", itemIds: ["y", "z"] };
-    // Make keeper larger so it wins the sort (already size 2 > 1... wait, absorbed is size 2 too)
-    // Ensure Keeper is size 2 and Absorbed is size 2 but Keeper sorts first (stable sort preserves order for equal sizes)
-    // Actually let's make Keeper have 3 items to be unambiguous
+    // Keeper has ["x", "y", "w"] and Absorbed has ["y", "z"] — "y" must not appear twice.
     const cache2: Record<string, EmbeddingCacheEntry> = {
       x: entry(vec(1)),
       y: entry(vec(1)),

@@ -65,7 +65,7 @@ export function canonicalizeTitle(raw: string): CanonicalTitle {
   // Year extraction — find the first (YYYY) or [YYYY] in valid film range.
   // We scan all bracketed tokens and take the first valid year found.
   // The matching token is then removed from the title.
-  title = title.replace(/\s*[(\[](\d{4})[)\]]\s*/g, (match, digits, offset, str) => {
+  title = title.replace(/\s*[(\[](\d{4})[)\]]\s*/g, (match, digits) => {
     const parsed = parseInt(digits, 10);
     if (year === null && parsed >= MIN_YEAR && parsed <= MAX_YEAR) {
       year = parsed;

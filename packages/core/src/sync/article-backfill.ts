@@ -321,7 +321,7 @@ export async function runArticleBackfill(plugin: IRoostPlugin): Promise<void> {
 export async function refreshArticleNoteBodies(
   xRoot: string,
   writer: Pick<VaultWriter, "rewriteNoteBody">,
-  log: (msg: string) => void,
+  _log: (msg: string) => void,
 ): Promise<{ refreshed: number; refreshFailed: number }> {
   let refreshed = 0;
   let refreshFailed = 0;

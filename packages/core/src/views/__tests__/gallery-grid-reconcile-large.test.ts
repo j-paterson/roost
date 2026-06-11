@@ -57,7 +57,7 @@ describe("reconcileStandardGrid — large interleaved set", () => {
     const syncKeptCard = () => { syncKeptCount++; };
 
     const createdPlaceholders: number[] = [];
-    const createPlaceholder = (parent: HTMLElement, index: number, height: number) => {
+    const createPlaceholder = (parent: HTMLElement, index: number) => {
       const ph = document.createElement("div");
       ph.className = "roost-card roost-card-placeholder";
       ph.dataset.idx = String(index);

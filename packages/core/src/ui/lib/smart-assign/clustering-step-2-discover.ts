@@ -1,11 +1,10 @@
 import { TAXONOMY_EPSILON_DEFAULT } from "@/config";
-import type { EmbeddingCacheEntry, ClassifyProposalData, MatchDetail, SmartAssignInput } from "@/types/roost";
+import type { ClassifyProposalData } from "@/types/roost";
 import type { StopSignal } from "@/types/sync";
 import {
   saveAnchorNameEmbeddings,
   lookupAnchorNameVec,
   fillMissingAnchorNames,
-  type AnchorNameEmbeddingCache,
 } from "@/lib/anchor-name-embeddings";
 import { computeCentroid, computeCohesion } from "@/pipeline/shared";
 import { dedupDiscoveredByCentroid, CENTROID_DEDUP_THRESHOLD } from "@/ui/lib/smart-assign/dedup-discovered";

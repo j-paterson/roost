@@ -18,7 +18,7 @@
  *
  * See plans/018-write-paths-characterization.md for the full plan.
  */
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 
 // ── Stub the low-level download module (the single network seam) ──────────────
 // Must appear before any non-mock import that pulls the real modules.
@@ -212,7 +212,7 @@ function makeTikTokVideoRecord(): NormalizedRecord {
 
 describe("VaultWriter.writeBatch — Twitter photo record", () => {
   it("writes note + photo attachment + raw.json sidecar + author note; cover → 1.jpg", async () => {
-    const { vault, files, binaryFiles } = makeBinaryVault();
+    const { vault, files } = makeBinaryVault();
     const writer = new VaultWriter({
       vault: vault as any,
       syncFolder: "Bookmarks",

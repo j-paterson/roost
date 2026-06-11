@@ -14,7 +14,6 @@ import "obsidian";
 
 declare module "obsidian" {
   /** Test-only hook — install a stub for `requestUrl()` in unit tests. */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   export function __setRequestUrlImpl(impl: (req: any) => Promise<any>): void;
   /** Test-only hook — restore the default throwing implementation. */
   export function __resetRequestUrlImpl(): void;

@@ -34,7 +34,6 @@ function loadRemote(): {
   session?: { fromPartition(p: string): ElectronSession };
 } | null {
   try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
     return require("@electron/remote");
   } catch {
     return null;
@@ -65,7 +64,6 @@ export class WebviewManager {
 
     const url = platform === "tiktok" ? "https://www.tiktok.com/" : "https://x.com/";
     // <webview> is an Electron custom element — not in standard DOM types.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const webview = document.createElement("webview") as unknown as ElectronWebview;
     webview.setAttribute("src", url);
     webview.setAttribute("partition", `persist:roost-${platform}`);

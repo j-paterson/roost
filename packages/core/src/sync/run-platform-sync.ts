@@ -7,7 +7,7 @@
  * The runner does NOT touch React state. Callers translate progress
  * events into whatever UI updates make sense in their context.
  */
-import type { App, Notice as NoticeT } from "obsidian";
+import type { App } from "obsidian";
 import { Notice } from "obsidian";
 import type { IRoostPlugin } from "@/types/plugin";
 import type {

@@ -154,7 +154,6 @@ export default class RoostPlugin extends Plugin {
       throw new Error("Roost requires a local vault (FileSystemAdapter) — desktop only.");
     }
     const vaultRoot = adapter.getBasePath();
-    const pluginDir = adapter.getFullPath(this.manifest.dir ?? `.obsidian/plugins/${this.manifest.id}`);
 
     migrateRoostLayout(vaultRoot);
 

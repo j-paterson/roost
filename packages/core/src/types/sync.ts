@@ -29,7 +29,6 @@ export interface SyncPhaseProgress {
  */
 export interface ElectronWebview extends HTMLElement {
   // Returns the evaluated expression from the webview — can be any JSON-serializable value.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   executeJavaScript(code: string): Promise<any>;
   loadURL(url: string): void;
   reload(): void;

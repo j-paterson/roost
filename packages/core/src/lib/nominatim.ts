@@ -15,7 +15,6 @@
  */
 import type { Vault } from "obsidian";
 import * as fs from "fs";
-import * as path from "path";
 import { vaultBasePath } from "./vault-utils";
 import { cachePath as roostCachePath, cacheDir } from "./roost-paths";
 

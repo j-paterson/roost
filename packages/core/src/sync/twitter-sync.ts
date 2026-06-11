@@ -393,7 +393,7 @@ async function collectChunk(wc: ElectronWebview, offset: number, count: number):
     const parsed = JSON.parse(chunk);
     const baseTime = Date.now();
     for (let j = 0; j < parsed.length; j++) {
-      const { id, raw } = parsed[j];
+      const { raw } = parsed[j];
       if (!raw) continue;
       const record = roostNormalize("twitter", raw, {
         savedAt: new Date(baseTime - (i - offset + j)).toISOString(),

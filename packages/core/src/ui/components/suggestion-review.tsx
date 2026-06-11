@@ -2,7 +2,7 @@
  * Suggestion review — React checklist for selecting which neighbor items to bulk move.
  * Rendered inside the SuggestionModal.
  */
-import { useState, useMemo } from "react";
+import { useState } from "react";
 import * as React from "react";
 
 export interface SuggestionItem {

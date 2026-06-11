@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useEffect } from "react";
 import { App, Notice } from "obsidian";
 import type { SyncProgress } from "@/ui/components/progress-header";
 import type { Platform, StopSignal, SyncPhaseProgress } from "@/types/sync";

@@ -8,9 +8,7 @@ import { reconcileStandardGrid } from "@/views/gallery-grid-reconcile";
 import { safeGetValue } from "@/lib/bases-entry";
 import {
   estimateGalleryCardHeight,
-  type GalleryCardConfig,
 } from "@/views/gallery-cards";
-import type { RoostFilter } from "@/types/roost";
 import type { GalleryGridRenderHost } from "@/views/gallery-grid-host";
 
 export type { GalleryGridConfigAccess, GalleryGridRenderHost } from "@/views/gallery-grid-host";

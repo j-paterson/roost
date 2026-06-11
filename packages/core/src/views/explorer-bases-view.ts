@@ -5,7 +5,6 @@ import { BasesEntry } from "obsidian";
 import type { QueryController } from "obsidian";
 import { BaseCardView } from "./base-card-view";
 import { getRoostPlugin } from "@/lib/roost-plugin";
-import type { RoostFilter } from "@/types/roost";
 import { attachExplorerFilterSubscription, type ExplorerFolderFilterHost } from "@/views/explorer-folder-filter";
 import {
   hydrateExplorerCard,

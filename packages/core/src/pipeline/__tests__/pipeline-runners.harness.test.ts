@@ -1090,7 +1090,7 @@ describe("tutorial (in-place enrichment)", () => {
 
 describe("home (in-place enrichment)", () => {
   it("writes home_* fields onto the source bookmark", async () => {
-    const { HOME_FIELDS, computeHomeBackfillFields, writeHomeToBookmark } = await import("@/pipeline/home-pipeline");
+    const { HOME_FIELDS, computeHomeBackfillFields } = await import("@/pipeline/home-pipeline");
     const baseHome = makeHomeExtraction();
     const updates = computeHomeBackfillFields(baseHome, {});
     expect(updates[HOME_FIELDS.title]).toBe(baseHome.title);

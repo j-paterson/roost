@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { __setRequestUrlImpl, __resetRequestUrlImpl } from "obsidian";
 import type { RequestUrlResponse } from "obsidian";
-import { canonicalizeTitle, fetchWithRetry, TimeoutError } from "../resolver-utils";
+import { canonicalizeTitle, fetchWithRetry } from "../resolver-utils";
 
 describe("canonicalizeTitle", () => {
   it("returns title unchanged when there's nothing to strip", () => {

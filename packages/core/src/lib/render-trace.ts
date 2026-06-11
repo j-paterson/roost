@@ -19,7 +19,6 @@ interface RoostTraceWindow {
 }
 
 export function traceEvent(name: string, data?: Record<string, unknown>): void {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const w = (typeof window !== "undefined" ? (window as any) : null) as RoostTraceWindow | null;
   if (!w?.__roostTraceEnabled) return;
   if (!w.__roostTrace) {

@@ -17,8 +17,8 @@
  * - `getEntryByIndex()` — map flat index to BasesEntry (handles filtering/grouping)
  */
 import {
-  BasesView, BasesEntry, BasesEntryGroup,
-  TFile, setIcon,
+  BasesView, BasesEntry,
+  TFile,
 } from "obsidian";
 import type { QueryController } from "obsidian";
 import { animate } from "motion";

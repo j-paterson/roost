@@ -5,7 +5,6 @@ const { mockMarker, mockMap, mockBounds, mockTile, mockControl, mockIcon } = vi.
     addTo: vi.fn(function (this: any) { return this; }),
     // Typed parameters so vi.fn().mock.calls infers as [string, fn][] instead
     // of [], unblocking the c[0] / c[1] accesses inside the test handlers.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     on: vi.fn(function (this: any, _evt: string, _handler: (...a: any[]) => any) { return this; }),
     bindTooltip: vi.fn(function (this: any) { return this; }),
     getElement: vi.fn(() => null),

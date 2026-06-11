@@ -10,7 +10,6 @@ import type { EmbeddingCacheEntry } from "@/types/roost";
 import type { StopSignal } from "@/types/sync";
 import type { Embedder } from "@/lib/embedder";
 import { loadEmbeddingCache, saveEmbeddingCache } from "@/pipeline/shared";
-import { extractTikTokSubtitleUrl, parseWebVTT } from "@/lib/extract";
 
 import { OLLAMA_URL, EMBED_CONCURRENCY, VISION_MODEL, EVAL_MODEL, TOPIC_MODEL, OLLAMA_NUM_CTX } from "@/config";
 import * as fs from "fs";
@@ -65,7 +64,6 @@ export async function describeItems(opts: DescribeOpts): Promise<{ processed: nu
 
   // Fast scan: use metadata cache to find items needing embedding (no file reads)
   // vault.app is a private Obsidian property with no public type — cast is necessary.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const app: App | undefined = opts.app || (vault as any).app;
   const files = getSyncFiles(vault, syncFolder);
   const needsEmbedding: TFile[] = [];
