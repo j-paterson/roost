@@ -16,8 +16,6 @@ export const ASSIGNED_BY_FIELD = "roost_assigned_by";
 export const ABSORPTION_THRESHOLD = 0.3;
 export const TAXONOMY_MIN_CLUSTER_SIZE = 2;
 export const TAXONOMY_EPSILON_DEFAULT = 0.3;
-export const TAXONOMY_EPSILON_MIN = 0.0;
-export const TAXONOMY_EPSILON_MAX = 0.35;
 export const MIN_DISCOVERY_COHESION = 0.75;
 
 // ── Sync ──

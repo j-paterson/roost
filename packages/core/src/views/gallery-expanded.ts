@@ -34,7 +34,7 @@ export function clearStaleGalleryExpand(state: GalleryExpandState): void {
   }
 }
 
-export function closeGalleryExpanded(state: GalleryExpandState): void {
+function closeGalleryExpanded(state: GalleryExpandState): void {
   if (!state.expandedEl || !state.savedCardContent) return;
   state.expandedCleanup?.();
   state.expandedCleanup = null;

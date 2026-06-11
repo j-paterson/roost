@@ -55,11 +55,6 @@ export interface LLMProvider {
 
 let onLLMRequest: (() => void) | null = null;
 
-/** Optional hook called before each Ollama request. Callers may install this
- *  to track request activity (e.g. for health monitoring or logging). */
-export function setLLMRequestHook(fn: (() => void) | null): void {
-  onLLMRequest = fn;
-}
 
 export class OllamaProvider implements LLMProvider {
   readonly kind = "local" as const;

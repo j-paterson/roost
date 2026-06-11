@@ -100,7 +100,7 @@ const CONCURRENCY = 3;
 
 const PRODUCT_PIPELINE_VERSION = 1;
 
-export const PRODUCT_FIELDS = {
+const PRODUCT_FIELDS = {
   name: "product_name",
   brand: "product_brand",
   type: "product_type",
@@ -336,7 +336,7 @@ export function computeProductBackfillFields(
   return updates;
 }
 
-export async function writeProductToBookmark(
+async function writeProductToBookmark(
   app: App,
   file: TFile,
   extraction: ProductExtraction,
