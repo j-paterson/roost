@@ -244,10 +244,12 @@ export class RoostSettingTab extends PluginSettingTab {
       .setName("Enable agent memory")
       .setDesc(
         "When enabled, the weekly digest pipeline writes a domain-interest " +
-        "knowledge graph to Memory/ in the vault (topic files + routing " +
-        "index + aliases). Intended for consumption by a Nous Research " +
-        "Hermes Agent — see docs/agent-memory-hermes-setup.md. Default " +
-        "off: existing digest behavior is unchanged when disabled."
+        "knowledge graph to Memory/ in the vault: Memory/MEMORY.md (a routing " +
+        "index sized for an agent system prompt), MEMORY-archive.md, and " +
+        "per-topic files under Memory/topics/. Intended for consumption by an " +
+        "external agentic LLM — e.g. a Nous Research Hermes agent that reads " +
+        "Memory/MEMORY.md. Default off: existing digest behavior is unchanged " +
+        "when disabled."
       )
       .addToggle(toggle => toggle
         .setValue(this.plugin.settings.memoryEnabled)
