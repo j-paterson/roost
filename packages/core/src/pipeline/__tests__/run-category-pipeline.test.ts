@@ -114,6 +114,16 @@ describe("runCategoryPipeline extensions", () => {
     expect(logs).toContain("fast 2");
   });
 
+  it("fastPathTriage: log.fastPath not emitted when all items return null", async () => {
+    const logs: string[] = [];
+    await runCategoryPipeline(app, "Sync", baseConfig({
+      gatherCandidates: () => [cand("a")],
+      fastPathTriage: () => null,
+      log: { ...baseConfig({}).log, fastPath: n => `fast ${n}` },
+    }), msg => logs.push(msg));
+    expect(logs.filter(l => l.startsWith("fast "))).toHaveLength(0);
+  });
+
   it("backfillCachedFirst: cached writes happen before triage when set", async () => {
     seedCache(tmp, { cached: { triage: "yes", extraction: "old" } });
     const order: string[] = [];
