@@ -203,21 +203,6 @@ describe("summarizeCluster", () => {
   });
 });
 
-function mkCandRow(roostId: string, bucket: string): DigestCandidate {
-  return {
-    roostId,
-    file: { path: `Bookmarks/X/${roostId}/note.md` } as never,
-    title: `Title ${roostId}`,
-    author: "@a",
-    url: "",
-    tags: [],
-    vec: null,
-    bucket,
-    savedDate: "2026-05-11",
-    cover: "",
-  };
-}
-
 describe("buildWeeklyDigestNote", () => {
   function mkCtx(overrides: Partial<DigestWeekContext> = {}): DigestWeekContext {
     return {

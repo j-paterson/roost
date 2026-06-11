@@ -960,6 +960,339 @@ describe("pipeline runners — uniform harness", () => {
       expect(readContent2).toBe(readContent);
     });
   });
+
+  // ════════════════════════════════════════════════════════════════════════
+  // Plan 028a — DEBT-01 Phase A characterization additions
+  // ════════════════════════════════════════════════════════════════════════
+
+  // ── Group 1: full-pipeline integration for tutorial + home ──
+  //
+  // These two pipelines had compute*BackfillFields / write*ToBookmark unit
+  // tests but NO end-to-end run through gatherCandidates → triage → extract →
+  // in-place write. Mirror the recipe single-post block. All pipelines now
+  // enrich the SOURCE bookmark in place (no Pipelines/<X>/ note is spawned).
+
+  describe("tutorial (full-pipeline integration)", () => {
+    it("single matching post → writes tutorial_* fields onto the source bookmark, spawns no Pipelines/Tutorials/ note", async () => {
+      const roostId = "tiktok:tutorial_integ_1";
+      makeRawSyncFile(tmp, roostId, "Bookmarks/synced", "tutorial");
+      installOllamaStub("tutorial", makeTutorialExtraction());
+
+      const app = makeApp(tmp);
+      const def = PIPELINES.find(p => p.id === "tutorial") as PipelineDef;
+      const result = await def.runner(app, { syncFolder: "Bookmarks/synced" });
+
+      expect(result.errors).toBe(0);
+      expect(result.written).toBe(1);
+
+      // No note created under Pipelines/Tutorials/.
+      const pipelineNotes = app.vault.getMarkdownFiles()
+        .map((f: any) => f.path)
+        .filter((p: string) => p.startsWith("Pipelines/Tutorials/"));
+      expect(pipelineNotes).toEqual([]);
+
+      // The source bookmark gained the pipeline's fieldsWritten set. The
+      // harness's metadataCache regex only surfaces scalar one-liners, so
+      // list-valued fields (tutorial_tools / tutorial_steps) are asserted
+      // against the raw written content instead — they ARE persisted as
+      // multi-line YAML lists, the parser just can't see them.
+      const sourceFile = app.vault.getMarkdownFiles()
+        .find((f: any) => f.path.startsWith("Bookmarks/synced/")) as any;
+      expect(sourceFile).toBeDefined();
+      const fm = (app as any).metadataCache.getFileCache(sourceFile)?.frontmatter ?? {};
+      for (const key of [
+        "tutorial_topic", "tutorial_skill_area", "tutorial_difficulty",
+        "tutorial_time_estimate",
+      ]) {
+        expect(fm, `missing scalar ${key}`).toHaveProperty(key);
+      }
+      expect(fm).toHaveProperty("enrichment_v_tutorial");
+      const raw = await (app as any).vault.read(sourceFile);
+      for (const key of ["tutorial_tools:", "tutorial_steps:"]) {
+        expect(raw, `missing list ${key}`).toContain(key);
+      }
+    });
+
+    it("idempotent rerun does not churn the source bookmark", async () => {
+      const roostId = "tiktok:tutorial_integ_idem";
+      makeRawSyncFile(tmp, roostId, "Bookmarks/synced", "tutorial");
+      installOllamaStub("tutorial", makeTutorialExtraction());
+
+      const app = makeApp(tmp);
+      const def = PIPELINES.find(p => p.id === "tutorial") as PipelineDef;
+
+      const first = await def.runner(app, { syncFolder: "Bookmarks/synced" });
+      expect(first.written).toBe(1);
+
+      const sourceFile = app.vault.getMarkdownFiles()
+        .find((f: any) => f.path.startsWith("Bookmarks/synced/")) as any;
+      const readContent = await (app as any).vault.read(sourceFile);
+
+      __resetEmbeddingCache();
+      const second = await def.runner(app, { syncFolder: "Bookmarks/synced" });
+      expect(second.errors).toBe(0);
+      const readContent2 = await (app as any).vault.read(sourceFile);
+      expect(readContent2).toBe(readContent);
+    });
+
+    it("triage 'skip' writes no tutorial_* fields and caches the skip", async () => {
+      const roostId = "tiktok:tutorial_integ_skip";
+      makeRawSyncFile(tmp, roostId, "Bookmarks/synced", "tutorial");
+      __setRequestUrlImpl(async () => ({ status: 200, json: { response: "skip" }, text: "" }));
+
+      const app = makeApp(tmp);
+      const def = PIPELINES.find(p => p.id === "tutorial") as PipelineDef;
+      const result = await def.runner(app, { syncFolder: "Bookmarks/synced" });
+
+      expect(result.written).toBe(0);
+
+      const sourceFile = app.vault.getMarkdownFiles()
+        .find((f: any) => f.path.startsWith("Bookmarks/synced/")) as any;
+      const fm = (app as any).metadataCache.getFileCache(sourceFile)?.frontmatter ?? {};
+      expect(fm).not.toHaveProperty("tutorial_topic");
+      expect(fm).not.toHaveProperty("enrichment_v_tutorial");
+
+      const cachePath = path.join(tmp, ".roost", "cache", "tutorials-cache.json");
+      const cache = JSON.parse(fs.readFileSync(cachePath, "utf-8"));
+      expect(cache[roostId]).toEqual({ triage: "skip", extraction: null });
+    });
+  });
+
+  describe("home (full-pipeline integration)", () => {
+    it("single matching post → writes home_* fields onto the source bookmark, spawns no Pipelines/Home/ note", async () => {
+      const roostId = "tiktok:home_integ_1";
+      makeRawSyncFile(tmp, roostId, "Bookmarks/synced", "home");
+      installOllamaStub("home", makeHomeExtraction());
+
+      const app = makeApp(tmp);
+      const def = PIPELINES.find(p => p.id === "home") as PipelineDef;
+      const result = await def.runner(app, { syncFolder: "Bookmarks/synced" });
+
+      expect(result.errors).toBe(0);
+      expect(result.written).toBe(1);
+
+      // No note created under Pipelines/Home/.
+      const pipelineNotes = app.vault.getMarkdownFiles()
+        .map((f: any) => f.path)
+        .filter((p: string) => p.startsWith("Pipelines/Home/"));
+      expect(pipelineNotes).toEqual([]);
+
+      // Scalars surface via the harness FM regex; list-valued fields
+      // (home_products / home_tips) are asserted against raw content.
+      // home_budget is intentionally absent: the fixture's budget is null and
+      // updateNoteFrontmatter drops null-valued fields — pinned as current
+      // behavior, not a bug.
+      const sourceFile = app.vault.getMarkdownFiles()
+        .find((f: any) => f.path.startsWith("Bookmarks/synced/")) as any;
+      expect(sourceFile).toBeDefined();
+      const fm = (app as any).metadataCache.getFileCache(sourceFile)?.frontmatter ?? {};
+      for (const key of [
+        "home_title", "home_room", "home_idea_type", "home_style",
+        "home_description",
+      ]) {
+        expect(fm, `missing scalar ${key}`).toHaveProperty(key);
+      }
+      expect(fm).toHaveProperty("enrichment_v_home");
+      expect(fm).not.toHaveProperty("home_budget"); // null fixture → field dropped
+      const raw = await (app as any).vault.read(sourceFile);
+      for (const key of ["home_products:", "home_tips:"]) {
+        expect(raw, `missing list ${key}`).toContain(key);
+      }
+    });
+
+    it("idempotent rerun does not churn the source bookmark", async () => {
+      const roostId = "tiktok:home_integ_idem";
+      makeRawSyncFile(tmp, roostId, "Bookmarks/synced", "home");
+      installOllamaStub("home", makeHomeExtraction());
+
+      const app = makeApp(tmp);
+      const def = PIPELINES.find(p => p.id === "home") as PipelineDef;
+
+      const first = await def.runner(app, { syncFolder: "Bookmarks/synced" });
+      expect(first.written).toBe(1);
+
+      const sourceFile = app.vault.getMarkdownFiles()
+        .find((f: any) => f.path.startsWith("Bookmarks/synced/")) as any;
+      const readContent = await (app as any).vault.read(sourceFile);
+
+      __resetEmbeddingCache();
+      const second = await def.runner(app, { syncFolder: "Bookmarks/synced" });
+      expect(second.errors).toBe(0);
+      const readContent2 = await (app as any).vault.read(sourceFile);
+      expect(readContent2).toBe(readContent);
+    });
+
+    it("triage 'skip' writes no home_* fields and caches the skip", async () => {
+      const roostId = "tiktok:home_integ_skip";
+      makeRawSyncFile(tmp, roostId, "Bookmarks/synced", "home");
+      __setRequestUrlImpl(async () => ({ status: 200, json: { response: "skip" }, text: "" }));
+
+      const app = makeApp(tmp);
+      const def = PIPELINES.find(p => p.id === "home") as PipelineDef;
+      const result = await def.runner(app, { syncFolder: "Bookmarks/synced" });
+
+      expect(result.written).toBe(0);
+
+      const sourceFile = app.vault.getMarkdownFiles()
+        .find((f: any) => f.path.startsWith("Bookmarks/synced/")) as any;
+      const fm = (app as any).metadataCache.getFileCache(sourceFile)?.frontmatter ?? {};
+      expect(fm).not.toHaveProperty("home_title");
+      expect(fm).not.toHaveProperty("enrichment_v_home");
+
+      const cachePath = path.join(tmp, ".roost", "cache", "home-cache.json");
+      const cache = JSON.parse(fs.readFileSync(cachePath, "utf-8"));
+      expect(cache[roostId]).toEqual({ triage: "skip", extraction: null });
+    });
+  });
+
+  // ── Group 2: recipe's 3-way triage — the "restaurant" verdict ──
+  //
+  // recipe is the only pipeline with a third triage value besides keep/skip.
+  // A "restaurant" verdict is neither extracted nor a plain skip; pin that it
+  // writes no recipe_* fields, spawns no note, and caches verbatim as
+  // { triage: "restaurant", extraction: null }. The parametric runner (Phase B)
+  // must preserve a per-pipeline verdict set, not assume binary keep/skip.
+
+  describe("recipe (3-way triage — restaurant verdict)", () => {
+    it("triage 'restaurant' → no recipe_* fields, no note, cached as restaurant", async () => {
+      const roostId = "tiktok:recipe_restaurant_1";
+      makeRawSyncFile(tmp, roostId, "Bookmarks/synced", "recipe");
+      installOllamaStub("restaurant", makeRecipeExtraction());
+
+      const app = makeApp(tmp);
+      const def = PIPELINES.find(p => p.id === "recipe") as PipelineDef;
+      const result = await def.runner(app, { syncFolder: "Bookmarks/synced" });
+
+      expect(result.errors).toBe(0);
+      expect(result.written).toBe(0);
+
+      // No Pipelines/Recipes/ note spawned.
+      const pipelineNotes = app.vault.getMarkdownFiles()
+        .map((f: any) => f.path)
+        .filter((p: string) => p.startsWith("Pipelines/Recipes/"));
+      expect(pipelineNotes).toEqual([]);
+
+      // The source bookmark gained NO recipe_* fields.
+      const sourceFile = app.vault.getMarkdownFiles()
+        .find((f: any) => f.path.startsWith("Bookmarks/synced/")) as any;
+      const fm = (app as any).metadataCache.getFileCache(sourceFile)?.frontmatter ?? {};
+      expect(fm).not.toHaveProperty("recipe_dish");
+      expect(fm).not.toHaveProperty("enrichment_v_recipe");
+
+      // The recipe cache pins the restaurant verdict verbatim (no extraction).
+      const cachePath = path.join(tmp, ".roost", "cache", "recipe-cache.json");
+      const cache = JSON.parse(fs.readFileSync(cachePath, "utf-8"));
+      expect(cache[roostId]).toEqual({ triage: "restaurant", extraction: null });
+    });
+  });
+
+  // ── Group 3: failing-extraction divergence (allSettled vs all+catch) ──
+  //
+  // recipe batches extraction with Promise.allSettled; the other six use
+  // Promise.all(c => extract(c).catch(() => null)). On a single failed
+  // extraction in a multi-item batch the two idioms leave DIFFERENT cache
+  // entries for the failed item. Pin both shapes from the SAME A-ok/B-fails
+  // setup. installFailingExtractionStub fails only the named roostId's
+  // extraction call (returns unparseable JSON so extract*() returns null);
+  // triage always succeeds with the keep verdict.
+
+  /**
+   * Like installOllamaStub, but extraction calls whose prompt mentions a
+   * roostId in `failExtractionFor` return unparseable JSON (→ extract*()
+   * returns null), while all other extraction calls return extractionJson.
+   * Triage (num_predict ≤ 10) always returns triageVerdict.
+   *
+   * Detection: makeRawSyncFile seeds raw.json `text: "Test content for <id>"`,
+   * and extractDescription surfaces that into the extraction prompt, so the
+   * request body literally contains the roostId.
+   */
+  function installFailingExtractionStub(
+    triageVerdict: string,
+    extractionJson: object,
+    failExtractionFor: Set<string>,
+  ) {
+    __setRequestUrlImpl(async (req) => {
+      const body = JSON.parse(req.body ?? "{}");
+      const prompt: string = body.prompt ?? "";
+      if ((body.options?.num_predict ?? 999) <= 10) {
+        return { status: 200, json: { response: triageVerdict }, text: "" };
+      }
+      for (const id of failExtractionFor) {
+        if (prompt.includes(id)) {
+          // Unparseable → extract*() JSON.parse throws → returns null.
+          return { status: 200, json: { response: "<<not json>>" }, text: "" };
+        }
+      }
+      return { status: 200, json: { response: JSON.stringify(extractionJson) }, text: "" };
+    });
+  }
+
+  describe("failing extraction — cache divergence (Group 3)", () => {
+    it("recipe (Promise.allSettled): A extracts, B fails — B left as {triage:'recipe',extraction:null} for retry", async () => {
+      // characterizes current allSettled error handling — Phase B will normalize this; update intentionally if it changes.
+      const idA = "tiktok:recipe_extok_A";
+      const idB = "tiktok:recipe_extfail_B";
+      makeRawSyncFile(tmp, idA, "Bookmarks/synced", "recipe");
+      makeRawSyncFile(tmp, idB, "Bookmarks/synced", "recipe");
+      installFailingExtractionStub("recipe", makeRecipeExtraction(), new Set([idB]));
+
+      const app = makeApp(tmp);
+      const def = PIPELINES.find(p => p.id === "recipe") as PipelineDef;
+      const result = await def.runner(app, { syncFolder: "Bookmarks/synced" });
+
+      // A's recipe_* fields are written; B's are not.
+      const fileA = app.vault.getMarkdownFiles().find((f: any) => f.path.includes("recipe_extok_A")) as any;
+      const fileB = app.vault.getMarkdownFiles().find((f: any) => f.path.includes("recipe_extfail_B")) as any;
+      const fmA = (app as any).metadataCache.getFileCache(fileA)?.frontmatter ?? {};
+      const fmB = (app as any).metadataCache.getFileCache(fileB)?.frontmatter ?? {};
+      expect(fmA).toHaveProperty("recipe_dish");
+      expect(fmA).toHaveProperty("enrichment_v_recipe");
+      expect(fmB).not.toHaveProperty("recipe_dish");
+      expect(fmB).not.toHaveProperty("enrichment_v_recipe");
+
+      // Cache: A is fully extracted; B keeps its triage verdict with extraction
+      // still null (recipe leaves failed items for retry — it never demotes to skip).
+      const cache = JSON.parse(fs.readFileSync(path.join(tmp, ".roost", "cache", "recipe-cache.json"), "utf-8"));
+      expect(cache[idA].triage).toBe("recipe");
+      expect(cache[idA].extraction).not.toBeNull();
+      expect(cache[idB]).toEqual({ triage: "recipe", extraction: null });
+
+      // Tally: the failed extraction counts as one error (extractErrors++).
+      expect(result.errors).toBe(1);
+    });
+
+    it("product (Promise.all + .catch): A extracts, B fails — B DEMOTED to {triage:'skip',extraction:null}", async () => {
+      // characterizes current all+catch error handling — Phase B will normalize this; update intentionally if it changes.
+      const idA = "tiktok:product_extok_A";
+      const idB = "tiktok:product_extfail_B";
+      makeRawSyncFile(tmp, idA, "Bookmarks/synced", "product");
+      makeRawSyncFile(tmp, idB, "Bookmarks/synced", "product");
+      installFailingExtractionStub("product", makeProductExtraction(), new Set([idB]));
+
+      const app = makeApp(tmp);
+      const def = PIPELINES.find(p => p.id === "product") as PipelineDef;
+      const result = await def.runner(app, { syncFolder: "Bookmarks/synced" });
+
+      const fileA = app.vault.getMarkdownFiles().find((f: any) => f.path.includes("product_extok_A")) as any;
+      const fileB = app.vault.getMarkdownFiles().find((f: any) => f.path.includes("product_extfail_B")) as any;
+      const fmA = (app as any).metadataCache.getFileCache(fileA)?.frontmatter ?? {};
+      const fmB = (app as any).metadataCache.getFileCache(fileB)?.frontmatter ?? {};
+      expect(fmA).toHaveProperty("product_name");
+      expect(fmA).toHaveProperty("enrichment_v_product");
+      expect(fmB).not.toHaveProperty("product_name");
+      expect(fmB).not.toHaveProperty("enrichment_v_product");
+
+      // Cache: A is fully extracted; B is DEMOTED to skip (the all+catch idiom
+      // overwrites the failed item's entry, so it will NOT be retried).
+      const cache = JSON.parse(fs.readFileSync(path.join(tmp, ".roost", "cache", "products-cache.json"), "utf-8"));
+      expect(cache[idA].triage).toBe("product");
+      expect(cache[idA].extraction).not.toBeNull();
+      expect(cache[idB]).toEqual({ triage: "skip", extraction: null });
+
+      // Tally: the failed extraction counts as one error.
+      expect(result.errors).toBe(1);
+    });
+  });
 });
 
 // ── Tutorial in-place enrichment ──
@@ -1090,7 +1423,7 @@ describe("tutorial (in-place enrichment)", () => {
 
 describe("home (in-place enrichment)", () => {
   it("writes home_* fields onto the source bookmark", async () => {
-    const { HOME_FIELDS, computeHomeBackfillFields, writeHomeToBookmark } = await import("@/pipeline/home-pipeline");
+    const { HOME_FIELDS, computeHomeBackfillFields } = await import("@/pipeline/home-pipeline");
     const baseHome = makeHomeExtraction();
     const updates = computeHomeBackfillFields(baseHome, {});
     expect(updates[HOME_FIELDS.title]).toBe(baseHome.title);
@@ -1121,5 +1454,252 @@ describe("home (in-place enrichment)", () => {
     expect(written).toContain(`${HOME_FIELDS.title}: `);
     expect(written).toContain(`${HOME_FIELDS.version}: 1`);
     expect(written).toContain("roost_category: Home");
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════
+// Group 4 — compute*BackfillFields branch tests (recipe, place, product,
+// workout). media/tutorial/home already have these; these four were missing.
+// Each covers the subcategory-backfill branches by varying existingFm:
+//   empty fm → category + subcategory; matching category w/o sub → sub only;
+//   non-matching category → neither; sub already set → never overwrite.
+// Plus the happy-path field set (<cat>_* + enrichment_v_<cat>).
+// ════════════════════════════════════════════════════════════════════════
+
+describe("computeRecipeBackfillFields (branch coverage)", () => {
+  it("happy path: emits all recipe_* fields + enrichment_v_recipe", async () => {
+    const { computeRecipeBackfillFields } = await import("@/pipeline/recipe-pipeline");
+    const ext = makeRecipeExtraction();
+    const u = computeRecipeBackfillFields(ext, {});
+    expect(u["recipe_dish"]).toBe(ext.dish);
+    expect(u["recipe_cuisine"]).toBe(ext.cuisine);
+    expect(u["recipe_prep_time"]).toBe(ext.prepTime);
+    expect(u["recipe_cook_time"]).toBe(ext.cookTime);
+    expect(u["recipe_difficulty"]).toBe(ext.difficulty);
+    expect(u).toHaveProperty("recipe_ingredients");
+    expect(u).toHaveProperty("recipe_steps");
+    expect(u["enrichment_v_recipe"]).toBe(1);
+  });
+
+  it("empty fm → sets roost_category=Recipes + roost_subcategory=cuisine", async () => {
+    const { computeRecipeBackfillFields } = await import("@/pipeline/recipe-pipeline");
+    const ext = makeRecipeExtraction();
+    const u = computeRecipeBackfillFields(ext, {});
+    expect(u["roost_category"]).toBe("Recipes");
+    expect(u["roost_subcategory"]).toBe(ext.cuisine);
+  });
+
+  it("matching category (Food), no subcategory → sets subcategory only", async () => {
+    const { computeRecipeBackfillFields } = await import("@/pipeline/recipe-pipeline");
+    const ext = makeRecipeExtraction();
+    const u = computeRecipeBackfillFields(ext, { roost_category: "Food" });
+    expect(u["roost_category"]).toBeUndefined();
+    expect(u["roost_subcategory"]).toBe(ext.cuisine);
+  });
+
+  it("non-matching category (Travel) → sets neither category nor subcategory", async () => {
+    const { computeRecipeBackfillFields } = await import("@/pipeline/recipe-pipeline");
+    const u = computeRecipeBackfillFields(makeRecipeExtraction(), { roost_category: "Travel" });
+    expect(u["roost_category"]).toBeUndefined();
+    expect(u["roost_subcategory"]).toBeUndefined();
+  });
+
+  it("subcategory already set → never overwrites it", async () => {
+    const { computeRecipeBackfillFields } = await import("@/pipeline/recipe-pipeline");
+    const u = computeRecipeBackfillFields(makeRecipeExtraction(), {
+      roost_category: "Recipes",
+      roost_subcategory: "Thai",
+    });
+    expect(u["roost_subcategory"]).toBeUndefined();
+  });
+});
+
+describe("computePlaceBackfillFields (branch coverage)", () => {
+  it("happy path: emits all place_* fields + enrichment_v_place", async () => {
+    const { computePlaceBackfillFields } = await import("@/pipeline/places-pipeline");
+    const ext = makePlaceExtraction();
+    const u = computePlaceBackfillFields(ext, {});
+    expect(u["place_name"]).toBe(ext.name);
+    expect(u["place_city"]).toBe(ext.city);
+    expect(u["place_country"]).toBe(ext.country);
+    expect(u["place_type"]).toBe(ext.placeType);
+    expect(u["place_best_for"]).toBe(ext.bestFor);
+    expect(u["enrichment_v_place"]).toBe(1);
+  });
+
+  it("empty fm → sets roost_category=Places + roost_subcategory=placeType", async () => {
+    const { computePlaceBackfillFields } = await import("@/pipeline/places-pipeline");
+    const ext = makePlaceExtraction();
+    const u = computePlaceBackfillFields(ext, {});
+    expect(u["roost_category"]).toBe("Places");
+    expect(u["roost_subcategory"]).toBe(ext.placeType);
+  });
+
+  it("matching category (Travel), no subcategory → sets subcategory only", async () => {
+    const { computePlaceBackfillFields } = await import("@/pipeline/places-pipeline");
+    const ext = makePlaceExtraction();
+    const u = computePlaceBackfillFields(ext, { roost_category: "Travel" });
+    expect(u["roost_category"]).toBeUndefined();
+    expect(u["roost_subcategory"]).toBe(ext.placeType);
+  });
+
+  it("non-matching category (Recipes) → sets neither category nor subcategory", async () => {
+    const { computePlaceBackfillFields } = await import("@/pipeline/places-pipeline");
+    const u = computePlaceBackfillFields(makePlaceExtraction(), { roost_category: "Recipes" });
+    expect(u["roost_category"]).toBeUndefined();
+    expect(u["roost_subcategory"]).toBeUndefined();
+  });
+
+  it("subcategory already set → never overwrites it", async () => {
+    const { computePlaceBackfillFields } = await import("@/pipeline/places-pipeline");
+    const u = computePlaceBackfillFields(makePlaceExtraction(), {
+      roost_category: "Places",
+      roost_subcategory: "hotel",
+    });
+    expect(u["roost_subcategory"]).toBeUndefined();
+  });
+});
+
+describe("computeProductBackfillFields (branch coverage)", () => {
+  it("happy path: emits all product_* fields + enrichment_v_product", async () => {
+    // products-pipeline's internal ProductExtraction narrows productType to a
+    // union; the fixture returns the public roost.d.ts type (productType:
+    // string). Loosen the param type test-side — no production change.
+    const computeProductBackfillFields = (await import("@/pipeline/products-pipeline"))
+      .computeProductBackfillFields as unknown as
+        (e: ReturnType<typeof makeProductExtraction>, fm: Record<string, unknown>) => Record<string, unknown>;
+    const ext = makeProductExtraction();
+    const u = computeProductBackfillFields(ext, {});
+    expect(u["product_name"]).toBe(ext.name);
+    expect(u["product_brand"]).toBe(ext.brand);
+    expect(u["product_type"]).toBe(ext.productType);
+    expect(u["product_price"]).toBe(ext.price);
+    expect(u["product_where_to_buy"]).toBe(ext.whereToBuy);
+    expect(u["enrichment_v_product"]).toBe(1);
+  });
+
+  it("empty fm → sets roost_category=Products + roost_subcategory=productType", async () => {
+    // products-pipeline's internal ProductExtraction narrows productType to a
+    // union; the fixture returns the public roost.d.ts type (productType:
+    // string). Loosen the param type test-side — no production change.
+    const computeProductBackfillFields = (await import("@/pipeline/products-pipeline"))
+      .computeProductBackfillFields as unknown as
+        (e: ReturnType<typeof makeProductExtraction>, fm: Record<string, unknown>) => Record<string, unknown>;
+    const ext = makeProductExtraction();
+    const u = computeProductBackfillFields(ext, {});
+    expect(u["roost_category"]).toBe("Products");
+    expect(u["roost_subcategory"]).toBe(ext.productType);
+  });
+
+  it("matching category (Gear), no subcategory → sets subcategory only", async () => {
+    // products-pipeline's internal ProductExtraction narrows productType to a
+    // union; the fixture returns the public roost.d.ts type (productType:
+    // string). Loosen the param type test-side — no production change.
+    const computeProductBackfillFields = (await import("@/pipeline/products-pipeline"))
+      .computeProductBackfillFields as unknown as
+        (e: ReturnType<typeof makeProductExtraction>, fm: Record<string, unknown>) => Record<string, unknown>;
+    const ext = makeProductExtraction();
+    const u = computeProductBackfillFields(ext, { roost_category: "Gear" });
+    expect(u["roost_category"]).toBeUndefined();
+    expect(u["roost_subcategory"]).toBe(ext.productType);
+  });
+
+  it("non-matching category (Travel) → sets neither category nor subcategory", async () => {
+    // products-pipeline's internal ProductExtraction narrows productType to a
+    // union; the fixture returns the public roost.d.ts type (productType:
+    // string). Loosen the param type test-side — no production change.
+    const computeProductBackfillFields = (await import("@/pipeline/products-pipeline"))
+      .computeProductBackfillFields as unknown as
+        (e: ReturnType<typeof makeProductExtraction>, fm: Record<string, unknown>) => Record<string, unknown>;
+    const u = computeProductBackfillFields(makeProductExtraction(), { roost_category: "Travel" });
+    expect(u["roost_category"]).toBeUndefined();
+    expect(u["roost_subcategory"]).toBeUndefined();
+  });
+
+  it("subcategory already set → never overwrites it", async () => {
+    // products-pipeline's internal ProductExtraction narrows productType to a
+    // union; the fixture returns the public roost.d.ts type (productType:
+    // string). Loosen the param type test-side — no production change.
+    const computeProductBackfillFields = (await import("@/pipeline/products-pipeline"))
+      .computeProductBackfillFields as unknown as
+        (e: ReturnType<typeof makeProductExtraction>, fm: Record<string, unknown>) => Record<string, unknown>;
+    const u = computeProductBackfillFields(makeProductExtraction(), {
+      roost_category: "Products",
+      roost_subcategory: "tech",
+    });
+    expect(u["roost_subcategory"]).toBeUndefined();
+  });
+});
+
+describe("computeWorkoutBackfillFields (branch coverage)", () => {
+  it("happy path: emits all workout_* fields + enrichment_v_workout", async () => {
+    // workouts-pipeline's internal WorkoutExtraction narrows workoutType to a
+    // union; the fixture returns the public roost.d.ts type (workoutType:
+    // string). Loosen the param type test-side — no production change.
+    const computeWorkoutBackfillFields = (await import("@/pipeline/workouts-pipeline"))
+      .computeWorkoutBackfillFields as unknown as
+        (e: ReturnType<typeof makeWorkoutExtraction>, fm: Record<string, unknown>) => Record<string, unknown>;
+    const ext = makeWorkoutExtraction();
+    const u = computeWorkoutBackfillFields(ext, {});
+    expect(u["workout_name"]).toBe(ext.name);
+    expect(u["workout_type"]).toBe(ext.workoutType);
+    expect(u["workout_target_area"]).toBe(ext.targetArea);
+    expect(u["workout_difficulty"]).toBe(ext.difficulty);
+    expect(u["workout_duration"]).toBe(ext.duration);
+    expect(u).toHaveProperty("workout_equipment");
+    expect(u).toHaveProperty("workout_exercises");
+    expect(u["enrichment_v_workout"]).toBe(1);
+  });
+
+  it("empty fm → sets roost_category=Workouts + roost_subcategory=workoutType", async () => {
+    // workouts-pipeline's internal WorkoutExtraction narrows workoutType to a
+    // union; the fixture returns the public roost.d.ts type (workoutType:
+    // string). Loosen the param type test-side — no production change.
+    const computeWorkoutBackfillFields = (await import("@/pipeline/workouts-pipeline"))
+      .computeWorkoutBackfillFields as unknown as
+        (e: ReturnType<typeof makeWorkoutExtraction>, fm: Record<string, unknown>) => Record<string, unknown>;
+    const ext = makeWorkoutExtraction();
+    const u = computeWorkoutBackfillFields(ext, {});
+    expect(u["roost_category"]).toBe("Workouts");
+    expect(u["roost_subcategory"]).toBe(ext.workoutType);
+  });
+
+  it("matching category (Fitness), no subcategory → sets subcategory only", async () => {
+    // workouts-pipeline's internal WorkoutExtraction narrows workoutType to a
+    // union; the fixture returns the public roost.d.ts type (workoutType:
+    // string). Loosen the param type test-side — no production change.
+    const computeWorkoutBackfillFields = (await import("@/pipeline/workouts-pipeline"))
+      .computeWorkoutBackfillFields as unknown as
+        (e: ReturnType<typeof makeWorkoutExtraction>, fm: Record<string, unknown>) => Record<string, unknown>;
+    const ext = makeWorkoutExtraction();
+    const u = computeWorkoutBackfillFields(ext, { roost_category: "Fitness" });
+    expect(u["roost_category"]).toBeUndefined();
+    expect(u["roost_subcategory"]).toBe(ext.workoutType);
+  });
+
+  it("non-matching category (Travel) → sets neither category nor subcategory", async () => {
+    // workouts-pipeline's internal WorkoutExtraction narrows workoutType to a
+    // union; the fixture returns the public roost.d.ts type (workoutType:
+    // string). Loosen the param type test-side — no production change.
+    const computeWorkoutBackfillFields = (await import("@/pipeline/workouts-pipeline"))
+      .computeWorkoutBackfillFields as unknown as
+        (e: ReturnType<typeof makeWorkoutExtraction>, fm: Record<string, unknown>) => Record<string, unknown>;
+    const u = computeWorkoutBackfillFields(makeWorkoutExtraction(), { roost_category: "Travel" });
+    expect(u["roost_category"]).toBeUndefined();
+    expect(u["roost_subcategory"]).toBeUndefined();
+  });
+
+  it("subcategory already set → never overwrites it", async () => {
+    // workouts-pipeline's internal WorkoutExtraction narrows workoutType to a
+    // union; the fixture returns the public roost.d.ts type (workoutType:
+    // string). Loosen the param type test-side — no production change.
+    const computeWorkoutBackfillFields = (await import("@/pipeline/workouts-pipeline"))
+      .computeWorkoutBackfillFields as unknown as
+        (e: ReturnType<typeof makeWorkoutExtraction>, fm: Record<string, unknown>) => Record<string, unknown>;
+    const u = computeWorkoutBackfillFields(makeWorkoutExtraction(), {
+      roost_category: "Workouts",
+      roost_subcategory: "cardio",
+    });
+    expect(u["roost_subcategory"]).toBeUndefined();
   });
 });

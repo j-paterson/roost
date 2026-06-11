@@ -41,12 +41,6 @@ interface TreeExplorerProps {
   onEditDescription?: (folderId: string, folderName: string) => void;
 }
 
-function isActiveLeaf(group: ItemGroup, sliderSplitIds: Set<string>, forceToggle: Set<string>): boolean {
-  if (!group.children) return true;
-  const isSplit = sliderSplitIds.has(group.id) !== forceToggle.has(group.id);
-  return !isSplit;
-}
-
 function TreeNode({
   store, group, depth, forceToggle, sliderSplitIds,
   absorbedIds, nodeCollectionMap, markedItems,

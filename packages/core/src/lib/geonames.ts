@@ -11,7 +11,7 @@
  * Data built by scripts/build-geonames.mjs from the GeoNames cities5000 dump.
  * Covers ~77% of our TikTok POI corpus on top of a ~4MB bundle cost.
  */
-import data from "@/data/geonames-cities.json";
+import raw from "@/data/geonames-cities.json?raw";
 
 type Coord = [number, number];
 interface GeoNamesData {
@@ -21,14 +21,20 @@ interface GeoNamesData {
   gidToIso: Record<string, string>;
 }
 
-// JSON shape is correct at runtime but TS infers literal `cities` keys that
-// don't statically narrow to Record<string, Coord>. Cast through unknown so
-// the assertion is permitted.
-const DATA = data as unknown as GeoNamesData;
+let cached: GeoNamesData | null = null;
+function getData(): GeoNamesData {
+  if (!cached) cached = JSON.parse(raw) as GeoNamesData;
+  return cached;
+}
+
+/** Test-only hook — whether the gazetteer has been parsed yet. */
+export function __gazetteerLoadedForTests(): boolean {
+  return cached !== null;
+}
 
 export function countryGidToIso(countryGid: string | undefined | null): string | null {
   if (!countryGid) return null;
-  return DATA.gidToIso[String(countryGid)] ?? null;
+  return getData().gidToIso[String(countryGid)] ?? null;
 }
 
 function nameKey(name: string, iso: string): string {
@@ -48,15 +54,15 @@ export function resolveGeoNames(
   name: string | null | undefined,
   countryGid: string | null | undefined,
 ): Coord | null {
-  if (cityCode && DATA.cities[cityCode]) return DATA.cities[cityCode];
+  if (cityCode && getData().cities[cityCode]) return getData().cities[cityCode];
   const iso = countryGidToIso(countryGid);
   if (!iso) return null;
   if (city) {
-    const hit = DATA.byName[nameKey(city, iso)];
+    const hit = getData().byName[nameKey(city, iso)];
     if (hit) return hit;
   }
   if (name) {
-    const hit = DATA.byName[nameKey(name, iso)];
+    const hit = getData().byName[nameKey(name, iso)];
     if (hit) return hit;
   }
   return null;
@@ -64,5 +70,5 @@ export function resolveGeoNames(
 
 /** Name-based lookup only — used by buildMapPins when it has extraction.city but no poi context. */
 export function resolveByCityName(city: string, iso: string): Coord | null {
-  return DATA.byName[nameKey(city, iso)] ?? null;
+  return getData().byName[nameKey(city, iso)] ?? null;
 }

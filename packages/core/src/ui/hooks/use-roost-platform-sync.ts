@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useEffect } from "react";
 import { App, Notice } from "obsidian";
 import type { SyncProgress } from "@/ui/components/progress-header";
 import type { Platform, StopSignal, SyncPhaseProgress } from "@/types/sync";
@@ -128,7 +128,7 @@ export function useRoostPlatformSync({ app, plugin, log, scanLibrary }: UseRoost
     try {
       const onProgress = (p: SyncPhaseProgress) => {
         setSyncStatus(`${p.phase}`);
-        setSyncProgress({ phase: p.phase, count: p.count, written: totalPushed, skipped: 0, resynced: 0 });
+        setSyncProgress({ phase: p.phase, count: p.count, total: p.total, written: totalPushed, skipped: 0, resynced: 0 });
       };
       let totalSkipped = 0;
       let totalResynced = 0;

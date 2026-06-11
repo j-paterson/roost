@@ -25,7 +25,6 @@ import { rebuildGalleryGrid } from "@/views/gallery-grid-render";
 import {
   bindGalleryGridRenderHost,
   bindGalleryGridStateSource,
-  type GalleryGridConfigAccess,
 } from "@/views/gallery-grid-host";
 import { galleryEntryAtIndex, findGalleryEntryByRoostId } from "@/views/gallery-entry-index";
 import {
@@ -61,23 +60,26 @@ import type { PipelineGalleryHost } from "@/views/gallery-pipeline-host";
 import { isPipelineSubstituteView } from "@/views/pipeline-views/registry";
 import { isCategoryPipelineActive } from "@/lib/pipeline-gate-plugin";
 
-export { bookmarksViewOptions } from "@/views/bookmarks-view-options";
-
 export const BASES_VIEW_ID = "roost-bookmarks";
 
 export class BookmarksBasesView extends BasesView
   implements GallerySelectionHost, GalleryFeedModeHost, GalleryApplyFilterViewBind {
   type = BASES_VIEW_ID;
-  private containerEl: HTMLElement;
-  private scrollEl: HTMLElement;
+  // Public (not private): the Gallery host interfaces (GalleryFeedModeHost,
+  // GalleryApplyFilterViewBind, GalleryBulkWriteHost, GalleryGridViewBind)
+  // bind to these — a private member can't satisfy a public interface field.
+  containerEl: HTMLElement;
+  scrollEl: HTMLElement;
   private toolbarEl: HTMLElement;
-  private hydrationObserver: IntersectionObserver | null = null;
+  // Public: GalleryApplyFilterViewBind binds to it.
+  hydrationObserver: IntersectionObserver | null = null;
   renderedKey = "";
   private unsubFilter: (() => void) | null = null;
   private unsubDataRefresh: (() => void) | null = null;
   private pipelineHost: PipelineGalleryHost;
   private pendingFocusId: string | null = null;
-  private pendingExpandInPlaceId: string | null = null;
+  // Public: GalleryGridViewBind binds to it.
+  pendingExpandInPlaceId: string | null = null;
   reapplyingFilter = false;
   currentFilter: RoostFilter = null;
   filteredIndices: number[] | null = null;
@@ -91,8 +93,10 @@ export class BookmarksBasesView extends BasesView
   uncertainGrid: HTMLElement | null = null;
 
   private readonly filterHistory = new GalleryFilterHistoryController(this);
-  private activePlatformFilter: string | null = null;
-  private knownPlatforms: string[] = [];
+  // Public: GalleryApplyFilterViewBind / GalleryGridViewBind bind to it.
+  activePlatformFilter: string | null = null;
+  // Public: GalleryGridViewBind binds to it.
+  knownPlatforms: string[] = [];
   private selectionBar: HTMLElement | null = null;
   private gallerySelection!: GallerySelectionController;
   private expandState: GalleryExpandState = createGalleryExpandState();
@@ -446,17 +450,18 @@ export class BookmarksBasesView extends BasesView
       matchedRoostIds: this.matchedRoostIds,
       matchDetailMap: this.matchDetailMap,
       isSelectionActive: () => this.gallerySelection.isActive(),
-      isSelected: (id) => this.gallerySelection.isSelected(id),
-      onSelectionToggle: (id, cardEl) => this.gallerySelection.toggle(id, cardEl),
-      onFeedSelect: (id) => this.feedMode.setFeedActiveFromGrid(id),
-      onExpand: (cardEl, entry) => this.toggleExpandedCard(cardEl, entry),
-      resolveImageUrl: (entry, propId) => galleryResolveImageUrl(this.app, entry, propId),
-      resolveVideoUrl: (entry) => galleryResolveVideoUrl(this.app, entry),
-      hasMultipleImages: (entry) => galleryHasMultipleImages(this.app, entry),
+      isSelected: (id: string) => this.gallerySelection.isSelected(id),
+      onSelectionToggle: (id: string, cardEl: HTMLElement) => this.gallerySelection.toggle(id, cardEl),
+      onFeedSelect: (id: string) => this.feedMode.setFeedActiveFromGrid(id),
+      onExpand: (cardEl: HTMLElement, entry: BasesEntry) => this.toggleExpandedCard(cardEl, entry),
+      resolveImageUrl: (entry: BasesEntry, propId: string) => galleryResolveImageUrl(this.app, entry, propId),
+      resolveVideoUrl: (entry: BasesEntry) => galleryResolveVideoUrl(this.app, entry),
+      hasMultipleImages: (entry: BasesEntry) => galleryHasMultipleImages(this.app, entry),
     };
   }
 
-  private createPlaceholder(parent: HTMLElement, index: number, height: number): void {
+  // Public: GalleryGridViewBind calls this during grid rebuild.
+  createPlaceholder(parent: HTMLElement, index: number, height: number): void {
     createGalleryPlaceholder(parent, index, height, this.hydrationObserver);
   }
 

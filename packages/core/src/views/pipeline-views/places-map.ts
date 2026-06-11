@@ -14,7 +14,6 @@
  * Leaflet integration) inside the registry shape so the gallery can
  * dispatch to it via the same path as Media's substitute view.
  */
-import type { BasesEntry } from "obsidian";
 import { getRoostId } from "@/lib/bases-entry";
 import { loadPipelineCache } from "@/pipeline/shared";
 import { buildMapPins, renderPlacesMap, type PlacesMapController } from "@/views/places-map";
@@ -25,7 +24,7 @@ import {
   type GalleryRenderContext,
 } from "./registry";
 
-export const placesMapView: PipelineGalleryView = {
+const placesMapView: PipelineGalleryView = {
   mode: "above",
   render(container, ctx: GalleryRenderContext) {
     container.addClass("roost-places-map-wrap");

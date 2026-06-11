@@ -16,7 +16,7 @@ export function buildFrontmatter(fields: Record<string, FrontmatterValue>): stri
     if (v == null) continue;
     if (Array.isArray(v) && v.length > 0) {
       lines.push(`${k}:`);
-      for (const item of v) lines.push(`  - ${item}`);
+      for (const item of v) lines.push(`  - ${yamlStr(String(item))}`);
     } else if (typeof v === "number") {
       lines.push(`${k}: ${v}`);
     } else if (typeof v === "string") {
@@ -63,8 +63,10 @@ function rebuildFrontmatter(entries: { key: string | null; fullBlock: string }[]
 
 /** Does this string value need YAML quoting? */
 function needsQuoting(s: string): boolean {
-  return s.includes('"') || s.includes(":") || s.includes("#") || s.includes("\n")
-    || s.startsWith("[") || s.startsWith("{") || s.startsWith("@");
+  return s.length === 0
+    || s.includes('"') || s.includes(":") || s.includes("#")
+    || s.includes("\n") || s.includes("\r") || s.includes("\t")
+    || /^[-?>|&*!%'`@\[{ ]/.test(s) || s.endsWith(" ");
 }
 
 /** YAML-escape a string value for frontmatter. Only quotes when necessary. */
@@ -72,7 +74,12 @@ function yamlStr(val: string | number | null | undefined): string {
   if (val == null) return '""';
   const s = String(val);
   if (needsQuoting(s)) {
-    return `"${s.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+    return `"${s
+      .replace(/\\/g, "\\\\")
+      .replace(/"/g, '\\"')
+      .replace(/\n/g, "\\n")
+      .replace(/\r/g, "\\r")
+      .replace(/\t/g, "\\t")}"`;
   }
   return s;
 }
@@ -111,7 +118,7 @@ export function updateNoteFrontmatter(
     const formatted = typeof value === "number"
       ? `${key}: ${value}`
       : Array.isArray(value)
-        ? `${key}:\n${value.map(v => `  - ${v}`).join("\n")}`
+        ? `${key}:\n${value.map(v => `  - ${yamlStr(String(v))}`).join("\n")}`
         : `${key}: ${yamlStr(value)}`;
     if (existing) {
       if (existing.fullBlock !== formatted) {

@@ -34,6 +34,37 @@ describe("PlatformCard — connected-idle", () => {
     expect(onSync).toHaveBeenCalledOnce();
   });
 
+  it("renders a Disconnect button when onDisconnect is provided and fires it", () => {
+    const onDisconnect = vi.fn();
+    render(
+      <PlatformCard
+        platform="tiktok"
+        state={{ kind: "connected-idle", itemCount: 10, lastSync: Date.now(), backlogs: { mediaFiles: 0, thread: 0, articleBody: 0, playback: 0 } }}
+        onConnect={() => {}}
+        onSync={() => {}}
+        onReconnect={() => {}}
+        onDisconnect={onDisconnect}
+        onBackfill={() => {}}
+      />
+    );
+    fireEvent.click(screen.getByRole("button", { name: /disconnect/i }));
+    expect(onDisconnect).toHaveBeenCalledOnce();
+  });
+
+  it("omits the Disconnect button when onDisconnect is not provided", () => {
+    render(
+      <PlatformCard
+        platform="tiktok"
+        state={{ kind: "connected-idle", itemCount: 10, lastSync: Date.now(), backlogs: { mediaFiles: 0, thread: 0, articleBody: 0, playback: 0 } }}
+        onConnect={() => {}}
+        onSync={() => {}}
+        onReconnect={() => {}}
+        onBackfill={() => {}}
+      />
+    );
+    expect(screen.queryByRole("button", { name: /disconnect/i })).toBeNull();
+  });
+
   it("renders backlog rows for non-zero buckets", () => {
     render(
       <PlatformCard

@@ -17,6 +17,23 @@ export class HttpError extends Error {
   }
 }
 
+export class TimeoutError extends Error {
+  constructor(public timeoutMs: number) {
+    super(`request timed out after ${timeoutMs}ms`);
+    this.name = "TimeoutError";
+  }
+}
+
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const t = setTimeout(() => reject(new TimeoutError(ms)), ms);
+    p.then(
+      (v) => { clearTimeout(t); resolve(v); },
+      (e) => { clearTimeout(t); reject(e); },
+    );
+  });
+}
+
 export interface CanonicalTitle {
   /** Title stripped of trailing year + bracketed annotations, whitespace-normalized. */
   title: string;
@@ -48,7 +65,7 @@ export function canonicalizeTitle(raw: string): CanonicalTitle {
   // Year extraction — find the first (YYYY) or [YYYY] in valid film range.
   // We scan all bracketed tokens and take the first valid year found.
   // The matching token is then removed from the title.
-  title = title.replace(/\s*[(\[](\d{4})[)\]]\s*/g, (match, digits, offset, str) => {
+  title = title.replace(/\s*[(\[](\d{4})[)\]]\s*/g, (match, digits) => {
     const parsed = parseInt(digits, 10);
     if (year === null && parsed >= MIN_YEAR && parsed <= MAX_YEAR) {
       year = parsed;
@@ -81,10 +98,13 @@ export interface FetchRetryOpts {
   baseDelayMs?: number;
   /** Injectable sleep for tests. Default is a real setTimeout. */
   sleep?: (ms: number) => Promise<void>;
+  /** Per-attempt timeout in ms. Default 15000. A timed-out attempt rejects and is retried like any network error. */
+  timeoutMs?: number;
 }
 
 const DEFAULT_RETRIES = 2;
 const DEFAULT_BASE_DELAY_MS = 250;
+const DEFAULT_TIMEOUT_MS = 15000;
 const realSleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
 /**
@@ -99,14 +119,16 @@ export async function fetchWithRetry(
   const retries = opts.retries ?? DEFAULT_RETRIES;
   const baseDelay = opts.baseDelayMs ?? DEFAULT_BASE_DELAY_MS;
   const sleep = opts.sleep ?? realSleep;
+  const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 
   let lastError: Error | null = null;
 
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
       // Obsidian's requestUrl throws on non-2xx by default — pass throw: false
-      // so we can inspect the status code ourselves.
-      const res = await requestUrl({ ...params, throw: false });
+      // so we can inspect the status code ourselves. Wrap in a timeout race so
+      // a stalled host can't hang the pipeline forever.
+      const res = await withTimeout(requestUrl({ ...params, throw: false }), timeoutMs);
 
       if (res.status >= 200 && res.status < 300) {
         return res;

@@ -1,7 +1,13 @@
 import { describe, it, expect } from "vitest";
 import { buildPipelineRows } from "@/ui/hub/pipeline-rows";
 
-const allOn = { recipe: true, place: true, mediaExtraction: true, product: true, workout: true, tutorial: true, home: true };
+// PipelineFlags is Record<PipelineId, boolean> — PipelineId also covers the
+// enrichment ids (playback/articleBody/thread/mediaFiles), which buildPipelineRows
+// doesn't render as rows but must be present to satisfy the type.
+const allOn = {
+  recipe: true, place: true, mediaExtraction: true, product: true, workout: true, tutorial: true, home: true,
+  playback: true, articleBody: true, thread: true, mediaFiles: true,
+};
 
 describe("buildPipelineRows", () => {
   it("one row per pipeline with label + status", () => {

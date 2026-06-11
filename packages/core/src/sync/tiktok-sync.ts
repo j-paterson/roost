@@ -391,7 +391,7 @@ async function collectChunkFiltered(wc: ElectronWebview, offset: number, count: 
     const parsed = JSON.parse(chunk);
     const baseTime = Date.now();
     for (let j = 0; j < parsed.length; j++) {
-      const { id, raw } = parsed[j];
+      const { raw } = parsed[j];
       if (!raw) continue;
       const record = roostNormalize("tiktok", raw, {
         savedAt: new Date(baseTime - (i - offset + j)).toISOString(),

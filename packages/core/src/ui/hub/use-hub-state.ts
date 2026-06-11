@@ -28,6 +28,10 @@ function gatherInputs(app: App, plugin: IRoostPlugin): HubInputs {
     }),
     syncStateByPlatform: settings.syncState ?? {},
     incompleteByCategory: plugin.lastIncompleteScan,
+    authByPlatform: {
+      tiktok: plugin.authStatus.tiktok,
+      twitter: plugin.authStatus.twitter,
+    },
     eagleConfigured:
       (settings.eagleToken ?? "").length > 0 &&
       (settings.eagleLibraryPath ?? "").length > 0,
@@ -49,6 +53,15 @@ export function useHubState(app: App, plugin: IRoostPlugin): HubState {
     const ref = app.workspace.on("roost:hub-state-changed" as never, () => recompute());
     return () => { app.workspace.offref(ref); };
   }, [app, recompute]);
+
+  // Probe webview auth cookies on mount and every 15s so the cards reflect
+  // login/logout (e.g. expired session) without needing a sync. The probe
+  // fires `roost:hub-state-changed` internally when it updates authStatus.
+  useEffect(() => {
+    void plugin.refreshAuthStatus();
+    const id = window.setInterval(() => { void plugin.refreshAuthStatus(); }, 15_000);
+    return () => window.clearInterval(id);
+  }, [plugin]);
 
   // tick = time-based re-render (transient agent state has no event stream);
   // version = event-driven re-render. deriveHubState re-runs on either.

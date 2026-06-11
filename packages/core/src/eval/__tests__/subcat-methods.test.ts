@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { predictCosine, predictT1, predictEnsemble, runCell, predictT1Margin, predictT1Gate, predictT1None } from "@/eval/subcat-methods";
-import type { CellResult, Method } from "@/eval/subcat-methods";
+import type { CellResult } from "@/eval/subcat-methods";
 import type { CategoryDef } from "@/pipeline/evaluate";
 import { __resetScoreCacheForTests } from "@/pipeline/evaluate";
 import { __setRequestUrlImpl, __resetRequestUrlImpl } from "obsidian";

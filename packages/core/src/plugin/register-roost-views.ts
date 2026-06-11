@@ -16,18 +16,11 @@ import { roostModeFromLeaf } from "@/lib/obsidian-bases";
 import type { RoostMode } from "@/types/roost";
 import type { IRoostPlugin } from "@/types/plugin";
 
-export interface RoostViewRegistrationHost extends Plugin, IRoostPlugin {
-  registerBasesView?: (
-    id: string,
-    config: {
-      name: string;
-      icon: string;
-      factory: (controller: QueryController, scrollEl: HTMLElement) => unknown;
-      options: () => unknown;
-    },
-  ) => boolean;
-  registerEvent: Plugin["registerEvent"];
-}
+// Host = the RoostPlugin instance. `registerBasesView` is provided by Obsidian's
+// Plugin type (since 1.10); we no longer shim it (the old hand-rolled signature
+// conflicted with Obsidian's own). The runtime `typeof` guard below still covers
+// vaults on a pre-1.10 build.
+export type RoostViewRegistrationHost = Plugin & IRoostPlugin;
 
 export function registerRoostViews(
   host: RoostViewRegistrationHost,

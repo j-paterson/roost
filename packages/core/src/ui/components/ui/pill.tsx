@@ -45,4 +45,4 @@ function Pill({
   )
 }
 
-export { Pill, pillVariants }
+export { Pill }

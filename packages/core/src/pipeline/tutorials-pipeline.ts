@@ -104,22 +104,6 @@ const VALID_SKILL_AREAS = new Set<SkillArea>([
   "cooking", "repair", "other",
 ]);
 
-const SKILL_AREA_DISPLAY: Record<SkillArea, string> = {
-  coding: "Coding",
-  art: "Art & Design",
-  music: "Music",
-  photography: "Photography",
-  video: "Video & Editing",
-  writing: "Writing",
-  language: "Languages",
-  craft: "Crafts & DIY",
-  career: "Career",
-  finance: "Finance",
-  cooking: "Cooking",
-  repair: "Repair & Maintenance",
-  other: "Other",
-};
-
 const CACHE_FILE = "tutorials-cache.json";
 const CONCURRENCY = 3;
 

@@ -7,9 +7,24 @@ const PIPELINE_STEPS = ["Embed", "Score Known", "Discover", "Describe", "Score N
 export interface SyncProgress {
   phase: string;
   count: number;
+  /** Denominator for phases that report count as a current-item index
+   *  (enrich, articles). Undefined/0 for scroll phases where `count` is the
+   *  running fetched tally. */
+  total?: number;
   written: number;
   skipped: number;
   resynced: number;
+}
+
+/** Bar fill %. enrich/articles report count as a current-item index against
+ *  `total`; other phases grow processed-count against the running `count`. */
+function progressBarWidth(p: SyncProgress): string {
+  if (p.phase === "enrich" || p.phase === "articles") {
+    const denom = p.total ?? 0;
+    return denom > 0 ? `${Math.min(100, (p.count / denom) * 100)}%` : "0%";
+  }
+  const done = p.written + p.resynced + p.skipped;
+  return p.count > 0 ? `${Math.min(100, (done / p.count) * 100)}%` : "0%";
 }
 
 interface ProgressHeaderProps {
@@ -85,6 +100,10 @@ export function ProgressHeader({ syncing, syncProgress, pipelineStep, categoryCo
               <span>{syncProgress.written} / {syncProgress.count} items written</span>
             ) : syncProgress.phase === "renaming" ? (
               <span>{syncProgress.written} / {syncProgress.count} items renamed</span>
+            ) : syncProgress.phase === "enrich" ? (
+              <span>enriching threads {syncProgress.count} / {syncProgress.total ?? syncProgress.count}</span>
+            ) : syncProgress.phase === "articles" ? (
+              <span>fetching articles {syncProgress.count} / {syncProgress.total ?? syncProgress.count}</span>
             ) : (
               <span>
                 {syncProgress.written + syncProgress.resynced + syncProgress.skipped} / {syncProgress.count} processed
@@ -103,7 +122,7 @@ export function ProgressHeader({ syncing, syncProgress, pipelineStep, categoryCo
             ) : (
               <div
                 className="h-full bg-primary rounded-full transition-all duration-300"
-                style={{ width: syncProgress.count > 0 ? `${Math.min(100, ((syncProgress.written + syncProgress.resynced + syncProgress.skipped) / syncProgress.count) * 100)}%` : "0%" }}
+                style={{ width: progressBarWidth(syncProgress) }}
               />
             )}
           </div>

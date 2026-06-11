@@ -41,6 +41,9 @@ export default class RoostPlugin extends Plugin {
   integrationStatus: Record<IntegrationId, DetectStatus | "unknown"> = {
     ollama: "unknown", sidecar: "unknown", ffmpeg: "unknown", "vault-search": "unknown",
   };
+  authStatus: Record<"tiktok" | "twitter", "connected" | "logged-out" | "unknown"> = {
+    tiktok: "unknown", twitter: "unknown",
+  };
   private workspace: RoostWorkspace | null = null;
   private readonly buses = new RoostPluginState();
 
@@ -151,7 +154,6 @@ export default class RoostPlugin extends Plugin {
       throw new Error("Roost requires a local vault (FileSystemAdapter) — desktop only.");
     }
     const vaultRoot = adapter.getBasePath();
-    const pluginDir = adapter.getFullPath(this.manifest.dir ?? `.obsidian/plugins/${this.manifest.id}`);
 
     migrateRoostLayout(vaultRoot);
 
@@ -210,6 +212,24 @@ export default class RoostPlugin extends Plugin {
 
   async openWebview(platform: "tiktok" | "twitter"): Promise<void> {
     await this.ws().openWebview(platform);
+  }
+
+  async refreshAuthStatus(): Promise<void> {
+    const wm = this.getWebviewManager();
+    const next = { ...this.authStatus };
+    for (const p of ["tiktok", "twitter"] as const) {
+      next[p] = await wm.probeAuth(p);
+    }
+    this.authStatus = next;
+    this.triggerHubStateChange();
+  }
+
+  async disconnectPlatform(platform: "tiktok" | "twitter"): Promise<void> {
+    await this.getWebviewManager().clearSession(platform);
+    if (this.settings.syncState) delete this.settings.syncState[platform];
+    await this.saveSettings();
+    this.authStatus = { ...this.authStatus, [platform]: "logged-out" };
+    this.triggerHubStateChange();
   }
 
   async exportXCookies(): Promise<void> {

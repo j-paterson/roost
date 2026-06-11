@@ -7,7 +7,6 @@ import {
   __setRequestUrlImpl,
   __resetRequestUrlImpl,
   App,
-  Vault,
   TFile,
   TFolder,
   FileSystemAdapter,

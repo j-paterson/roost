@@ -21,7 +21,7 @@ export interface ExplorerHydrateHost {
   resolveImageUrl(entry: BasesEntry, propId: string): string | null;
 }
 
-export function renderExplorerIconCover(coverEl: HTMLElement, iconName: string): void {
+function renderExplorerIconCover(coverEl: HTMLElement, iconName: string): void {
   coverEl.style.background = "var(--background-secondary)";
   coverEl.style.display = "flex";
   coverEl.style.alignItems = "center";

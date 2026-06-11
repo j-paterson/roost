@@ -104,12 +104,10 @@ export function computeCohesion(vectors: number[][], centroid: number[]): number
 const VEC_DIM = 768;
 
 let cachedEmbeddings: Record<string, EmbeddingCacheEntry> | null = null;
-let cachedEmbeddingsPath: string | null = null;
 
 /** Test-only hook — clears the in-memory embedding cache so the next loadEmbeddingCache reads from disk. */
 export function __resetEmbeddingCache(): void {
   cachedEmbeddings = null;
-  cachedEmbeddingsPath = null;
 }
 
 /** Read vectors from the binary file. Format: first line = JSON array of keys, then raw Float32 data. */
@@ -191,7 +189,6 @@ export function loadEmbeddingCache(vault: Vault): Record<string, EmbeddingCacheE
   const vaultPath = vaultBasePath(vault);
   const jsonPath = cachePath(vaultPath, "embedding-cache.json");
   const binPath = cachePath(vaultPath, "embedding-vectors.bin");
-  cachedEmbeddingsPath = jsonPath;
 
   const vecMap = loadVectorsBin(binPath);
   if (vecMap && vecMap.size > 0) {

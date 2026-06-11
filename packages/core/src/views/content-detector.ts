@@ -25,18 +25,18 @@ const VIDEO_EXTS = new Set(["mp4", "mov", "webm", "mkv", "avi"]);
 const MEDIA_EXTS = new Set([...IMAGE_EXTS, ...VIDEO_EXTS, "pdf"]);
 
 /** Video files stored next to cover image in attachment folders */
-export const VIDEO_SIBLING_NAMES = ["media.mp4", "video.mp4", "media.mov"] as const;
+const VIDEO_SIBLING_NAMES = ["media.mp4", "video.mp4", "media.mov"] as const;
 
-export function isImageExtension(ext: string | undefined): boolean {
+function isImageExtension(ext: string | undefined): boolean {
   return !!ext && IMAGE_EXTS.has(ext.toLowerCase());
 }
 
-export function isMediaExtension(ext: string | undefined): boolean {
+function isMediaExtension(ext: string | undefined): boolean {
   return !!ext && MEDIA_EXTS.has(ext.toLowerCase());
 }
 
 /** First sibling video file in the same folder as a cover/banner path */
-export function findSiblingVideoFile(app: App, coverOrBannerPath: string): TFile | null {
+function findSiblingVideoFile(app: App, coverOrBannerPath: string): TFile | null {
   const imgPath = stripWikilink(coverOrBannerPath);
   if (!imgPath) return null;
   const folder = imgPath.replace(/\/[^/]+$/, "");

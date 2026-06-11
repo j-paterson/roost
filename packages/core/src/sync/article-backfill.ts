@@ -209,6 +209,7 @@ export async function runArticleBackfill(plugin: IRoostPlugin): Promise<void> {
   //    architecture buffered all results and wrote them in a post-await loop —
   //    killing Obsidian mid-run lost everything. Now: each fetched article hits
   //    raw.json + cache + note body immediately as it completes.
+  const pendingRewrites: Promise<void>[] = [];
   let succeeded = 0;
   let failed = 0;
 
@@ -261,9 +262,11 @@ export async function runArticleBackfill(plugin: IRoostPlugin): Promise<void> {
             published_at: null,
             captured_via: "backfill",
           };
-          writer.rewriteNoteBody(record).catch((e: unknown) => {
-            log(`rewriteNoteBody failed for ${last.tweetId} (note ${outerItemId}): ${e instanceof Error ? e.message : String(e)}`);
-          });
+          pendingRewrites.push(
+            writer.rewriteNoteBody(record).catch((e: unknown) => {
+              log(`rewriteNoteBody failed for ${last.tweetId} (note ${outerItemId}): ${e instanceof Error ? e.message : String(e)}`);
+            }),
+          );
           succeeded++;
         } catch (e: unknown) {
           log(`Failed to write ${q.rawPath}: ${e instanceof Error ? e.message : String(e)}`);
@@ -298,8 +301,31 @@ export async function runArticleBackfill(plugin: IRoostPlugin): Promise<void> {
   //    .md bodies updated (e.g., due to the wrong-record-id bug). Idempotent —
   //    rewriteNoteBody is a no-op when the body already matches.
   log("Refreshing note bodies for all articles on disk...");
+  const { refreshed, refreshFailed } = await refreshArticleNoteBodies(xRoot, writer, log);
+  log(`Note body refresh: ${refreshed} updated, ${refreshFailed} failed`);
+
+  await Promise.allSettled(pendingRewrites);
+  const summary = `Article backfill: ${succeeded} succeeded, ${failed} failed (${refreshed} note bodies refreshed)`;
+  log(summary);
+  new Notice(summary);
+
+  // 8. Tear down the probe re-injection listener.
+  removeProbeListener();
+  } finally {
+    backfillRunning = false;
+  }
+}
+
+/** Sweep all article-bearing raw.json files under xRoot and rewrite their
+ *  note bodies. Resolves only after every rewrite has settled. */
+export async function refreshArticleNoteBodies(
+  xRoot: string,
+  writer: Pick<VaultWriter, "rewriteNoteBody">,
+  _log: (msg: string) => void,
+): Promise<{ refreshed: number; refreshFailed: number }> {
   let refreshed = 0;
   let refreshFailed = 0;
+  const pending: Promise<void>[] = [];
   walkDir(xRoot, (filePath) => {
     if (!filePath.endsWith("raw.json")) return;
     let raw: unknown;
@@ -317,24 +343,14 @@ export async function runArticleBackfill(plugin: IRoostPlugin): Promise<void> {
       published_at: null,
       captured_via: "backfill",
     };
-    writer.rewriteNoteBody(record)
-      .then(() => { refreshed++; })
-      .catch(() => { refreshFailed++; });
+    pending.push(
+      writer.rewriteNoteBody(record)
+        .then(() => { refreshed++; })
+        .catch(() => { refreshFailed++; }),
+    );
   });
-  // Wait for the fire-and-forget chain to settle. Each rewriteNoteBody is a
-  // single vault.modify; on a vault with 200 articles this is ~10s tops.
-  await new Promise(r => setTimeout(r, 15_000));
-  log(`Note body refresh: ${refreshed} updated, ${refreshFailed} failed`);
-
-  const summary = `Article backfill: ${succeeded} succeeded, ${failed} failed (${refreshed} note bodies refreshed)`;
-  log(summary);
-  new Notice(summary);
-
-  // 8. Tear down the probe re-injection listener.
-  removeProbeListener();
-  } finally {
-    backfillRunning = false;
-  }
+  await Promise.allSettled(pending);
+  return { refreshed, refreshFailed };
 }
 
 /** Registry binding. main.ts iterates ENRICHMENTS to register Cmd+P entries

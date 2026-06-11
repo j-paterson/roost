@@ -7,7 +7,6 @@
  * Shape is platform-specific and cannot be statically typed — property
  * access is done via helper casts in the same file.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type RawApiData = Record<string, any>;
 
 export interface NormalizedRecord {

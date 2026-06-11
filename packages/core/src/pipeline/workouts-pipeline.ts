@@ -92,7 +92,7 @@ const CONCURRENCY = 3;
 
 const WORKOUT_PIPELINE_VERSION = 1;
 
-export const WORKOUT_FIELDS = {
+const WORKOUT_FIELDS = {
   name: "workout_name",
   type: "workout_type",
   targetArea: "workout_target_area",
@@ -336,7 +336,7 @@ export function computeWorkoutBackfillFields(
   return updates;
 }
 
-export async function writeWorkoutToBookmark(
+async function writeWorkoutToBookmark(
   app: App,
   file: TFile,
   extraction: WorkoutExtraction,
@@ -485,7 +485,7 @@ export function reconstructWorkoutsCache(
       triage: "workout",
       extraction: {
         name: String(fm.workout_name ?? "Unknown"),
-        workoutType: typeof fm.workout_type === "string" ? fm.workout_type : "",
+        workoutType: normalizeWorkoutType(typeof fm.workout_type === "string" ? fm.workout_type : ""),
         targetArea: typeof fm.workout_target_area === "string" ? fm.workout_target_area : "",
         difficulty: (fm.workout_difficulty === "beginner" || fm.workout_difficulty === "advanced")
           ? fm.workout_difficulty : "intermediate",

@@ -17,7 +17,7 @@
 import { App, TFile } from "obsidian";
 import { extractBookmarkAuthor, extractBookmarkAuthorUsername } from "@/lib/extract";
 import { ensureAuthorNote, updateNoteFrontmatter } from "@/lib/vault-helpers";
-import type { NormalizedRecord } from "@/types/sync";
+import type { NormalizedRecord } from "@/lib/normalize";
 
 export interface BackfillResult {
   scanned: number;

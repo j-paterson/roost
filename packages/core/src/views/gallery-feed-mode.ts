@@ -17,7 +17,7 @@ const FEED_DEFAULT_GRID_RATIO = 0.35;
 let lastFeedPaneRatio: number | null = null;
 
 /** Stable string key for a filter's scope (category/subcategory/itemIds). */
-export function galleryFilterScopeKey(f: RoostFilter | null): string {
+function galleryFilterScopeKey(f: RoostFilter | null): string {
   if (!f) return "<all>";
   const cat = f.category ?? "";
   const sub = f.subcategory ?? "";

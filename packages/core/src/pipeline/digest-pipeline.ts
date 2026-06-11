@@ -106,9 +106,9 @@ interface DigestPipelineResult {
 const CACHE_FILE = "digest-cache.json";
 const OUTPUT_FOLDER = "Pipelines/Digest/Weekly";
 
-export const DIGEST_CACHE_SCHEMA_VERSION = 2;
-export const MMR_TARGET = 5;
-export const MMR_LAMBDA = 0.7;
+const DIGEST_CACHE_SCHEMA_VERSION = 2;
+const MMR_TARGET = 5;
+const MMR_LAMBDA = 0.7;
 
 // ── Cross-week delta lookup ──
 

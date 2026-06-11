@@ -5,7 +5,7 @@
  */
 import { Notice, TFile, TFolder } from "obsidian";
 import type { IRoostPlugin } from "@/types/plugin";
-import { updateNoteFrontmatter, type FrontmatterValue } from "@/lib/vault-helpers";
+import { updateNoteFrontmatter } from "@/lib/vault-helpers";
 import { RECIPE_FIELDS, computeRecipeBackfillFields } from "@/pipeline/recipe-pipeline";
 
 const PIPELINES_RECIPE_FOLDER = "Pipelines/Recipes";
