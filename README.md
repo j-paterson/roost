@@ -1,6 +1,6 @@
 # Roost
 
-Sync your **TikTok** and **X/Twitter** bookmarks into your Obsidian vault as
+Sync your socials (**TikTok** and **X/Twitter** bookmarks) into your Obsidian vault as
 markdown notes, then auto-organize them with a local AI categorizer.
 
 > **Desktop only.** Roost uses an Electron webview and local tools that aren't
