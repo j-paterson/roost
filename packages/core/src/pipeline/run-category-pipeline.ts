@@ -77,7 +77,9 @@ export interface CategoryPipelineConfig<
   backfillCachedFirst?: boolean;
   /** Post-core stages (media: playback + deep-link resolution). Runs after the
    *  extract phase and before buildResult; may mutate cache (saving via
-   *  savePipelineCache) and closure counters that buildResult reads. */
+   *  savePipelineCache) and closure counters that buildResult reads.
+   *  A rejection propagates out of runCategoryPipeline (buildResult never
+   *  runs); per-batch cache saves from earlier stages are already on disk. */
   afterCore?(ctx: CategoryPipelineContext<TCand, TEntry>): Promise<void>;
   buildResult(candidates: TCand[], cache: Record<string, TEntry>, errors: number): TResult;
   /** Failure policy — preserves each pipeline's CURRENT behavior (do not normalize).
@@ -136,6 +138,8 @@ export async function runCategoryPipeline<
   // Backfill stage as a local fn so backfillCachedFirst can reorder it.
   const writeCached = config.writeCachedToBookmark
     ?? ((a: App, c: TCand, entry: TEntry) => config.writeToBookmark(a, c, entry.extraction!));
+  // NOTE: this re-scans the live cache, so the two call sites (pre-triage
+  // vs post-triage) may produce different write sets for newly-triaged items.
   const backfillCached = async (): Promise<void> => {
     const alreadyCached: { entry: TEntry; candidate: TCand }[] = [];
     for (const c of candidates) {
