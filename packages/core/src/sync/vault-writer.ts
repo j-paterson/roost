@@ -1,11 +1,12 @@
 import { Vault, TFile, TFolder, MetadataCache } from "obsidian";
 import type { ElectronWebview } from "@/types/sync";
-import { buildFrontmatter, ensureFolder, ensureAuthorNote, updateNoteFrontmatter, parseFrontmatterEntries, type FrontmatterValue } from "@/lib/vault-helpers";
+import { buildFrontmatter, ensureFolder, updateNoteFrontmatter, parseFrontmatterEntries, type FrontmatterValue } from "@/lib/vault-helpers";
 import { VaultIndex, type IncompleteIdsResult } from "./vault-writer/vault-index";
 export type { IncompleteByCategory, IncompleteIdsResult } from "./vault-writer/vault-index";
+import { NoteFileWriter, articleFrontmatterFields } from "./vault-writer/note-file-writer";
+export { articleFrontmatterFields } from "./vault-writer/note-file-writer";
 import { type NormalizedRecord } from "../lib/normalize";
-import { articleWordCount, type ArticleResultRaw } from "@/lib/article-extract";
-import { getEnrichmentById, enrichmentVersionField, type EnrichmentId } from "@/lib/enrichments";
+import { type EnrichmentId } from "@/lib/enrichments";
 import { renderCardAsync } from "./card-renderer";
 import {
   getBookmarkPlatform, getBookmarkItemId, extractBookmarkText,
@@ -23,45 +24,6 @@ import {
 import { fetchTikTokOembed, buildOembedRawJson } from "./oembed-fallback";
 import { type ThreadSegment } from "./thread-fetcher";
 
-/**
- * Return the index past the closing `\n---` of the frontmatter block, or -1
- * if the content has no valid frontmatter. Used by rewriteNoteBody to split
- * the existing file into "everything up to and including the closing ---" and
- * "body markdown".
- *
- * The note format written by writeNote / updateNoteFrontmatter is:
- *   ---\n{yaml}\n---\n{body}
- * So the closing delimiter is "\n---\n" and the split point is the index
- * immediately after that 5-character sequence.
- */
-function findFrontmatterEnd(content: string): number {
-  if (!content.startsWith("---\n")) return -1;
-  const second = content.indexOf("\n---\n", 4);
-  if (second < 0) return -1;
-  return second + 5; // index of first char after "\n---\n"
-}
-
-export function articleFrontmatterFields(raw: unknown): Record<string, unknown> {
-  const tweet = (raw ?? {}) as Record<string, unknown>;
-  const direct = (tweet.article as { article_results?: { result?: ArticleResultRaw } })?.article_results?.result;
-  const quoted = (tweet.quoted_status_result as { result?: { article?: { article_results?: { result?: ArticleResultRaw } } } })?.result?.article?.article_results?.result;
-  const ar = direct ?? quoted;
-  if (!ar) return {};
-
-  const fields: Record<string, unknown> = {
-    is_article: true,
-    article_title: ar.title || "",
-  };
-  if (ar.content_state) {
-    fields.word_count = articleWordCount(ar);
-  } else {
-    fields.article_fetch_failed = true;
-  }
-  if (typeof ar.metadata?.first_published_at_secs === "number") {
-    fields.article_published_at = new Date(ar.metadata.first_published_at_secs * 1000).toISOString();
-  }
-  return fields;
-}
 
 interface ThreadSegmentMeta {
   rest_id: string;
@@ -115,6 +77,8 @@ export class VaultWriter {
   private tiktokWc: ElectronWebview | undefined;
   private log: (msg: string) => void;
   private index: VaultIndex;
+  private ensuredFolders = new Set<string>();
+  private noteWriter: NoteFileWriter;
   /** Cumulative counters across all writeBatch calls */
   private cumulative = { pushed: 0, resynced: 0, skipped: 0, processed: 0 };
   /** Current stop signal — checked during downloads */
@@ -131,6 +95,13 @@ export class VaultWriter {
       metadataCache: opts.metadataCache,
       tiktokWebview: opts.tiktokWebview,
       log: this.log,
+    });
+    this.noteWriter = new NoteFileWriter({
+      vault: opts.vault,
+      syncFolder: opts.syncFolder,
+      log: this.log,
+      index: this.index,
+      ensuredFolders: this.ensuredFolders,
     });
   }
 
@@ -210,7 +181,7 @@ export class VaultWriter {
         } else if (platform === "tiktok") {
           await this.writeTikTokRecord(record);
         } else {
-          await this.writeGenericRecord(record);
+          await this.noteWriter.writeGenericRecord(record);
         }
         this.index.existingIds.add(record.id);
         pushed++;
@@ -232,26 +203,6 @@ export class VaultWriter {
       this.log(`Batch done: ${records.length} in ${(batchElapsed / 1000).toFixed(1)}s — total: ${cum.pushed} new, ${cum.resynced} resync, ${cum.skipped - cum.resynced} skip (${cum.processed} processed)`);
     }
     return { pushed, skipped, resynced };
-  }
-
-  private extractCommon(record: NormalizedRecord) {
-    const text = extractBookmarkText(record);
-    const author = extractBookmarkAuthor(record);
-    const username = extractBookmarkAuthorUsername(record);
-    const url = extractBookmarkUrl(record);
-    const published = extractBookmarkPublishedAt(record);
-    const itemId = getBookmarkItemId(record)!;
-    const handle = username ? `@${username}` : author;
-    return { text, author, username, url, published, itemId, handle };
-  }
-
-  private async writeSidecar(filePath: string, content: string): Promise<void> {
-    const existing = this.vault.getAbstractFileByPath(filePath);
-    if (existing instanceof TFile) {
-      await this.vault.modify(existing, content);
-    } else {
-      await this.vault.create(filePath, content);
-    }
   }
 
   private async clearLegacyCarousel(attachFolder: string): Promise<void> {
@@ -295,28 +246,14 @@ export class VaultWriter {
     return `![[${destPath}]]`;
   }
 
-  private createdAuthors = new Set<string>();
-
-  private async createAuthorNote(handle: string, platform: string): Promise<string> {
-    return ensureAuthorNote(this.vault, handle, platform, this.createdAuthors, this.ensuredFolders);
-  }
-
-  private async writeNote(folderPath: string, filename: string, frontmatter: string, bodyParts: string[]): Promise<void> {
-    const content = `---\n${frontmatter}\n---\n\n${bodyParts.join("\n")}\n`;
-    const filePath = `${folderPath}/${filename}`;
-    if (!this.vault.getAbstractFileByPath(filePath)) {
-      await this.vault.create(filePath, content);
-    }
-  }
-
   private async writeTwitterRecord(record: NormalizedRecord): Promise<void> {
-    const { text, url, published, itemId, handle, username } = this.extractCommon(record);
+    const { text, url, published, itemId, handle, username } = this.noteWriter.extractCommon(record);
     const media = extractTwitterMedia(record);
     const folderPath = `${this.syncFolder}/X`;
     const attachFolder = `${folderPath}/twitter-${itemId}`;
 
     await ensureFolder(this.vault, folderPath, this.ensuredFolders);
-    const authorLink = await this.createAuthorNote(handle, "twitter");
+    const authorLink = await this.noteWriter.createAuthorNote(handle, "twitter");
 
     const mainThread = (record.rawData._thread as ThreadSegment[] | undefined) || [];
     const quotedThread = (record.rawData._quoted_thread as ThreadSegment[] | undefined) || [];
@@ -376,15 +313,15 @@ export class VaultWriter {
       }
     }
 
-    const hashtags = (text.match(/#\w+/g) || []);
+    const hashtags = (text.match(/#\w+/g) || [] as string[]);
 
     await ensureFolder(this.vault, attachFolder, this.ensuredFolders);
-    await this.writeSidecar(`${attachFolder}/raw.json`, JSON.stringify(record.rawData, null, 2));
+    await this.noteWriter.writeSidecar(`${attachFolder}/raw.json`, JSON.stringify(record.rawData, null, 2));
 
     if (threadMeta) {
-      await this.writeSidecar(`${attachFolder}/thread.json`, JSON.stringify(threadMeta, null, 2));
+      await this.noteWriter.writeSidecar(`${attachFolder}/thread.json`, JSON.stringify(threadMeta, null, 2));
     } else if (record.rawData?._thread_probe_failed === true) {
-      await this.writeSidecar(`${attachFolder}/thread.json`, JSON.stringify({
+      await this.noteWriter.writeSidecar(`${attachFolder}/thread.json`, JSON.stringify({
         success: false,
         attempted: true,
         attempted_at: new Date().toISOString(),
@@ -419,7 +356,7 @@ export class VaultWriter {
       fmFields.title = articleFieldsWrite.article_title;
     }
     const fm = buildFrontmatter(fmFields);
-    await this.writeNote(folderPath, sanitizeFilename(`${handle} - ${itemId}`) + ".md", fm, bodyParts);
+    await this.noteWriter.writeNote(folderPath, sanitizeFilename(`${handle} - ${itemId}`) + ".md", fm, bodyParts);
   }
 
   private async renderThreadPages(opts: {
@@ -575,13 +512,13 @@ export class VaultWriter {
   }
 
   private async writeTikTokRecord(record: NormalizedRecord): Promise<void> {
-    const { text, url, published, itemId, handle } = this.extractCommon(record);
+    const { text, url, published, itemId, handle } = this.noteWriter.extractCommon(record);
     const media = extractTikTokMedia(record);
     const folderPath = `${this.syncFolder}/TikTok`;
     const attachFolder = `${folderPath}/tiktok-${itemId}`;
 
     await ensureFolder(this.vault, folderPath, this.ensuredFolders);
-    const authorLink = await this.createAuthorNote(handle, "tiktok");
+    const authorLink = await this.noteWriter.createAuthorNote(handle, "tiktok");
     const mediaEmbeds: string[] = [];
 
     // coverFile is set ONLY when the underlying download succeeded — otherwise
@@ -626,14 +563,14 @@ export class VaultWriter {
       if (vtt) {
         // Cache raw VTT before parsing
         await ensureFolder(this.vault, attachFolder, this.ensuredFolders);
-        await this.writeSidecar(`${attachFolder}/subtitle.vtt`, vtt);
+        await this.noteWriter.writeSidecar(`${attachFolder}/subtitle.vtt`, vtt);
         const parsed = parseWebVTT(vtt);
         if (parsed.length > 10) subtitle = parsed;
       }
     }
 
     await ensureFolder(this.vault, attachFolder, this.ensuredFolders);
-    await this.writeSidecar(`${attachFolder}/raw.json`, JSON.stringify(record.rawData, null, 2));
+    await this.noteWriter.writeSidecar(`${attachFolder}/raw.json`, JSON.stringify(record.rawData, null, 2));
 
     const tags = [...new Set(["tiktok", ...media.hashtags, ...(media.collection ? [`collection/${sanitizeFilename(media.collection)}`] : [])])];
     const fm = buildFrontmatter({
@@ -655,17 +592,7 @@ export class VaultWriter {
       stats_shares: media.stats?.shares || undefined,
       stats_saves: media.stats?.saves || undefined,
     });
-    await this.writeNote(folderPath, sanitizeFilename(`${handle} - ${itemId}`) + ".md", fm, []);
-  }
-
-  private async writeGenericRecord(record: NormalizedRecord): Promise<void> {
-    const { text, url, published, handle } = this.extractCommon(record);
-    const fm = buildFrontmatter({
-      platform: record.platform, roost_id: record.id, author: handle, url, published, saved: record.saved_at,
-    });
-    const bodyParts = [text, "", `— ${handle}`];
-    const folderPath = `${this.syncFolder}/Other`;
-    await this.writeNote(folderPath, sanitizeFilename(`${handle} - ${record.itemId}`) + ".md", fm, bodyParts);
+    await this.noteWriter.writeNote(folderPath, sanitizeFilename(`${handle} - ${itemId}`) + ".md", fm, []);
   }
 
   /**
@@ -679,66 +606,7 @@ export class VaultWriter {
    * Used by article-backfill and by resyncRecord (Step 6 flush).
    */
   async rewriteNoteBody(record: NormalizedRecord): Promise<void> {
-    const platform = getBookmarkPlatform(record);
-    const itemId = getBookmarkItemId(record);
-    if (!itemId) return;
-    const username = extractBookmarkAuthorUsername(record);
-    const handle = username ? `@${username}` : extractBookmarkAuthor(record);
-    const folderPath = platform === "twitter"
-      ? `${this.syncFolder}/X`
-      : platform === "tiktok"
-      ? `${this.syncFolder}/TikTok`
-      : `${this.syncFolder}/Other`;
-    const noteFile = this.index.findNoteForId(record.id, folderPath, handle, itemId);
-    if (!noteFile) return;
-
-    let existing: string;
-    try { existing = await this.vault.read(noteFile); } catch { return; }
-
-    const fmEnd = findFrontmatterEnd(existing);
-    if (fmEnd < 0) return; // no frontmatter — skip rather than corrupt the file
-
-    // For article records, update frontmatter atomically with the body so that
-    // article_fetch_failed is cleared (and word_count / title / published_at are
-    // kept in sync) without requiring a separate resync pass.
-    const articleFields = articleFrontmatterFields(record.rawData);
-    let base = existing;
-    if (Object.keys(articleFields).length > 0) {
-      const fmUpdates: Record<string, FrontmatterValue> = {};
-      for (const [k, v] of Object.entries(articleFields)) {
-        fmUpdates[k] = v as FrontmatterValue;
-        // word_count being present means content_state is available — clear the
-        // failure flag that was set when only a stub was written.
-        if (k === "word_count") fmUpdates.article_fetch_failed = undefined;
-      }
-      // Override the YAML title with the clean article title. Older syncs
-      // wrote the rendered body markdown (with newlines flattened to spaces)
-      // into the title field — a corruption that survives until something
-      // explicitly overwrites it. The sweep path through rewriteNoteBody is
-      // the natural place to do that fix-up since it's already touching the
-      // note for every article.
-      if (typeof articleFields.article_title === "string" && articleFields.article_title) {
-        fmUpdates.title = articleFields.article_title;
-      }
-      // A successful rewriteNoteBody for an article means content_state has
-      // just landed in raw.json — stamp the registry's schemaVersion so a
-      // future bump auto-invalidates this item via isVersionStale.
-      const articleDef = getEnrichmentById("articleBody");
-      if (articleDef) fmUpdates[enrichmentVersionField("articleBody")] = articleDef.schemaVersion;
-      const withFm = updateNoteFrontmatter(existing, fmUpdates);
-      if (withFm) base = withFm;
-    }
-
-    // Re-split after the (possibly updated) frontmatter to place the new body.
-    const newFmEnd = findFrontmatterEnd(base);
-    if (newFmEnd < 0) return;
-
-    const newBody = extractBookmarkText(record);
-    // writeNote emits "---\n{fm}\n---\n\n{body}\n" — match that blank-line
-    // separator so re-renders are idempotent (no spurious mtime updates).
-    const newContent = base.slice(0, newFmEnd) + "\n" + newBody + "\n";
-    if (newContent === existing) return; // no-op
-    await this.vault.modify(noteFile, newContent);
+    return this.noteWriter.rewriteNoteBody(record);
   }
 
   /** Stamp the current schema version onto a note's frontmatter for a given
@@ -748,14 +616,7 @@ export class VaultWriter {
    *
    *  No-op when the note can't be located or the version is already current. */
   async stampEnrichmentVersion(roostId: string, enrichmentId: EnrichmentId, version: number): Promise<void> {
-    const file = this.index.notePathMap.get(roostId);
-    if (!file) return;
-    let content: string;
-    try { content = await this.vault.read(file); } catch { return; }
-    const updated = updateNoteFrontmatter(content, { [enrichmentVersionField(enrichmentId)]: version });
-    if (updated && updated !== content) {
-      await this.vault.modify(file, updated);
-    }
+    return this.noteWriter.stampEnrichmentVersion(roostId, enrichmentId, version);
   }
 
   async resyncRecord(record: NormalizedRecord): Promise<void> {
@@ -773,7 +634,7 @@ export class VaultWriter {
       const folderPath = attachFolder.replace(/\/tiktok-[^/]+$/, "");
       await ensureFolder(this.vault, attachFolder, this.ensuredFolders);
 
-      await this.writeSidecar(`${attachFolder}/raw.json`, JSON.stringify(record.rawData, null, 2));
+      await this.noteWriter.writeSidecar(`${attachFolder}/raw.json`, JSON.stringify(record.rawData, null, 2));
       if (media.images.length > 0) {
         await Promise.all(
           media.images.map(img =>
@@ -792,7 +653,7 @@ export class VaultWriter {
       if (subtitleUrl && !this.vault.getAbstractFileByPath(`${attachFolder}/subtitle.vtt`)) {
         const vtt = await downloadTikTokSubtitle(subtitleUrl);
         if (vtt) {
-          await this.writeSidecar(`${attachFolder}/subtitle.vtt`, vtt);
+          await this.noteWriter.writeSidecar(`${attachFolder}/subtitle.vtt`, vtt);
           const parsed = parseWebVTT(vtt);
           if (parsed.length > 10) subtitle = parsed;
         }
@@ -823,13 +684,13 @@ export class VaultWriter {
         }
       }
     } else if (platform === "twitter") {
-      const { text, url, published } = this.extractCommon(record);
+      const { text, url, published } = this.noteWriter.extractCommon(record);
       const twitterMedia = extractTwitterMedia(record);
       const attachFolder = this.index.findExistingAttachFolder(record.id, "twitter", itemId, `${this.syncFolder}/X`);
       const folderPath = attachFolder.replace(/\/twitter-[^/]+$/, "");
       await ensureFolder(this.vault, attachFolder, this.ensuredFolders);
 
-      await this.writeSidecar(`${attachFolder}/raw.json`, JSON.stringify(record.rawData, null, 2));
+      await this.noteWriter.writeSidecar(`${attachFolder}/raw.json`, JSON.stringify(record.rawData, null, 2));
 
       const mainThread = (record.rawData._thread as ThreadSegment[] | undefined) || [];
       const quotedThread = (record.rawData._quoted_thread as ThreadSegment[] | undefined) || [];
@@ -895,12 +756,12 @@ export class VaultWriter {
       }
 
       if (threadMeta) {
-        await this.writeSidecar(`${attachFolder}/thread.json`, JSON.stringify(threadMeta, null, 2));
+        await this.noteWriter.writeSidecar(`${attachFolder}/thread.json`, JSON.stringify(threadMeta, null, 2));
       } else if (
         record.rawData?._thread_probe_failed === true
         && !this.vault.getAbstractFileByPath(`${attachFolder}/thread.json`)
       ) {
-        await this.writeSidecar(`${attachFolder}/thread.json`, JSON.stringify({
+        await this.noteWriter.writeSidecar(`${attachFolder}/thread.json`, JSON.stringify({
           success: false,
           attempted: true,
           attempted_at: new Date().toISOString(),
@@ -950,8 +811,6 @@ export class VaultWriter {
     }
   }
 
-  private ensuredFolders = new Set<string>();
-
   async scanIncompleteIds(): Promise<IncompleteIdsResult> {
     return this.index.scanIncompleteIds();
   }
@@ -1000,7 +859,7 @@ export class VaultWriter {
 
       const rawData = buildOembedRawJson(itemId, oembed, { author: authorHandle, title: existingTitle });
       await ensureFolder(this.vault, attachFolder, this.ensuredFolders);
-      await this.writeSidecar(`${attachFolder}/raw.json`, JSON.stringify(rawData, null, 2));
+      await this.noteWriter.writeSidecar(`${attachFolder}/raw.json`, JSON.stringify(rawData, null, 2));
 
       if (oembed) {
         const updates: Record<string, FrontmatterValue> = {};
