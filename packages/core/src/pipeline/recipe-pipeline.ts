@@ -22,6 +22,10 @@ import {
   loadPipelineCache,
   savePipelineCache,
 } from "@/pipeline/shared";
+import {
+  runCategoryPipeline,
+  type CategoryPipelineConfig,
+} from "@/pipeline/run-category-pipeline";
 
 // ── Types ──
 
@@ -333,105 +337,56 @@ interface RecipePipelineResult {
   errors: number;
 }
 
+/**
+ * Recipe wiring for the generic {@link runCategoryPipeline}. Every value here
+ * reproduces the recipe pipeline's prior inline behavior verbatim — the
+ * "recipe" extract verdict, the "skip" verdict, recipe's retry/leave failure
+ * policy, the recipeLink post-extract attach, and the exact log strings.
+ */
+const RECIPE_CONFIG: CategoryPipelineConfig<
+  RecipeCandidate,
+  RecipeExtraction,
+  "recipe" | "restaurant" | "skip",
+  RecipePipelineResult
+> = {
+  cacheFile: CACHE_FILE,
+  concurrency: CONCURRENCY,
+  extractVerdict: "recipe",
+  skipVerdict: "skip",
+  onExtractFailure: "retry",
+  onTriageFailure: "leave",
+  gatherCandidates,
+  triageItem,
+  extractItem: extractRecipe,
+  afterExtract: (ex, c) => { ex.recipeLink = c.recipeLink; },
+  writeToBookmark: (app, c, ex) => writeRecipeToBookmark(app, c.file, ex),
+  buildResult: (candidates, cache, errors) => ({
+    candidates: candidates.length,
+    recipes: candidates.filter(
+      c => cache[c.roostId]?.triage === "recipe" && cache[c.roostId]?.extraction,
+    ).length,
+    restaurants: candidates.filter(c => cache[c.roostId]?.triage === "restaurant").length,
+    skipped: candidates.filter(c => cache[c.roostId]?.triage === "skip").length,
+    errors,
+  }),
+  log: {
+    candidatesFound: n => `Found ${n} food/recipe candidates`,
+    triageExtractCounts: (uncached, needExtract, complete) =>
+      `${uncached} need triage, ${needExtract} need extraction (${complete} complete)`,
+    triageProgress: (done, total) => `Triage: ${done}/${total}`,
+    wroteCached: n => `Wrote ${n} cached recipes`,
+    extracting: n => `Extracting ${n} new recipes`,
+    extractProgress: (done, total) => `Extract: ${done}/${total}`,
+    done: r => `Done: ${r.recipes} recipes, ${r.restaurants} restaurants, ${r.skipped} skipped, ${r.errors} errors`,
+  },
+};
+
 export async function runRecipePipeline(
   app: App,
   syncFolder: string,
   onLog?: (msg: string) => void,
 ): Promise<RecipePipelineResult> {
-  const log = onLog || (() => {});
-  const vault = app.vault;
-  const cache = loadPipelineCache<CacheEntry>(vault, CACHE_FILE);
-
-  // 1. Gather candidates
-  const candidates = gatherCandidates(app, syncFolder);
-  log(`Found ${candidates.length} food/recipe candidates`);
-
-  const uncached = candidates.filter(c => !cache[c.roostId]);
-  const needExtract = candidates.filter(
-    c => cache[c.roostId]?.triage === "recipe" && !cache[c.roostId]?.extraction,
-  ).length;
-  log(`${uncached.length} need triage, ${needExtract} need extraction (${candidates.length - uncached.length - needExtract} complete)`);
-
-  // 2. Triage uncached items
-  let triageCount = 0;
-  for (let i = 0; i < uncached.length; i += CONCURRENCY) {
-    const batch = uncached.slice(i, i + CONCURRENCY);
-    const results = await Promise.allSettled(
-      batch.map(async c => {
-        const triage = await triageItem(c);
-        return { roostId: c.roostId, triage };
-      }),
-    );
-
-    for (const r of results) {
-      if (r.status === "fulfilled") {
-        cache[r.value.roostId] = { triage: r.value.triage, extraction: null };
-        triageCount++;
-      }
-    }
-
-    savePipelineCache(vault, CACHE_FILE, cache);
-    log(`Triage: ${triageCount}/${uncached.length}`);
-  }
-
-  // 3. Backfill previously cached recipes onto their source bookmarks
-  const alreadyCached: { extraction: RecipeExtraction; candidate: RecipeCandidate }[] = [];
-  for (const c of candidates) {
-    const entry = cache[c.roostId];
-    if (entry?.triage === "recipe" && entry.extraction) {
-      alreadyCached.push({ extraction: entry.extraction, candidate: c });
-    }
-  }
-  for (const r of alreadyCached) {
-    await writeRecipeToBookmark(app, r.candidate.file, r.extraction);
-  }
-  log(`Wrote ${alreadyCached.length} cached recipes`);
-
-  const toExtract = candidates.filter(
-    c => cache[c.roostId]?.triage === "recipe" && !cache[c.roostId]?.extraction,
-  );
-  log(`Extracting ${toExtract.length} new recipes`);
-
-  let extractCount = 0;
-  let extractErrors = 0;
-  for (let i = 0; i < toExtract.length; i += CONCURRENCY) {
-    const batch = toExtract.slice(i, i + CONCURRENCY);
-    const results = await Promise.allSettled(
-      batch.map(async c => {
-        const extraction = await extractRecipe(c);
-        return { roostId: c.roostId, extraction, candidate: c };
-      }),
-    );
-
-    for (const r of results) {
-      if (r.status === "fulfilled" && r.value.extraction) {
-        // Attach recipeLink from candidate (author bio) to the extraction
-        r.value.extraction.recipeLink = r.value.candidate.recipeLink;
-        cache[r.value.roostId].extraction = r.value.extraction;
-        extractCount++;
-        await writeRecipeToBookmark(app, r.value.candidate.file, r.value.extraction);
-      } else {
-        extractErrors++;
-      }
-    }
-
-    savePipelineCache(vault, CACHE_FILE, cache);
-    log(`Extract: ${extractCount}/${toExtract.length}`);
-  }
-
-  const totalRecipes = candidates.filter(
-    c => cache[c.roostId]?.triage === "recipe" && cache[c.roostId]?.extraction,
-  ).length;
-  const result: RecipePipelineResult = {
-    candidates: candidates.length,
-    recipes: totalRecipes,
-    restaurants: candidates.filter(c => cache[c.roostId]?.triage === "restaurant").length,
-    skipped: candidates.filter(c => cache[c.roostId]?.triage === "skip").length,
-    errors: extractErrors,
-  };
-
-  log(`Done: ${result.recipes} recipes, ${result.restaurants} restaurants, ${result.skipped} skipped, ${result.errors} errors`);
-  return result;
+  return runCategoryPipeline(app, syncFolder, RECIPE_CONFIG, onLog);
 }
 
 // ─── Cache reconstruction ─────────────────────────────────────────────────────
