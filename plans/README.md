@@ -81,7 +81,7 @@ Note: at planning time the working tree had uncommitted changes to
 | 032  | Recover recipes the extractor misses — gather by subcategory + caption/transcript fixes | P2 | S | — | IMPLEMENTED 2026-06-12 (all 3 fixes: gather-by-filing + caption fast-path + narrative/repair/empty→null; 9 new tests in recipe-extraction-recovery.test.ts; typecheck clean) |
 | 033  | Backfill video transcripts via local ASR (Whisper) for silent recipe demos | P2 | L | 032 | TODO (design + phased; 2 decisions to confirm) |
 | 034  | Make every pipeline's saved intent actionable — source link + search deep links + media chip fix | P2 | M | — | DONE (branch `advisor/034-actionable-pipelines`, uncommitted; search-fallback URLs only — canonical media links are 035) |
-| 035  | Carry resolved media ids to the gallery card so renderMedia builds *canonical* Letterboxd/AniList/Spotify deep links | P2 | S | 034 | TODO (base **post-034**; widens `MediaExtraction` + both cache load paths, then upgrades 034's `renderMedia` action link) |
+| 035  | Carry resolved media ids to the gallery card so renderMedia builds *canonical* Letterboxd/AniList/Spotify deep links | P2 | S | 034 | DONE (branch `advisor/035-media-canonical-deeplinks`, uncommitted; widened both `MediaExtraction` types + both cache load paths, upgraded `renderMedia` to canonical via `watchableUrl`/Spotify track; +7 tests) |
 
 > **034 / 035 (pipeline actionability, 2026-06-12).** A pipeline audit ("a bookmark
 > is a saved intent; surface what makes it actionable") found enrichments extract

@@ -66,6 +66,17 @@ const CACHE_FILES: [PipelineType, string, string, (app: App) => Record<string, P
 
 // ── Cache loading ──
 
+/** The media cache file's entries carry resolved deep-link ids on sibling
+ *  sub-objects (mirrors media-pipeline.ts PlaybackResolution/DeepLinkResolution).
+ *  The generic PipelineCacheEntry doesn't type them, so loadPipelineData reads
+ *  them behind this narrow structural shape and merges them onto the stored
+ *  MediaExtraction — otherwise the ids on disk are dropped and the card can only
+ *  build search links. */
+interface MediaCacheExtras {
+  playback?: { spotifyId: string | null };
+  deepLink?: { tmdbId: string | null; tmdbType: "movie" | "tv" | null; anilistId: string | null };
+}
+
 let pipelineLookup: Map<string, PipelineHit> | null = null;
 
 export function loadPipelineData(app: App): void {
@@ -86,7 +97,22 @@ export function loadPipelineData(app: App): void {
     for (const [id, entry] of Object.entries(cache)) {
       // Only include items that were triaged as relevant AND have extraction data
       if (entry.triage === triageMatch && entry.extraction) {
-        pipelineLookup.set(id, { type, extraction: entry.extraction });
+        let extraction = entry.extraction;
+        // For the media cache, lift the resolved deep-link ids off the entry's
+        // playback/deepLink sub-objects onto the MediaExtraction so the card can
+        // build canonical links (not just search). Only the media cache has these.
+        if (type === "media") {
+          const ex = entry as PipelineCacheEntry & MediaCacheExtras;
+          const m = extraction as MediaExtraction;
+          extraction = {
+            ...m,
+            spotifyId: ex.playback?.spotifyId ?? m.spotifyId ?? null,
+            tmdbId: ex.deepLink?.tmdbId ?? m.tmdbId ?? null,
+            tmdbType: ex.deepLink?.tmdbType ?? m.tmdbType ?? null,
+            anilistId: ex.deepLink?.anilistId ?? m.anilistId ?? null,
+          } as MediaExtraction;
+        }
+        pipelineLookup.set(id, { type, extraction });
       }
     }
   }
@@ -380,10 +406,28 @@ function renderMedia(el: HTMLElement, data: MediaExtraction, source?: PipelineSo
   let mediaLink: { label: string; url: string; icon?: string } | null = null;
   const sub = (source?.subcategory ?? data.mediaType ?? "").toLowerCase();
   if (sub === "music") {
-    const q = encodeURIComponent([data.title, data.creator].filter(Boolean).join(" "));
-    if (q) mediaLink = { label: "Search on Spotify", url: `https://open.spotify.com/search/${q}`, icon: "🎧" };
+    // Canonical Spotify track link when we resolved a track id; otherwise fall
+    // back to a Spotify search for the title/creator.
+    if (typeof data.spotifyId === "string" && data.spotifyId) {
+      mediaLink = { label: "Open in Spotify", url: `https://open.spotify.com/track/${data.spotifyId}`, icon: "🎧" };
+    } else {
+      const q = encodeURIComponent([data.title, data.creator].filter(Boolean).join(" "));
+      if (q) mediaLink = { label: "Search on Spotify", url: `https://open.spotify.com/search/${q}`, icon: "🎧" };
+    }
   } else {
-    const w = watchableUrl({ subcategory: sub, title: data.title } as any);
+    // Pass the resolved ids so watchableUrl returns a canonical Letterboxd/
+    // AniList URL when possible, falling back to its search URL when not. Use
+    // the plural source.subcategory (watchableUrl matches films/series/anime/
+    // documentaries), not the singular data.mediaType. Series stays search even
+    // with a tmdbId — Letterboxd's TMDB redirect is films-only.
+    const w = watchableUrl({
+      subcategory: sub,
+      title: data.title,
+      year: data.year ?? null,
+      tmdbId: data.tmdbId ?? null,
+      tmdbType: data.tmdbType ?? null,
+      anilistId: data.anilistId ?? null,
+    });
     if (w) mediaLink = { label: w.kind === "canonical" ? "Open" : "Find it", url: w.url, icon: "▶" };
   }
   renderActionLinks(el, source, mediaLink);
