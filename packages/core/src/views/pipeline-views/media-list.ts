@@ -174,6 +174,12 @@ const mediaListView: PipelineGalleryView = {
       return {
         dispose: () => {
           stopAllInlinePlayers();
+          // Remove ONLY our own root: dispatch() disposes after the standard
+          // grid has reconciled cards into this container, so a
+          // container.empty() here would delete them. (The old "next render
+          // empties the container" contract died when grid renders became
+          // reconciling — gallery-grid-render.ts.)
+          wrap.remove();
           container.removeClass("roost-media-list-host");
         },
       };
@@ -278,8 +284,13 @@ const mediaListView: PipelineGalleryView = {
     return {
       dispose: () => {
         stopAllInlinePlayers();
+        // Remove ONLY our own root: dispatch() disposes after the standard
+        // grid has reconciled cards into this container, so a
+        // container.empty() here would delete them. (The old "next render
+        // empties the container" contract died when grid renders became
+        // reconciling — gallery-grid-render.ts.)
+        wrap.remove();
         container.removeClass("roost-media-list-host");
-        // Children are wiped by the next render's container.empty().
       },
     };
   },
