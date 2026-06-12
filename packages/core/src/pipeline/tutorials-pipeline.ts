@@ -373,9 +373,7 @@ interface TutorialsPipelineResult {
   areas: number;
 }
 
-/** Tutorials wiring for {@link runCategoryPipeline} — products family (tag
- *  fast-path, triage-throw → skip, extract-failure → demote), plus a distinct
- *  skillArea count (`areas`) computed in buildResult. */
+/** Tutorials wiring for {@link runCategoryPipeline} — standard profile (tag fast-path, triage-throw → skip, extract-failure → demote), plus a distinct skillArea count (`areas`) computed in buildResult. */
 const TUTORIALS_CONFIG: CategoryPipelineConfig<
   TutorialCandidate,
   TutorialExtraction,

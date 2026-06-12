@@ -363,8 +363,7 @@ interface WorkoutsPipelineResult {
   errors: number;
 }
 
-/** Workouts wiring for {@link runCategoryPipeline} — same family as products:
- *  tag fast-path, triage-throw → skip, extract-failure → demote. */
+/** Workouts wiring for {@link runCategoryPipeline} — standard profile (tag fast-path, triage-throw → skip, extract-failure → demote). */
 const WORKOUTS_CONFIG: CategoryPipelineConfig<
   WorkoutCandidate,
   WorkoutExtraction,
