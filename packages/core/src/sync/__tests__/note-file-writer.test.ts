@@ -7,7 +7,8 @@
  */
 import { describe, it, expect } from "vitest";
 import { TFile } from "obsidian";
-import { NoteFileWriter } from "../vault-writer/note-file-writer";
+import { NoteFileWriter, extractEmbedLines } from "../vault-writer/note-file-writer";
+import { renderTweetBody } from "@/lib/tweet-render";
 import { makeFakeVault } from "./fake-vault";
 import { type VaultIndex } from "../vault-writer/vault-index";
 import type { NormalizedRecord } from "@/lib/normalize";
@@ -131,6 +132,109 @@ describe("NoteFileWriter.rewriteNoteBody", () => {
     const updatedContent = files.get(notePath)!;
     expect(updatedContent).toBeTruthy();
     expect(updatedContent.endsWith("new body text\n")).toBe(true);
+  });
+});
+
+// ── Test 2b: rewriteNoteBody preserves existing inline media (the 11K fix) ────
+
+/** Twitter record whose text has a @mention + #hashtag so the rendered body is
+ *  recognizably "rich" (linkified). Author screen_name "ada" → handle "@ada". */
+function makeTwitterRecord(): NormalizedRecord {
+  return {
+    id: "twitter:1",
+    platform: "twitter",
+    itemId: "1",
+    rawData: {
+      rest_id: "1",
+      core: { user_results: { result: { core: { name: "Ada", screen_name: "ada" } } } },
+      legacy: { full_text: "hey @bob look at #cooking" },
+    },
+    saved_at: "2026-02-03T00:00:00.000Z",
+    published_at: null,
+    captured_via: "test",
+  } as NormalizedRecord;
+}
+
+describe("NoteFileWriter.rewriteNoteBody — preserves inline media (additive)", () => {
+  it("keeps an existing ![[…/1.jpg]] embed AND adds the linkified text", async () => {
+    const { vault, files } = makeFakeVault();
+    const ensuredFolders = new Set<string>();
+
+    // Legacy state: the note body is JUST the inline image, no rendered text.
+    const notePath = "Bookmarks/X/@ada - 1.md";
+    const initialContent =
+      "---\nroost_id: \"twitter:1\"\nplatform: twitter\n---\n\n![[Bookmarks/X/twitter-1/1.jpg]]\n";
+    files.set(notePath, initialContent);
+
+    const index = makeMinimalIndex(files);
+    const writer = new NoteFileWriter({
+      vault: vault as any,
+      syncFolder: "Bookmarks",
+      log: () => {},
+      index,
+      ensuredFolders,
+    });
+
+    await writer.rewriteNoteBody(makeTwitterRecord());
+
+    const updated = files.get(notePath)!;
+    // The existing inline image survives (additive, non-destructive).
+    expect(updated).toContain("![[Bookmarks/X/twitter-1/1.jpg]]");
+    // …and the note now also carries the searchable, linkified text.
+    expect(updated).toContain("[@bob](https://x.com/bob)");
+    expect(updated).toContain("[#cooking](https://x.com/hashtag/cooking)");
+  });
+
+  it("is idempotent: a second rewrite on the rendered note is a no-op", async () => {
+    const { vault, files } = makeFakeVault();
+    const ensuredFolders = new Set<string>();
+
+    const notePath = "Bookmarks/X/@ada - 1.md";
+    files.set(
+      notePath,
+      "---\nroost_id: \"twitter:1\"\nplatform: twitter\n---\n\n![[Bookmarks/X/twitter-1/1.jpg]]\n",
+    );
+
+    const index = makeMinimalIndex(files);
+    const writer = new NoteFileWriter({
+      vault: vault as any,
+      syncFolder: "Bookmarks",
+      log: () => {},
+      index,
+      ensuredFolders,
+    });
+
+    await writer.rewriteNoteBody(makeTwitterRecord());
+    const afterFirst = files.get(notePath)!;
+
+    await writer.rewriteNoteBody(makeTwitterRecord());
+    const afterSecond = files.get(notePath)!;
+
+    // Re-extract → re-append → newContent === existing → the guard no-ops.
+    expect(afterSecond).toBe(afterFirst);
+    // The image is still there after both runs.
+    expect(afterSecond).toContain("![[Bookmarks/X/twitter-1/1.jpg]]");
+  });
+});
+
+// ── Test 2c: extractEmbedLines + render→extract→render fixed point ────────────
+
+describe("extractEmbedLines", () => {
+  it("returns only !-prefixed embeds, excluding a bare [[wikilink]]", () => {
+    const body = [
+      "![[a/1.jpg]]",
+      "some prose paragraph",
+      "[[People/@ada]]", // bare wikilink — a LINK, not an embed → excluded
+      "![[a/2.jpg]]",
+    ].join("\n");
+    expect(extractEmbedLines(body)).toEqual(["![[a/1.jpg]]", "![[a/2.jpg]]"]);
+  });
+
+  it("render→extract→render is a fixed point (idempotency proof)", () => {
+    const rec = makeTwitterRecord();
+    const first = renderTweetBody(rec, { mediaEmbeds: ["![[a/1.jpg]]"] });
+    const second = renderTweetBody(rec, { mediaEmbeds: extractEmbedLines(first) });
+    expect(second).toBe(first);
   });
 });
 
