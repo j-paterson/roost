@@ -9,7 +9,7 @@ import { buildPipelineRows } from "@/ui/hub/pipeline-rows";
 // to satisfy the type; the panel renders just the 7 pipeline rows.
 const allOn = {
   recipe: true, place: true, mediaExtraction: true, product: true, workout: true, tutorial: true, home: true,
-  playback: true, articleBody: true, thread: true, mediaFiles: true,
+  playback: true, articleBody: true, thread: true, mediaFiles: true, tweetBody: true,
 };
 afterEach(cleanup);
 

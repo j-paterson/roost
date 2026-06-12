@@ -6,7 +6,7 @@ import { buildPipelineRows } from "@/ui/hub/pipeline-rows";
 // doesn't render as rows but must be present to satisfy the type.
 const allOn = {
   recipe: true, place: true, mediaExtraction: true, product: true, workout: true, tutorial: true, home: true,
-  playback: true, articleBody: true, thread: true, mediaFiles: true,
+  playback: true, articleBody: true, thread: true, mediaFiles: true, tweetBody: true,
 };
 
 describe("buildPipelineRows", () => {

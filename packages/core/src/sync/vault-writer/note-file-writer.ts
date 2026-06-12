@@ -2,6 +2,7 @@ import { Vault, TFile } from "obsidian";
 import { buildFrontmatter, ensureAuthorNote, updateNoteFrontmatter, type FrontmatterValue } from "@/lib/vault-helpers";
 import { getEnrichmentById, enrichmentVersionField, type EnrichmentId } from "@/lib/enrichments";
 import { getBookmarkPlatform, getBookmarkItemId, extractBookmarkText, extractBookmarkAuthor, extractBookmarkAuthorUsername, extractBookmarkUrl, extractBookmarkPublishedAt, sanitizeFilename } from "../../lib/extract";
+import { renderTweetBody } from "@/lib/tweet-render";
 import { articleWordCount, type ArticleResultRaw } from "@/lib/article-extract";
 import { type NormalizedRecord } from "../../lib/normalize";
 import { type VaultIndex } from "./vault-index";
@@ -177,7 +178,10 @@ export class NoteFileWriter {
     const newFmEnd = findFrontmatterEnd(base);
     if (newFmEnd < 0) return;
 
-    const newBody = extractBookmarkText(record);
+    // Twitter notes get the rendered markdown body (links, quotes, thread
+    // structure); for articles renderTweetBody delegates to extractBookmarkText,
+    // so article notes stay byte-identical. TikTok/Other keep the plain text.
+    const newBody = platform === "twitter" ? renderTweetBody(record) : extractBookmarkText(record);
     // writeNote emits "---\n{fm}\n---\n\n{body}\n" — match that blank-line
     // separator so re-renders are idempotent (no spurious mtime updates).
     const newContent = base.slice(0, newFmEnd) + "\n" + newBody + "\n";
