@@ -1229,7 +1229,7 @@ describe("pipeline runners — uniform harness", () => {
 
   describe("failing extraction — cache divergence (Group 3)", () => {
     it("recipe (Promise.allSettled): A extracts, B fails — B left as {triage:'recipe',extraction:null} for retry", async () => {
-      // characterizes current allSettled error handling — Phase B will normalize this; update intentionally if it changes.
+      // characterizes recipe's failure policy: allSettled leaves a failed item for retry. Preserved as-is by runCategoryPipeline (onExtractFailure:"retry") — intentionally NOT normalized.
       const idA = "tiktok:recipe_extok_A";
       const idB = "tiktok:recipe_extfail_B";
       makeRawSyncFile(tmp, idA, "Bookmarks/synced", "recipe");
@@ -1262,7 +1262,7 @@ describe("pipeline runners — uniform harness", () => {
     });
 
     it("product (Promise.all + .catch): A extracts, B fails — B DEMOTED to {triage:'skip',extraction:null}", async () => {
-      // characterizes current all+catch error handling — Phase B will normalize this; update intentionally if it changes.
+      // characterizes the all+catch failure policy: a failed item is demoted to the skip verdict. Preserved as-is by runCategoryPipeline (onExtractFailure:"demote") — intentionally NOT normalized.
       const idA = "tiktok:product_extok_A";
       const idB = "tiktok:product_extfail_B";
       makeRawSyncFile(tmp, idA, "Bookmarks/synced", "product");
