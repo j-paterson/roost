@@ -110,6 +110,11 @@ export class TwitterRecordWriter {
     const isThreaded = mainThread.length > 0 || quotedThread.length > 0;
 
     let coverFile: string | null = null;
+    // Real downloaded media embedded inline in the note body ("![[…]]"). The
+    // threaded branch leaves this empty — thread media is the carousel (cover +
+    // *.png/*.jpg pages), not inline embeds (Decision 4). card.png (the
+    // generated text card) is NEVER pushed here (Decision 2).
+    const mediaEmbeds: string[] = [];
     let threadMeta: ThreadMeta | null = null;
     let bodyParts: string[] = [];
 
@@ -133,21 +138,34 @@ export class TwitterRecordWriter {
         );
         const firstOk = results.findIndex(r => r);
         if (firstOk >= 0) coverFile = `${attachFolder}/${media.photos[firstOk].index + 1}.jpg`;
+        // Embed every photo that downloaded, preserving multi-image order.
+        results.forEach((ok, i) => {
+          if (ok) mediaEmbeds.push(`![[${attachFolder}/${media.photos[i].index + 1}.jpg]]`);
+        });
       } else if (media.videoUrl) {
         await this.mediaDownloader.downloadAndSave(() => downloadTwitterVideo(media.videoUrl!), attachFolder, "video.mp4");
         // Poster JPG lives on the media entry and is the only thing the gallery
         // can render via <img> — the mp4 scrub video layers on top of it.
         if (media.videoPosterUrl) {
           const posterOk = await this.mediaDownloader.downloadAndSave(() => downloadTwitterImage(media.videoPosterUrl!), attachFolder, "video-poster.jpg");
-          if (posterOk) coverFile = `${attachFolder}/video-poster.jpg`;
+          if (posterOk) {
+            coverFile = `${attachFolder}/video-poster.jpg`;
+            mediaEmbeds.push(`![[${attachFolder}/video-poster.jpg]]`);
+          }
         }
         if (!coverFile && media.cardMeta?.thumbnail) {
           const embed = await this.mediaDownloader.downloadAndSave(() => downloadTwitterImage(media.cardMeta!.thumbnail!), attachFolder, "card-thumb.jpg");
-          if (embed) coverFile = `${attachFolder}/card-thumb.jpg`;
+          if (embed) {
+            coverFile = `${attachFolder}/card-thumb.jpg`;
+            mediaEmbeds.push(`![[${attachFolder}/card-thumb.jpg]]`);
+          }
         }
       } else if (media.cardMeta?.thumbnail) {
         const embed = await this.mediaDownloader.downloadAndSave(() => downloadTwitterImage(media.cardMeta!.thumbnail!), attachFolder, "card-thumb.jpg");
-        if (embed) coverFile = `${attachFolder}/card-thumb.jpg`;
+        if (embed) {
+          coverFile = `${attachFolder}/card-thumb.jpg`;
+          mediaEmbeds.push(`![[${attachFolder}/card-thumb.jpg]]`);
+        }
       } else if (text) {
         const quotedBitmap = await loadQuotedTweetBitmap(media.quotedTweet?.photoUrl);
         const subContext = media.quotedTweet
@@ -166,8 +184,10 @@ export class TwitterRecordWriter {
     // Body is the rendered markdown for BOTH threaded and non-threaded tweets;
     // renderTweetBody dispatches threads from rawData._thread itself. The PNG
     // cover (card.png / carousel) is set above and left untouched — the note
-    // merely gains a real, searchable, formatted body here.
-    bodyParts = [renderTweetBody(record)].filter(Boolean);
+    // merely gains a real, searchable, formatted body here, plus the real
+    // downloaded media inline (photos / video poster / card-thumb — never
+    // card.png). renderTweetBody ignores mediaEmbeds for articles (Decision 3).
+    bodyParts = [renderTweetBody(record, { mediaEmbeds })].filter(Boolean);
 
     const hashtags = (text.match(/#\w+/g) || [] as string[]);
 

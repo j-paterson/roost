@@ -25,6 +25,19 @@ function findFrontmatterEnd(content: string): number {
   return second + 5; // index of first char after "\n---\n"
 }
 
+/** Pull every Obsidian *embed* line ("![[ ... ]]") out of a body string, in
+ *  order. The leading "!" matters — a bare "[[wikilink]]" is a link, not an
+ *  embed, so we only preserve real inline media (image / video). Each returned
+ *  string is the full trimmed embed line, e.g. "![[Bookmarks/X/twitter-1/1.jpg]]". */
+export function extractEmbedLines(body: string): string[] {
+  const out: string[] = [];
+  for (const rawLine of body.split("\n")) {
+    const line = rawLine.trim();
+    if (/^!\[\[[^\]]+\]\]$/.test(line)) out.push(line);
+  }
+  return out;
+}
+
 export function articleFrontmatterFields(raw: unknown): Record<string, unknown> {
   const tweet = (raw ?? {}) as Record<string, unknown>;
   const direct = (tweet.article as { article_results?: { result?: ArticleResultRaw } })?.article_results?.result;
@@ -181,7 +194,23 @@ export class NoteFileWriter {
     // Twitter notes get the rendered markdown body (links, quotes, thread
     // structure); for articles renderTweetBody delegates to extractBookmarkText,
     // so article notes stay byte-identical. TikTok/Other keep the plain text.
-    const newBody = platform === "twitter" ? renderTweetBody(record) : extractBookmarkText(record);
+    //
+    // ADDITIVE backfill: preserve whatever inline media the existing note
+    // already showed. We read the embeds straight off the OLD body string
+    // (`existing`, not the article-frontmatter-updated `base`) so this is
+    // naming-era-agnostic — legacy `media.jpg`, current `1.jpg`,
+    // `video-poster.jpg`, multi-image — and re-emit them below the freshly
+    // rendered, searchable text. A note that had no embed gets only the text,
+    // exactly as before. Re-extracting the same one-per-line embeds on a second
+    // run makes `newBody` identical → the `newContent === existing` guard below
+    // keeps the backfill idempotent.
+    const oldBodyStart = findFrontmatterEnd(existing);
+    const oldBody = oldBodyStart >= 0 ? existing.slice(oldBodyStart) : "";
+    const preservedEmbeds = extractEmbedLines(oldBody);
+    const newBody =
+      platform === "twitter"
+        ? renderTweetBody(record, { mediaEmbeds: preservedEmbeds })
+        : extractBookmarkText(record);
     // writeNote emits "---\n{fm}\n---\n\n{body}\n" — match that blank-line
     // separator so re-renders are idempotent (no spurious mtime updates).
     const newContent = base.slice(0, newFmEnd) + "\n" + newBody + "\n";

@@ -220,3 +220,62 @@ describe("renderTweetBody — direct-article regression", () => {
     expect(renderTweetBody(record)).toBe(extractBookmarkText(record));
   });
 });
+
+describe("renderTweetBody — mediaEmbeds option", () => {
+  it("appends a given embed below the text, blank-line separated", () => {
+    const out = renderTweetBody(
+      tweet({ rest_id: "1", legacy: { full_text: "hello world" } }),
+      { mediaEmbeds: ["![[Bookmarks/X/twitter-1/1.jpg]]"] },
+    );
+    expect(out).toBe("hello world\n\n![[Bookmarks/X/twitter-1/1.jpg]]");
+  });
+
+  it("joins multiple embeds with a single \\n (one per line)", () => {
+    const out = renderTweetBody(
+      tweet({ rest_id: "1", legacy: { full_text: "hello world" } }),
+      { mediaEmbeds: ["![[Bookmarks/X/twitter-1/1.jpg]]", "![[Bookmarks/X/twitter-1/2.jpg]]"] },
+    );
+    expect(out).toBe(
+      "hello world\n\n![[Bookmarks/X/twitter-1/1.jpg]]\n![[Bookmarks/X/twitter-1/2.jpg]]",
+    );
+  });
+
+  it("no embeds (undefined / empty / {}) is identical to the no-arg render", () => {
+    const t = tweet({ rest_id: "1", legacy: { full_text: "hey @alice see #cooking" } });
+    const base = renderTweetBody(t);
+    expect(renderTweetBody(t, { mediaEmbeds: [] })).toBe(base);
+    expect(renderTweetBody(t, {})).toBe(base);
+    // A whitespace-only embed line is filtered out (treated as no embed).
+    expect(renderTweetBody(t, { mediaEmbeds: ["   "] })).toBe(base);
+  });
+
+  it("media-only tweet (empty text) → the embed is the whole body, no leading blank line", () => {
+    const out = renderTweetBody(
+      tweet({ rest_id: "1", legacy: { full_text: "" } }),
+      { mediaEmbeds: ["![[Bookmarks/X/twitter-1/1.jpg]]"] },
+    );
+    expect(out).toBe("![[Bookmarks/X/twitter-1/1.jpg]]");
+  });
+
+  it("a direct article IGNORES mediaEmbeds (byte-identical to extractBookmarkText)", () => {
+    const record = tweet({
+      rest_id: "1",
+      legacy: { full_text: "" },
+      article: {
+        article_results: {
+          result: {
+            title: "On Pasta",
+            content_state: {
+              blocks: [{ key: "a", type: "unstyled", text: "Pasta is delicious.", depth: 0, inlineStyleRanges: [], entityRanges: [] }],
+              entityMap: [],
+            },
+          },
+        },
+      },
+    });
+    expect(isDirectArticle(record)).toBe(true);
+    const out = renderTweetBody(record, { mediaEmbeds: ["![[x.jpg]]"] });
+    expect(out).toBe(extractBookmarkText(record));
+    expect(out).not.toContain("![[x.jpg]]");
+  });
+});

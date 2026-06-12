@@ -248,6 +248,13 @@ describe("VaultWriter.writeBatch — Twitter photo record", () => {
     // CHARACTERIZATION: cover wikilink starts with "[" → quoted.
     expect(note).toContain('cover: "[[Bookmarks/X/twitter-111/1.jpg]]"');
 
+    // NEW (plan 036): the note BODY now embeds the real downloaded photo inline.
+    // Note the cover is a bare wikilink ([[…]]) while the body embed is the
+    // "!"-prefixed embed form (![[…]]) Obsidian renders as the image.
+    const bodyStart = note.indexOf("\n---\n");
+    const body = note.slice(bodyStart + 5);
+    expect(body).toContain("![[Bookmarks/X/twitter-111/1.jpg]]");
+
     // Hashtag #cats promoted to the tags array
     expect(note).toContain("cats");
 
@@ -297,6 +304,11 @@ describe("VaultWriter.writeBatch — Twitter text/card record", () => {
     expect(body.trim().length).toBeGreaterThan(0);
     expect(body).toContain("[@alice](https://x.com/alice)");
     expect(body).toContain("[#pasta](https://x.com/hashtag/pasta)");
+    // NEW (plan 036): card.png is the generated text-card COVER, not real media,
+    // so it must NEVER be embedded inline in the body (Decision 2) — embedding it
+    // would duplicate the tweet text as a picture.
+    expect(body).not.toContain("![[Bookmarks/X/twitter-222/card.png]]");
+    expect(body).not.toContain("card.png]]");
     // The enrichment version is stamped at write time so the note isn't
     // re-flagged by the first-rollout detection predicate.
     expect(note).toContain("enrichment_v_tweetBody: 1");

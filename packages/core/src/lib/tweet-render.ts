@@ -25,6 +25,13 @@ interface TextRun {
   isEntity?: boolean;
 }
 
+/** Options for renderTweetBody. `mediaEmbeds` are fully-formed embed lines
+ *  (e.g. "![[Bookmarks/X/twitter-111/1.jpg]]") appended below the rendered
+ *  text. The caller owns path construction; this renderer stays pure. */
+export interface RenderTweetBodyOptions {
+  mediaEmbeds?: string[];
+}
+
 // Copied verbatim from card-renderer.ts:125 — do NOT import (keeps this file
 // free of the OffscreenCanvas-bearing module). The colored-run loop below
 // mirrors card-renderer.ts:128-141 but emits markdown links instead of colors.
@@ -167,6 +174,15 @@ function renderText(text: string): string {
   return renderedParas.join("\n\n");
 }
 
+/** Append media embed lines below the rendered tweet text. A blank line
+ *  separates them; the embeds join with "\n". Pure — no path logic. */
+function appendMediaEmbeds(body: string, embeds: string[] | undefined): string {
+  const lines = (embeds ?? []).filter((e) => e && e.trim().length > 0);
+  if (lines.length === 0) return body;
+  const joined = lines.join("\n");
+  return body ? `${body}\n\n${joined}` : joined;
+}
+
 /** Resolve the *direct* article result (top-level only — NOT the quoted path),
  *  matching the Decision-4 "articles are untouched" split. */
 function getDirectArticleResult(rawData: RawApiData | undefined): unknown {
@@ -293,13 +309,15 @@ function renderThread(record: BookmarkRecord): string {
  *   3. Plain tweet     → text + entities + reply/quote blockquotes.
  *      (A quote-of-article falls here: host text rendered, quoted article quoted.)
  */
-export function renderTweetBody(record: BookmarkRecord): string {
+export function renderTweetBody(record: BookmarkRecord, opts?: RenderTweetBodyOptions): string {
   if (isDirectArticle(record)) return extractBookmarkText(record);
 
   const rawData = record.rawData as RawApiData | undefined;
   const mainThread = (rawData?._thread as unknown[] | undefined) || [];
   const quotedThread = (rawData?._quoted_thread as unknown[] | undefined) || [];
-  if (mainThread.length > 0 || quotedThread.length > 0) return renderThread(record);
+  const text = (mainThread.length > 0 || quotedThread.length > 0)
+    ? renderThread(record)
+    : renderPlainTweet(record);
 
-  return renderPlainTweet(record);
+  return appendMediaEmbeds(text, opts?.mediaEmbeds);
 }
