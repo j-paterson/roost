@@ -71,7 +71,7 @@ export function rebuildGalleryGrid(host: GalleryGridRenderHost): boolean {
   const imageRatioPct = (host.config.get("imageRatio") as number) ?? 75;
   host.estimatedHeight = estimateGalleryCardHeight(cardSize, imageRatioPct);
 
-  loadPipelineData(host.app.vault);
+  loadPipelineData(host.app);
   host.refreshFeedEntries(host.currentFilter);
 
   // Split-pane mode or pipeline substitute require full teardown.

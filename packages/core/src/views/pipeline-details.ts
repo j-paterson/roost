@@ -6,8 +6,15 @@
  *   - renderPipelineOverlay(coverEl, type) → small themed icon on compact card
  *   - renderPipelineDetail(infoEl, type, extraction) → rich section in expanded card
  */
-import { Vault } from "obsidian";
-import { loadPipelineCache } from "@/pipeline/shared";
+import { App } from "obsidian";
+import { loadPipelineCache, savePipelineCache } from "@/pipeline/shared";
+import { reconstructRecipeCache } from "@/pipeline/recipe-pipeline";
+import { reconstructPlacesCache } from "@/pipeline/places-pipeline";
+import { reconstructMediaCache } from "@/pipeline/media-pipeline";
+import { reconstructProductsCache } from "@/pipeline/products-pipeline";
+import { reconstructWorkoutsCache } from "@/pipeline/workouts-pipeline";
+import { reconstructTutorialsCache } from "@/pipeline/tutorials-pipeline";
+import { reconstructHomeCache } from "@/pipeline/home-pipeline";
 import type {
   PipelineCacheEntry, AnyExtractionData,
   RecipeExtraction, PlaceExtraction, MediaExtraction,
@@ -34,24 +41,38 @@ const PIPELINE_META: Record<PipelineType, { icon: string; label: string; color: 
   home:     { icon: "🏠", label: "Home",     color: "#16a085" },
 };
 
-const CACHE_FILES: [PipelineType, string, string][] = [
-  ["recipe",   "recipe-cache.json",    "recipe"],
-  ["place",    "places-cache.json",    "place"],
-  ["media",    "media-cache.json",     "media"],
-  ["product",  "products-cache.json",  "product"],
-  ["workout",  "workouts-cache.json",  "workout"],
-  ["tutorial", "tutorials-cache.json", "tutorial"],
-  ["home",     "home-cache.json",      "home"],
+// [type, cacheFile, triage-match, reconstruct-from-frontmatter]. The reconstruct
+// fn rebuilds the cache from each note's durable <cat>_* frontmatter — the
+// source of truth — so the detail survives a cache wipe.
+const CACHE_FILES: [PipelineType, string, string, (app: App) => Record<string, PipelineCacheEntry>][] = [
+  ["recipe",   "recipe-cache.json",    "recipe",   reconstructRecipeCache],
+  ["place",    "places-cache.json",    "place",    reconstructPlacesCache],
+  ["media",    "media-cache.json",     "media",    reconstructMediaCache],
+  ["product",  "products-cache.json",  "product",  reconstructProductsCache],
+  ["workout",  "workouts-cache.json",  "workout",  reconstructWorkoutsCache],
+  ["tutorial", "tutorials-cache.json", "tutorial", reconstructTutorialsCache],
+  ["home",     "home-cache.json",      "home",     reconstructHomeCache],
 ];
 
 // ── Cache loading ──
 
 let pipelineLookup: Map<string, PipelineHit> | null = null;
 
-export function loadPipelineData(vault: Vault): void {
+export function loadPipelineData(app: App): void {
   pipelineLookup = new Map();
-  for (const [type, file, triageMatch] of CACHE_FILES) {
-    const cache = loadPipelineCache<PipelineCacheEntry>(vault, file);
+  for (const [type, file, triageMatch, reconstruct] of CACHE_FILES) {
+    let cache = loadPipelineCache<PipelineCacheEntry>(app.vault, file);
+    // Self-heal: the expanded-card detail reads from these pipeline caches, but
+    // the durable source of truth is each note's <cat>_* frontmatter. If the
+    // cache file is missing or has been wiped, rebuild it from frontmatter so
+    // the detail never disappears — and persist it so the scan only runs once.
+    if (Object.keys(cache).length === 0) {
+      const rebuilt = reconstruct(app);
+      if (Object.keys(rebuilt).length > 0) {
+        cache = rebuilt;
+        savePipelineCache(app.vault, file, cache);
+      }
+    }
     for (const [id, entry] of Object.entries(cache)) {
       // Only include items that were triaged as relevant AND have extraction data
       if (entry.triage === triageMatch && entry.extraction) {
