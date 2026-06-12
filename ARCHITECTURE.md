@@ -356,6 +356,19 @@ End-to-end flow for LLM-backed category extractors:
 | Hub | `ui/hub/pipelines-panel.tsx`, `pipeline-rows.ts` | Per-pipeline On/Off toggles (`settings.pipelines`) |
 | Sidebar | `ui/hooks/use-roost-pipeline-rows.ts`, `library-tree.tsx` | Run/cancel; Run hidden when inactive |
 
+All seven category-enrichment pipelines (recipe, products, workouts, tutorials,
+home, places, media) delegate to a single parametric runner,
+`runCategoryPipeline` (`packages/core/src/pipeline/run-category-pipeline.ts`).
+Each pipeline supplies a `CategoryPipelineConfig` — gather/triage/extract/write
+callbacks, failure policies, and log strings — while the runner owns the
+skeleton: cache load, fast-path + LLM triage in concurrent batches, cached
+backfill, extraction, per-batch cache saves. Pipeline-specific stages stay
+config-driven: places runs a version-gated geo backfill before delegating;
+media uses `backfillCachedFirst` (stamps cached items before triage) and
+`afterCore` (Spotify playback + Letterboxd/AniList deep-link resolution).
+`digest-pipeline.ts` is intentionally NOT on the runner — it has no
+triage/extract shape.
+
 **When is a pipeline active?** Toggle on in `settings.pipelines` **and** `llmAvailable()`:
 
 - **`llmBackend: "local"`** — `settings.integrations.ollama` is true and the Ollama integration probe reports `available` (HTTP at `OLLAMA_URL`).

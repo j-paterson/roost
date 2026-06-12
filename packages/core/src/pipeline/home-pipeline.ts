@@ -396,8 +396,7 @@ interface HomePipelineResult {
   errors: number;
 }
 
-/** Home wiring for {@link runCategoryPipeline} — products family (tag
- *  fast-path, triage-throw → skip, extract-failure → demote); result key is `ideas`. */
+/** Home wiring for {@link runCategoryPipeline} — standard profile (tag fast-path, triage-throw → skip, extract-failure → demote); result key is `ideas`. */
 const HOME_CONFIG: CategoryPipelineConfig<
   HomeCandidate,
   HomeExtraction,
