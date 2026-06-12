@@ -9,6 +9,7 @@ import { RoostPluginState } from "@/plugin/roost-plugin-state";
 import { exportXCookies } from "@/plugin/export-x-cookies";
 import { regenerateCardForActiveNote } from "@/plugin/regenerate-card-command";
 import { fetchCoversCommand } from "@/plugin/fetch-covers-command";
+import { maybeAutoRunTweetBodyBackfill } from "@/sync/tweet-body-backfill";
 // Side-effect import: each pipeline-view module registers itself with the
 // pipeline-view registry on load. Adding a new pipeline visualization is
 // one entry in src/views/pipeline-views/index.ts.
@@ -180,6 +181,15 @@ export default class RoostPlugin extends Plugin {
         void this.ws().activateHubLeaf();
       }
     }, 500);
+
+    // One-time, non-blocking catch-up: render the body of every legacy X note
+    // that predates the tweetBody enrichment (plan 031). New tweets already
+    // render at write time; this only touches the pre-031 backlog, runs once
+    // (gated by settings.tweetBodyBackfillDone), and is idempotent (plan 036).
+    // Deferred so plugin load / first paint are never blocked.
+    window.setTimeout(() => {
+      void maybeAutoRunTweetBodyBackfill(this);
+    }, 4000);
   }
 
   async regenerateCardForActiveNote(): Promise<void> {

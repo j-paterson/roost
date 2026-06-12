@@ -148,6 +148,44 @@ export async function runTweetBodyBackfill(plugin: IRoostPlugin): Promise<void> 
   }
 }
 
+/** Pure: should the one-time legacy tweet-body catch-up run on this load?
+ *  Today it's just "not done yet", but keeping it a named predicate makes the
+ *  trigger condition unit-testable and the call site self-documenting. */
+export function shouldAutoRunTweetBodyBackfill(done: boolean | undefined): boolean {
+  return done !== true;
+}
+
+/** One-time, deferred, non-blocking auto catch-up of legacy tweet bodies.
+ *  Runs the existing backfill driver at most once per vault, then persists a
+ *  done-flag so it never repeats. Safe to call on every plugin load: it
+ *  early-exits when the flag is set. The driver itself is cache-backed,
+ *  re-entrancy-guarded, and idempotent (plan 036), so even a forced re-run is
+ *  a converging no-op. Errors are swallowed (logged) — a failed catch-up must
+ *  never break plugin load, and the flag is NOT set on failure so the next
+ *  load retries.
+ *
+ *  The driver is injectable (`run`) purely so the orchestrator wiring can be
+ *  unit-tested without driving the real fs walk; production calls the default
+ *  (`maybeAutoRunTweetBodyBackfill(this)`) and gets the real driver verbatim. */
+export async function maybeAutoRunTweetBodyBackfill(
+  plugin: IRoostPlugin,
+  run: (plugin: IRoostPlugin) => Promise<void> = runTweetBodyBackfill,
+): Promise<void> {
+  if (!shouldAutoRunTweetBodyBackfill(plugin.settings.tweetBodyBackfillDone)) return;
+  try {
+    plugin.fireLog("[tweet-body-autorun] one-time legacy catch-up starting");
+    await run(plugin);
+    plugin.settings.tweetBodyBackfillDone = true;
+    await plugin.saveSettings();
+    plugin.fireLog("[tweet-body-autorun] done — flag set, will not re-run");
+  } catch (e: unknown) {
+    plugin.fireLog(
+      "[tweet-body-autorun] failed (will retry next load): " +
+        (e instanceof Error ? e.message : String(e)),
+    );
+  }
+}
+
 export const RENDERED_TWEET_ENRICHMENT: EnrichmentDef = {
   id: "tweetBody",
   displayName: "Tweet body",

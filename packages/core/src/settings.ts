@@ -60,6 +60,14 @@ export interface RoostSettings {
    *  from minutes to seconds. Default false — opt in once the standalone
    *  backfills are proven on the user's vault. */
   fastSyncMode: boolean;
+  /** Internal one-time marker: has the legacy tweet-body catch-up run? New
+   *  tweets render at write time (twitter-record-writer); this flag gates the
+   *  ONE-TIME auto catch-up of pre-031 legacy notes on plugin load. Set true
+   *  after a successful auto-run so it never repeats. Not a user preference —
+   *  no settings-tab toggle (mirrors the old welcomeCompleted marker). Reset to
+   *  false by hand in data.json to force a re-run; the manual "Render X tweet
+   *  bodies" command is the always-available fallback. */
+  tweetBodyBackfillDone: boolean;
   /** User-curated top-level category order for the library tree. Names in
    *  this array render first (in array order); categories not listed fall
    *  back to count-descending sort. Empty array → pure count-sort. */
@@ -104,6 +112,7 @@ export const DEFAULT_SETTINGS: RoostSettings = {
   anthropicModel: "claude-haiku-4-5-20251001",
   tmdbApiKey: "",
   fastSyncMode: false,
+  tweetBodyBackfillDone: false,
   categoryOrder: [],
   subcategoryOrder: {},
   memoryEnabled: false,
