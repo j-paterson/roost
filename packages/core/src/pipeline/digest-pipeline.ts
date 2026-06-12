@@ -3,6 +3,15 @@
  * curated buckets (Macro, Business, Finances, AI, Technology) into one
  * digest note with topic-clustered LLM summaries per bucket.
  *
+ * NOT a category-enrichment pipeline: this file deliberately does NOT
+ * implement `CategoryPipelineConfig` / `runCategoryPipeline`. Digest is a
+ * synthesis pipeline — time-windowed candidates, cluster-keyed LLM work,
+ * a week-keyed cache, and a NEW aggregate note as output — none of which
+ * fit the runner's per-item triage→extract→write-in-place contract. It
+ * shares only the low-level mechanics in `@/pipeline/shared` (cache I/O,
+ * forEachBatch, withLLMRetry). See ARCHITECTURE.md "Category extraction
+ * pipelines" for the rationale.
+ *
  * Entry point: `runWeeklyDigest(app, syncFolder, weekStart, onLog?)`.
  * Output: `Pipelines/Digest/Weekly/{weekStartId}.md` (Sunday-start date).
  * Cache: `.roost/digest-cache.json`, keyed by week-start date.
@@ -19,6 +28,8 @@ import {
   loadPipelineCache,
   savePipelineCache,
   stripJsonFence,
+  forEachBatch,
+  withLLMRetry,
 } from "@/pipeline/shared";
 import { mmrTrim } from "@/pipeline/mmr";
 import { WEEKLY_DIGEST_BUCKETS, WEEKLY_DIGEST_CLUSTER_THRESHOLD } from "@/config";
@@ -431,16 +442,13 @@ function tryParseClaimsOutput(raw: string): ExtractedClaim[] | null {
 export async function extractClaims(
   items: DigestCandidate[],
 ): Promise<ExtractedClaim[]> {
-  let parsed: ExtractedClaim[] | null = null;
-  for (let attempt = 0; attempt < 2; attempt++) {
+  return withLLMRetry(async () => {
     const raw = await ollamaGenerate(buildExtractClaimsPrompt(items), {
       numPredict: 400,
       numCtx: 3072,
     });
-    parsed = tryParseClaimsOutput(raw);
-    if (parsed) break;
-  }
-  return parsed ?? [];
+    return tryParseClaimsOutput(raw);
+  }, []);
 }
 
 // ── Synthesis (LLM call #2) ──
@@ -540,16 +548,13 @@ export async function synthesizeStep(
   claims: ExtractedClaim[],
   prior: PriorClusterContext | null,
 ): Promise<SynthesisResult> {
-  let parsed: SynthesisResult | null = null;
-  for (let attempt = 0; attempt < 2; attempt++) {
+  return withLLMRetry(async () => {
     const raw = await ollamaGenerate(buildSynthesizePrompt(claims, prior), {
       numPredict: 350,
       numCtx: 2048,
     });
-    parsed = tryParseSynthesisOutput(raw);
-    if (parsed) break;
-  }
-  return parsed ?? FALLBACK_SYNTHESIS;
+    return tryParseSynthesisOutput(raw);
+  }, FALLBACK_SYNTHESIS);
 }
 
 // ── Note emission ──
@@ -775,8 +780,7 @@ export async function runWeeklyDigest(
 
     const CONCURRENCY = 3;
     const bucketClusters: DigestCluster[] = [];
-    for (let i = 0; i < groups.length; i += CONCURRENCY) {
-      const batch = groups.slice(i, i + CONCURRENCY);
+    await forEachBatch(groups, CONCURRENCY, async batch => {
       const summarized = await Promise.all(
         batch.map(async (group) => {
           try {
@@ -808,7 +812,7 @@ export async function runWeeklyDigest(
         }),
       );
       bucketClusters.push(...summarized);
-    }
+    });
 
     // Order clusters within bucket: size desc, then most-recent savedDate desc.
     bucketClusters.sort((a, b) => {
