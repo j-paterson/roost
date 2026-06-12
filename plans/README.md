@@ -82,6 +82,7 @@ Note: at planning time the working tree had uncommitted changes to
 | 033  | Backfill video transcripts via local ASR (Whisper) for silent recipe demos | P2 | L | 032 | TODO (design + phased; 2 decisions to confirm) |
 | 034  | Make every pipeline's saved intent actionable — source link + search deep links + media chip fix | P2 | M | — | DONE (branch `advisor/034-actionable-pipelines`, uncommitted; search-fallback URLs only — canonical media links are 035) |
 | 035  | Carry resolved media ids to the gallery card so renderMedia builds *canonical* Letterboxd/AniList/Spotify deep links | P2 | S | 034 | DONE (branch `advisor/035-media-canonical-deeplinks`, uncommitted; widened both `MediaExtraction` types + both cache load paths, upgraded `renderMedia` to canonical via `watchableUrl`/Spotify track; +7 tests) |
+| 036  | Make the rendered tweet-body backfill *additive* — preserve inline media, add searchable text | P1 | S–M | 031 | TODO (branch off `deploy-all` @ `07ee60b`; the 031 backfill is destructive on 11,070/13,407 X notes — strips the inline `![[…]]` image. Plan gives `renderTweetBody` an optional `mediaEmbeds` arg, preserves existing embeds in `rewriteNoteBody`, embeds real downloaded media (NOT card.png) in `writeTwitterRecord`; idempotent. Once it lands the backfill is safe on all 13,407) |
 
 > **034 / 035 (pipeline actionability, 2026-06-12).** A pipeline audit ("a bookmark
 > is a saved intent; surface what makes it actionable") found enrichments extract
@@ -98,6 +99,24 @@ Note: at planning time the working tree had uncommitted changes to
 > `reconstructMediaCache` reads `media_*` frontmatter), and upgrades the exact
 > `renderActionLinks` call site 034 created to emit canonical links when ids exist
 > (reusing the list view's `watchableUrl`; series stays search-only by design).
+
+> **036 (tweet-body backfill is destructive — make it additive, 2026-06-12).** Plan
+> 031 (deployed) renders X tweet bodies as TEXT-ONLY markdown (inline media embeds
+> were deferred), and its "Render X tweet bodies" backfill calls `rewriteNoteBody`,
+> which REPLACES the whole note body. Measured on the live vault: **11,070 of 13,407
+> X notes have an inline `![[…]]` media embed** — so running the backfill as-is would
+> STRIP the inline image from ~11K notes (file + cover survive; the body loses the
+> image). That is why it has never been run. 036 makes the render ADDITIVE in three
+> one-file changes: (1) `renderTweetBody` gains an optional `{ mediaEmbeds }` arg and
+> appends them (stays pure); (2) `rewriteNoteBody` extracts the EXISTING body's
+> `![[…]]` embed lines and passes them through — naming-era-agnostic, so legacy
+> `media.jpg` / current `1.jpg` / video / multi-image all survive (the load-bearing
+> 11K fix); (3) `writeTwitterRecord` generates embeds from the media it just
+> downloaded for NEW tweets, **excluding `card.png`** (the text-card cover, not real
+> media). Idempotency is pinned by a render→extract→render fixed-point test so a
+> re-run stays a no-op. Out of scope: the backfill driver's walk, the gallery,
+> articles (byte-identical). Once this lands the backfill is safe on all 13,407; a
+> follow-up could auto-run it at sync per the pipeline audit.
 
 > **032 / 033 (recipe ingest gap, 2026-06-12).** A gap analysis of the 98 TikTok
 > `Recipes` notes with no ingredient/step list (workflow over all 98 + full read of
