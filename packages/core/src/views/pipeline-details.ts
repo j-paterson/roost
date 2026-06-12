@@ -7,6 +7,8 @@
  *   - renderPipelineDetail(infoEl, type, extraction) → rich section in expanded card
  */
 import { App } from "obsidian";
+import { detectPlatformFromUrl } from "@/lib/extract";
+import { watchableUrl } from "@/views/pipeline-views/watchable-url";
 import { loadPipelineCache, savePipelineCache } from "@/pipeline/shared";
 import { reconstructRecipeCache } from "@/pipeline/recipe-pipeline";
 import { reconstructPlacesCache } from "@/pipeline/places-pipeline";
@@ -28,6 +30,14 @@ export type PipelineType = "recipe" | "place" | "media" | "product" | "workout" 
 export interface PipelineHit {
   type: PipelineType;
   extraction: AnyExtractionData;
+}
+
+/** The note's source/intent context, threaded through to the detail renderers
+ *  so each can offer a "watch source" link plus an intent-specific deep link. */
+export interface PipelineSource {
+  url: string | null;
+  author: string | null;
+  subcategory: string | null; // note.roost_subcategory (plural, e.g. "films")
 }
 
 // Icon + color for each pipeline type
@@ -99,7 +109,7 @@ export function renderPipelineOverlay(coverEl: HTMLElement, type: PipelineType):
 
 // ── Expanded card detail section ──
 
-export function renderPipelineDetail(infoEl: HTMLElement, hit: PipelineHit): void {
+export function renderPipelineDetail(infoEl: HTMLElement, hit: PipelineHit, source?: PipelineSource): void {
   const meta = PIPELINE_META[hit.type];
   const section = infoEl.createDiv({ cls: "roost-pipeline-section" });
   section.style.setProperty("--pipeline-color", meta.color);
@@ -110,13 +120,13 @@ export function renderPipelineDetail(infoEl: HTMLElement, hit: PipelineHit): voi
   // extraction automatically — we cast to the specific type in each branch.
   const content = section.createDiv({ cls: "roost-pipeline-section-content" });
   switch (hit.type) {
-    case "recipe":   renderRecipe(content, hit.extraction as RecipeExtraction); break;
-    case "place":    renderPlace(content, hit.extraction as PlaceExtraction); break;
-    case "media":    renderMedia(content, hit.extraction as MediaExtraction); break;
-    case "product":  renderProduct(content, hit.extraction as ProductExtraction); break;
-    case "workout":  renderWorkout(content, hit.extraction as WorkoutExtraction); break;
-    case "tutorial": renderTutorial(content, hit.extraction as TutorialExtraction); break;
-    case "home":     renderHome(content, hit.extraction as HomeExtraction); break;
+    case "recipe":   renderRecipe(content, hit.extraction as RecipeExtraction, source); break;
+    case "place":    renderPlace(content, hit.extraction as PlaceExtraction, source); break;
+    case "media":    renderMedia(content, hit.extraction as MediaExtraction, source); break;
+    case "product":  renderProduct(content, hit.extraction as ProductExtraction, source); break;
+    case "workout":  renderWorkout(content, hit.extraction as WorkoutExtraction, source); break;
+    case "tutorial": renderTutorial(content, hit.extraction as TutorialExtraction, source); break;
+    case "home":     renderHome(content, hit.extraction as HomeExtraction, source); break;
   }
 }
 
@@ -239,9 +249,45 @@ function capitalize(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1).replace(/-/g, " ");
 }
 
+// ── Action links (source + intent-specific deep link) ──
+
+/** Build a Google Maps URL from coords (preferred) or a name/address query. */
+export function buildMapsUrl(o: { lat?: number | null; lng?: number | null; address?: string | null; name?: string | null; city?: string | null; country?: string | null }): string | null {
+  if (typeof o.lat === "number" && typeof o.lng === "number") {
+    return `https://www.google.com/maps/search/?api=1&query=${o.lat},${o.lng}`;
+  }
+  const q = [o.name, o.address, o.city, o.country].filter(Boolean).join(" ").trim();
+  return q ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(q)}` : null;
+}
+
+/** Append a "roost-pipeline-actions" row with a Watch-source link + an optional
+ *  intent-specific deep link. Both open in a new tab and stop the click from
+ *  toggling the expanded card. */
+function renderActionLinks(
+  el: HTMLElement,
+  source?: PipelineSource,
+  deepLink?: { label: string; url: string; icon?: string } | null,
+): void {
+  const links: { label: string; url: string; icon?: string }[] = [];
+  if (deepLink) links.push(deepLink);
+  if (source?.url) {
+    const platform = detectPlatformFromUrl(source.url);
+    const label = platform === "tiktok" ? "Watch on TikTok" : platform === "twitter" ? "View on X" : "Open source";
+    links.push({ label, url: source.url, icon: "↗" });
+  }
+  if (links.length === 0) return;
+  const row = el.createDiv({ cls: "roost-pipeline-actions" });
+  for (const l of links) {
+    const a = row.createEl("a", { cls: "roost-pipeline-action", href: l.url, text: (l.icon ? l.icon + " " : "") + l.label });
+    a.setAttr("target", "_blank");
+    a.setAttr("rel", "noopener noreferrer");
+    a.addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); window.open(l.url, "_blank", "noopener"); });
+  }
+}
+
 // ── Type-specific renderers ──
 
-function renderRecipe(el: HTMLElement, data: RecipeExtraction): void {
+function renderRecipe(el: HTMLElement, data: RecipeExtraction, source?: PipelineSource): void {
   kvRow(el, "Dish", data.dish);
   kvRow(el, "Cuisine", data.cuisine);
   kvRow(el, "Difficulty", capitalize(data.difficulty ?? ""));
@@ -284,9 +330,11 @@ function renderRecipe(el: HTMLElement, data: RecipeExtraction): void {
     linkEl.setAttr("target", "_blank");
     linkEl.setAttr("rel", "noopener");
   }
+
+  renderActionLinks(el, source);
 }
 
-function renderPlace(el: HTMLElement, data: PlaceExtraction): void {
+function renderPlace(el: HTMLElement, data: PlaceExtraction, source?: PipelineSource): void {
   kvRow(el, "Name", data.name);
   const location = [data.city, data.country].filter(Boolean).join(", ");
   kvRow(el, "Location", location || null);
@@ -311,9 +359,12 @@ function renderPlace(el: HTMLElement, data: PlaceExtraction): void {
     const list = group.createEl("ul", { cls: "roost-pipeline-tips" });
     for (const tip of data.tips) list.createEl("li", { text: tip });
   }
+
+  const mapsUrl = buildMapsUrl({ lat: data.lat, lng: data.lng, address: data.address, name: data.name, city: data.city, country: data.country });
+  renderActionLinks(el, source, mapsUrl ? { label: "Open in Maps", url: mapsUrl, icon: "📍" } : null);
 }
 
-function renderMedia(el: HTMLElement, data: MediaExtraction): void {
+function renderMedia(el: HTMLElement, data: MediaExtraction, source?: PipelineSource): void {
   kvRow(el, "Title", data.title);
   kvRow(el, "Creator", data.creator);
   kvRow(el, "Type", capitalize(data.mediaType ?? ""));
@@ -325,9 +376,20 @@ function renderMedia(el: HTMLElement, data: MediaExtraction): void {
     const desc = el.createDiv({ cls: "roost-pipeline-description" });
     desc.textContent = data.description;
   }
+
+  let mediaLink: { label: string; url: string; icon?: string } | null = null;
+  const sub = (source?.subcategory ?? data.mediaType ?? "").toLowerCase();
+  if (sub === "music") {
+    const q = encodeURIComponent([data.title, data.creator].filter(Boolean).join(" "));
+    if (q) mediaLink = { label: "Search on Spotify", url: `https://open.spotify.com/search/${q}`, icon: "🎧" };
+  } else {
+    const w = watchableUrl({ subcategory: sub, title: data.title } as any);
+    if (w) mediaLink = { label: w.kind === "canonical" ? "Open" : "Find it", url: w.url, icon: "▶" };
+  }
+  renderActionLinks(el, source, mediaLink);
 }
 
-function renderProduct(el: HTMLElement, data: ProductExtraction): void {
+function renderProduct(el: HTMLElement, data: ProductExtraction, source?: PipelineSource): void {
   kvRow(el, "Name", data.name);
   kvRow(el, "Brand", data.brand);
   kvRow(el, "Type", capitalize(data.productType ?? ""));
@@ -339,9 +401,12 @@ function renderProduct(el: HTMLElement, data: ProductExtraction): void {
     const desc = el.createDiv({ cls: "roost-pipeline-description" });
     desc.textContent = data.description;
   }
+
+  const q = encodeURIComponent([data.brand, data.name].filter(Boolean).join(" ") + " buy");
+  renderActionLinks(el, source, q ? { label: "Find where to buy", url: `https://www.google.com/search?q=${q}`, icon: "🛒" } : null);
 }
 
-function renderWorkout(el: HTMLElement, data: WorkoutExtraction): void {
+function renderWorkout(el: HTMLElement, data: WorkoutExtraction, source?: PipelineSource): void {
   kvRow(el, "Name", data.name);
   kvRow(el, "Type", capitalize(data.workoutType ?? ""));
   kvRow(el, "Target", data.targetArea);
@@ -365,9 +430,11 @@ function renderWorkout(el: HTMLElement, data: WorkoutExtraction): void {
   }
 
   if (data.notes) kvRow(el, "Notes", data.notes);
+
+  renderActionLinks(el, source);
 }
 
-function renderTutorial(el: HTMLElement, data: TutorialExtraction): void {
+function renderTutorial(el: HTMLElement, data: TutorialExtraction, source?: PipelineSource): void {
   kvRow(el, "Topic", data.topic);
   kvRow(el, "Skill area", capitalize(data.skillArea ?? ""));
   kvRow(el, "Difficulty", capitalize(data.difficulty ?? ""));
@@ -389,9 +456,11 @@ function renderTutorial(el: HTMLElement, data: TutorialExtraction): void {
     group.createDiv({ cls: "roost-pipeline-group-label", text: "Steps" });
     numberedList(group, data.steps);
   }
+
+  renderActionLinks(el, source);
 }
 
-function renderHome(el: HTMLElement, data: HomeExtraction): void {
+function renderHome(el: HTMLElement, data: HomeExtraction, source?: PipelineSource): void {
   kvRow(el, "Title", data.title);
   kvRow(el, "Room", capitalize(data.room ?? ""));
   kvRow(el, "Type", capitalize(data.ideaType ?? ""));
@@ -415,4 +484,6 @@ function renderHome(el: HTMLElement, data: HomeExtraction): void {
     const list = group.createEl("ul", { cls: "roost-pipeline-tips" });
     for (const tip of data.tips) list.createEl("li", { text: tip });
   }
+
+  renderActionLinks(el, source);
 }

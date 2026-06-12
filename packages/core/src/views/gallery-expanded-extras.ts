@@ -109,7 +109,12 @@ export function buildExpandedExtraElements(ctx: ExpandedExtrasContext): HTMLElem
     const pipelineHit = getPipelineData(expandedId);
     if (pipelineHit) {
       const pipelineEl = domHost.createDiv();
-      renderPipelineDetail(pipelineEl, pipelineHit);
+      const source = {
+        url: safeGetValue(entry, "note.url")?.toString() ?? null,
+        author: safeGetValue(entry, "note.author")?.toString() ?? null,
+        subcategory: safeGetValue(entry, "note.roost_subcategory")?.toString() ?? null,
+      };
+      renderPipelineDetail(pipelineEl, pipelineHit, source);
       extraEls.push(pipelineEl as HTMLElement);
     }
   }

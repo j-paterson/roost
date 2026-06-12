@@ -1693,6 +1693,15 @@
   text-decoration: underline;
 }
 
+.roost-pipeline-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.roost-pipeline-action {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 3px 10px; border-radius: 999px; font-size: 12px;
+  background: var(--background-modifier-hover); color: var(--text-accent);
+  text-decoration: none; border: 1px solid var(--background-modifier-border);
+}
+.roost-pipeline-action:hover { background: var(--background-modifier-active-hover); text-decoration: none; }
+
 /* Watchable deep-link chip (Films/Series/Anime/Documentaries) */
 .roost-watchable-cell {
   display: inline-flex;
