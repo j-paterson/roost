@@ -52,7 +52,7 @@ interface CacheEntry {
 }
 
 
-interface RecipeCandidate {
+export interface RecipeCandidate {
   roostId: string;
   file: TFile;
   title: string;
@@ -80,6 +80,11 @@ const RECIPE_TAG_KEYWORDS = [
   "recipe", "cooking", "cook", "food", "baking", "meal",
   "dinner", "lunch", "breakfast", "ingredient",
 ];
+
+/** roost_category / roost_subcategory values the recipe pipeline owns. A note
+ *  the user (or Smart-Assign) filed under one of these enters triage even if
+ *  its embedding category/tags don't match. Mirrors RECIPE_ENRICHMENT.categoryMatches. */
+const FILED_RECIPE_CATEGORIES = new Set(["recipes", "food", "food & drink", "cooking"]);
 
 const CACHE_FILE = "recipe-cache.json";
 const CONCURRENCY = 3;
@@ -116,7 +121,8 @@ function extractRecipeLink(raw: any): string | null {
 
 // ── Candidate gathering ──
 
-function gatherCandidates(app: App, syncFolder: string): RecipeCandidate[] {
+/** Exported for unit testing. */
+export function gatherCandidates(app: App, syncFolder: string): RecipeCandidate[] {
   const embeddingCache = loadEmbeddingCache(app.vault);
   const fileIndex = buildFileIndex(app, syncFolder);
   const candidates: RecipeCandidate[] = [];
@@ -134,8 +140,11 @@ function gatherCandidates(app: App, syncFolder: string): RecipeCandidate[] {
     const tagMatch = tags.some(t =>
       RECIPE_TAG_KEYWORDS.some(kw => t.includes(kw)),
     );
+    const filedCat = String(fm[CATEGORY_FIELD] ?? "").toLowerCase();
+    const filedSub = String(fm[SUBCATEGORY_FIELD] ?? "").toLowerCase();
+    const filedMatch = FILED_RECIPE_CATEGORIES.has(filedCat) || FILED_RECIPE_CATEGORIES.has(filedSub);
 
-    if (!categoryMatch && !tagMatch) continue;
+    if (!categoryMatch && !tagMatch && !filedMatch) continue;
 
     const raw = readRawJson(app.vault, syncFolder, roostId);
     const description = extractDescription(raw);
@@ -163,12 +172,29 @@ function gatherCandidates(app: App, syncFolder: string): RecipeCandidate[] {
 
 // ── Triage ──
 
+/** True when the caption / structured description already contains a recipe —
+ *  an explicit "ingredients" + "steps/method" pair, or several measurement-bearing
+ *  lines. Used as a fast-path so a caption recipe is never lost to an unrelated
+ *  transcript at the LLM triage step. */
+export function hasCaptionRecipe(c: RecipeCandidate): boolean {
+  const text = c.description || c.title || "";
+  if (!text) return false;
+  const lower = text.toLowerCase();
+  const hasIngredientsWord = /\bingredients?\b/.test(lower);
+  const hasStepsWord = /\b(steps?|method|instructions?|directions?)\b/.test(lower);
+  if (hasIngredientsWord && hasStepsWord) return true;
+  const measure = /(\d|½|¼|¾|cups?|tbsp|tsp|tablespoons?|teaspoons?|grams?|\bg\b|\bml\b|\boz\b|pounds?|\blb\b|cloves?|pinch)/i;
+  const lines = text.split(/\n|\s\|\s/).map(l => l.trim()).filter(Boolean);
+  const ingredientLines = lines.filter(l => measure.test(l)).length;
+  return ingredientLines >= 4;
+}
+
 function buildTriagePrompt(c: RecipeCandidate): string {
   // Use structured description if available (richer than flattened title)
   const text = c.description || c.title;
   return `You are classifying a social media bookmark about food or cooking.
 
-Title: ${text.slice(0, 1500)}
+Title: ${text.slice(0, 4000)}
 Transcript: ${(c.subtitle || "No transcript available.").slice(0, 1000)}
 Visual: ${(c.vision || "No description.").slice(0, 300)}
 
@@ -219,6 +245,10 @@ function buildExtractPrompt(c: RecipeCandidate): string {
 Use EXACT measurements when they appear in the description or transcript.
 If a measurement is spoken informally (e.g. "a cup of flour"), convert it to a standard quantity.
 If no amount is given for an ingredient, use null for qty.
+The recipe may be NARRATED conversationally rather than written as a list.
+Infer every ingredient mentioned (use qty: null when no amount is spoken) and
+every step in the order the actions are described. Do not return empty arrays if
+the text describes cooking a dish.
 
 ${sections.join("\n\n")}
 
@@ -240,11 +270,8 @@ Respond with ONLY valid JSON — no markdown fences, no commentary:
 }`;
 }
 
-async function extractRecipe(c: RecipeCandidate): Promise<RecipeExtraction | null> {
-  const raw = await ollamaGenerate(
-    buildExtractPrompt(c),
-    { numPredict: 2048, numCtx: 4096 },
-  );
+async function runExtract(prompt: string): Promise<RecipeExtraction | null> {
+  const raw = await ollamaGenerate(prompt, { numPredict: 2048, numCtx: 4096 });
 
   // Strip markdown fences if the model wraps the JSON
   const cleaned = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "");
@@ -274,6 +301,23 @@ async function extractRecipe(c: RecipeCandidate): Promise<RecipeExtraction | nul
   } catch {
     return null;
   }
+}
+
+export async function extractRecipe(c: RecipeCandidate): Promise<RecipeExtraction | null> {
+  let result = await runExtract(buildExtractPrompt(c));
+  const isEmpty = (r: RecipeExtraction | null) =>
+    !r || (r.ingredients.length === 0 && r.steps.length === 0);
+  if (isEmpty(result)) {
+    // One forceful repair pass — the first attempt found no list.
+    const repair = buildExtractPrompt(c) +
+      "\n\nThe previous attempt returned no ingredients or steps. This post DOES " +
+      "contain a recipe — re-read the description and transcript carefully and list " +
+      "every ingredient and every step in order.";
+    result = await runExtract(repair);
+  }
+  // Empty after repair → null so the runner leaves it for a later run (e.g. once
+  // a transcript is backfilled) rather than caching an empty recipe as 'done'.
+  return isEmpty(result) ? null : result;
 }
 
 // ── Frontmatter write helpers ──
@@ -356,6 +400,7 @@ const RECIPE_CONFIG: CategoryPipelineConfig<
   onExtractFailure: "retry",
   onTriageFailure: "leave",
   gatherCandidates,
+  fastPathTriage: (c) => (hasCaptionRecipe(c) ? "recipe" : null),
   triageItem,
   extractItem: extractRecipe,
   afterExtract: (ex, c) => { ex.recipeLink = c.recipeLink; },
@@ -373,6 +418,7 @@ const RECIPE_CONFIG: CategoryPipelineConfig<
     candidatesFound: n => `Found ${n} food/recipe candidates`,
     triageExtractCounts: (uncached, needExtract, complete) =>
       `${uncached} need triage, ${needExtract} need extraction (${complete} complete)`,
+    fastPath: n => `Caption fast-path: ${n} recipes from the post text`,
     triageProgress: (done, total) => `Triage: ${done}/${total}`,
     wroteCached: n => `Wrote ${n} cached recipes`,
     extracting: n => `Extracting ${n} new recipes`,

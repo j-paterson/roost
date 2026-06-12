@@ -78,7 +78,7 @@ Note: at planning time the working tree had uncommitted changes to
 | 029  | Drop dead `docs/` reference from agent-memory Settings copy (D-01) | P2 | XS | — | MERGED → `main` @ `49f3e9c` |
 | 030  | Remove 70 dead imports/locals (no-unused-vars) — DX-01 follow-up | P2 | M | 027 | MERGED → `main` @ `95912d7` |
 | 031  | Render X tweets as formatted markdown bodies (new `tweetBody` enrichment) | P2 | L | — | IMPLEMENTED 2026-06-12 (text-fidelity core: renderer + both wirings + backfill + tests; inline media embeds deferred; scan-predicate unit test deferred — see notes) |
-| 032  | Recover recipes the extractor misses — gather by subcategory + caption/transcript fixes | P2 | S | — | TODO — assigned to executor 2026-06-12 |
+| 032  | Recover recipes the extractor misses — gather by subcategory + caption/transcript fixes | P2 | S | — | IMPLEMENTED 2026-06-12 (all 3 fixes: gather-by-filing + caption fast-path + narrative/repair/empty→null; 9 new tests in recipe-extraction-recovery.test.ts; typecheck clean) |
 | 033  | Backfill video transcripts via local ASR (Whisper) for silent recipe demos | P2 | L | 032 | TODO (design + phased; 2 decisions to confirm) |
 
 > **032 / 033 (recipe ingest gap, 2026-06-12).** A gap analysis of the 98 TikTok
