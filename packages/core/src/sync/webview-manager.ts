@@ -62,7 +62,10 @@ export class WebviewManager {
     const existing = this.webviews.get(platform);
     if (existing) return existing.element;
 
-    const url = platform === "tiktok" ? "https://www.tiktok.com/" : "https://x.com/";
+    // For TikTok, start on /profile (redirects to /@you when logged in) instead
+    // of the heavy For You feed — this is the first page the sync needs, so it's
+    // the page the (persisted, eagerly-created) webview should load up front.
+    const url = platform === "tiktok" ? "https://www.tiktok.com/profile" : "https://x.com/";
     // <webview> is an Electron custom element — not in standard DOM types.
     const webview = document.createElement("webview") as unknown as ElectronWebview;
     webview.setAttribute("src", url);

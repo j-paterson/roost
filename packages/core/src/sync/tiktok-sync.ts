@@ -25,22 +25,30 @@ export async function syncTikTok(
   // Step 1: Inject probe
   onProgress?.({ phase: "inject", count: 0, total: 0, done: false });
 
-  const injected = await new Promise<boolean>((resolve) => {
-    const timeout = setTimeout(() => resolve(false), 20000);
-    const handler = async () => {
-      try {
-        await wc.executeJavaScript(`try { delete window.__TIKTOK_FAVORITES__; } catch(e) {} void 0;`);
-        await wc.executeJavaScript(`try { ${tiktokProbeSource}; 'ok'; } catch(e) { 'error: ' + e.message; }`);
-        clearTimeout(timeout);
-        resolve(true);
-      } catch { clearTimeout(timeout); resolve(false); }
-    };
+  // Load the user's own profile directly. TikTok redirects /profile → /@<you>
+  // when logged in, so we never need the username up front and skip loading the
+  // heavy For You feed (and the second probe injection it used to require).
+  webviewEl.loadURL("https://www.tiktok.com/profile");
+  await new Promise<void>((resolve) => {
+    const handler = () => resolve();
     webviewEl.addEventListener("dom-ready", handler, { once: true });
-    webviewEl.loadURL("https://www.tiktok.com/");
+    setTimeout(resolve, 15000);
   });
 
-  if (!injected) throw new Error("Failed to inject TikTok probe");
-  await new Promise(r => setTimeout(r, 3000));
+  // Wait for the /profile → /@<you> redirect to land before injecting the probe.
+  for (let i = 0; i < 10; i++) {
+    const href = await wc.executeJavaScript(`location.href`).catch(() => "");
+    if (typeof href === "string" && href.includes("/@")) break;
+    await new Promise(r => setTimeout(r, 1000));
+  }
+  await new Promise(r => setTimeout(r, 1500));
+
+  await wc.executeJavaScript(`try { delete window.__TIKTOK_FAVORITES__; } catch(e) {} void 0;`).catch(() => {});
+  const injectResult = await wc
+    .executeJavaScript(`try { ${tiktokProbeSource}; 'ok'; } catch(e) { 'error: ' + e.message; }`)
+    .catch(() => "inject-failed");
+  if (injectResult !== "ok") throw new Error(`Failed to inject TikTok probe: ${injectResult}`);
+  await new Promise(r => setTimeout(r, 2000));
 
   // Step 2: Check app context
   onProgress?.({ phase: "context", count: 0, total: 0, done: false });
@@ -95,21 +103,10 @@ export async function syncTikTok(
   `).catch(() => null);
 
   if (username) {
-    onLog?.(`Found username: @${username}, navigating to profile...`);
-    webviewEl.loadURL(`https://www.tiktok.com/@${username}`);
+    onLog?.(`On profile @${username} — opening Collections...`);
 
-    // Wait for profile page to load
-    await new Promise<void>((resolve) => {
-      const handler = () => resolve();
-      webviewEl.addEventListener("dom-ready", handler, { once: true });
-      setTimeout(() => resolve(), 10000);
-    });
-    await new Promise(r => setTimeout(r, 2000));
-    onLog?.("Profile loaded, re-injecting probe...");
-
-    // Re-inject probe (navigation destroyed the previous one)
-    await wc.executeJavaScript(`try { ${tiktokProbeSource}; 'ok'; } catch(e) { 'error: ' + e.message; }`);
-    await new Promise(r => setTimeout(r, 1000));
+    // We loaded /profile directly (TikTok already redirected us here and the
+    // probe is injected), so there's no navigation or re-injection to do.
 
     // Click the Favorites tab — try multiple selectors, validate result
     const clickResult = await wc.executeJavaScript(`
@@ -149,36 +146,38 @@ export async function syncTikTok(
       onLog?.(`Favorites tab: ${clickResult}`);
       await new Promise(r => setTimeout(r, 2000));
 
-      // Click Collections sub-button via sendInputEvent (React needs Chromium-level click)
-      // Try multiple selectors for the button
+      // Click the Collections sub-tab. It needs a trusted (isTrusted) Chromium-
+      // level click — a plain element.click() doesn't switch the view — so find
+      // the button, scroll it into view (the original bug clicked stale,
+      // off-screen coordinates), and send a real mouse click at its center.
+      // (A coordinate-free version is being validated via the e2e pipeline.)
       const coords = await wc.executeJavaScript(`
         (function() {
-          // Strategy 1: ID
           var btn = document.getElementById('collections');
-          // Strategy 2: button text
           if (!btn) {
             var buttons = document.querySelectorAll('button, [role="tab"]');
             for (var i = 0; i < buttons.length; i++) {
-              var t = (buttons[i].textContent || '').trim().toLowerCase();
-              if (t === 'collections' || t.startsWith('collections')) { btn = buttons[i]; break; }
+              if ((buttons[i].textContent || '').trim().toLowerCase().indexOf('collections') === 0) { btn = buttons[i]; break; }
             }
           }
-          // Strategy 3: data-e2e
           if (!btn) btn = document.querySelector('[data-e2e*="collection-tab"], [data-e2e*="collections"]');
           if (!btn) return null;
-          var rect = btn.getBoundingClientRect();
+          var target = btn.closest('button, [role="tab"], a') || btn;
+          target.scrollIntoView({ block: 'center' });
+          var rect = target.getBoundingClientRect();
           return JSON.stringify({ x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2) });
         })();
       `).catch(() => null);
 
       if (coords) {
         const { x, y } = JSON.parse(coords);
-        onLog?.(`Collections button at ${x},${y} — clicking`);
+        onLog?.(`Collections sub-tab → trusted click at ${x},${y}`);
         webviewEl.sendInputEvent({ type: "mouseDown", x, y, button: "left", clickCount: 1 });
         await new Promise(r => setTimeout(r, 50));
         webviewEl.sendInputEvent({ type: "mouseUp", x, y, button: "left", clickCount: 1 });
+        await new Promise(r => setTimeout(r, 2500)); // let the Collections view render
       } else {
-        onLog?.("[WARN] Collections sub-button not found — trying to scrape from current view");
+        onLog?.("[WARN] Collections sub-button not found — proceeding without collections");
       }
 
       // Scroll to load all collections
