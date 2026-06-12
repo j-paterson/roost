@@ -1,10 +1,13 @@
 import { Vault, TFile } from "obsidian";
 import { buildFrontmatter, ensureFolder, type FrontmatterValue } from "@/lib/vault-helpers";
+import { enrichmentVersionField } from "@/lib/enrichments";
 import { type VaultIndex } from "./vault-index";
 import { type NoteFileWriter, articleFrontmatterFields } from "./note-file-writer";
 import { type MediaDownloader } from "./media-downloader";
 import { type NormalizedRecord } from "../../lib/normalize";
 import { renderCardAsync } from "../card-renderer";
+import { renderTweetBody } from "@/lib/tweet-render";
+import { RENDERED_TWEET_ENRICHMENT } from "@/sync/tweet-body-backfill";
 import {
   getBookmarkPlatform, getBookmarkItemId, extractBookmarkText,
   extractBookmarkAuthor, extractBookmarkAuthorUsername,
@@ -160,6 +163,12 @@ export class TwitterRecordWriter {
       }
     }
 
+    // Body is the rendered markdown for BOTH threaded and non-threaded tweets;
+    // renderTweetBody dispatches threads from rawData._thread itself. The PNG
+    // cover (card.png / carousel) is set above and left untouched — the note
+    // merely gains a real, searchable, formatted body here.
+    bodyParts = [renderTweetBody(record)].filter(Boolean);
+
     const hashtags = (text.match(/#\w+/g) || [] as string[]);
 
     await ensureFolder(this.vault, attachFolder, this.ensuredFolders);
@@ -187,6 +196,9 @@ export class TwitterRecordWriter {
       published: published ? published.split("T")[0] : undefined,
       saved: record.saved_at?.split("T")[0],
       tags: ["twitter", ...hashtags.map(t => t.slice(1))],
+      // Stamp at write time so freshly-synced tweets aren't re-flagged by the
+      // first-rollout detection predicate in vault-index.
+      [enrichmentVersionField("tweetBody")]: RENDERED_TWEET_ENRICHMENT.schemaVersion,
     };
     if (threadMeta) {
       fmFields.thread_length = threadMeta.pageCount;

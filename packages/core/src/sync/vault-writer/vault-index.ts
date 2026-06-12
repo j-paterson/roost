@@ -3,7 +3,7 @@ import type { ElectronWebview } from "@/types/sync";
 import { getSyncFiles, parseRoostId, loadDeletedIds } from "@/lib/vault-utils";
 import { MUSIC_SUBCATEGORIES } from "@/config";
 import { MEDIA_FIELDS } from "@/pipeline/media-pipeline";
-import { ENRICHMENTS, isVersionStale } from "@/lib/enrichments";
+import { ENRICHMENTS, isVersionStale, enrichmentVersionField } from "@/lib/enrichments";
 import { needsArticleBodyBackfill } from "@/lib/article-utils";
 import { sanitizeFilename } from "@/lib/extract";
 import { threadAnchor } from "../thread-fetcher";
@@ -26,6 +26,8 @@ export interface IncompleteByCategory {
    *  resolution. Filled by the Media pipeline's playback step (Spotify
    *  track ID from TikTok DSP metadata, YouTube videoId fallback). */
   playback: Set<string>;
+  /** Twitter only. Tweet note whose body has not been rendered to markdown yet. */
+  tweetBody: Set<string>;
 }
 
 export interface IncompleteIdsResult {
@@ -126,6 +128,7 @@ export class VaultIndex {
       thread: new Set<string>(),
       articleBody: new Set<string>(),
       playback: new Set<string>(),
+      tweetBody: new Set<string>(),
     };
     this.notePathMap.clear();
     const files = getSyncFiles(this.vault, this.syncFolder);
@@ -258,6 +261,19 @@ export class VaultIndex {
             && !(MEDIA_FIELDS.spotifyId in fm)
           ) {
             byCategory.playback.add(id);
+          }
+
+          // Tweet-body first-rollout detection. Flag X tweet notes that have
+          // never had their body rendered to markdown (no enrichment_v_tweetBody
+          // stamp yet). isVersionStale stays false for absent fields, so this
+          // explicit predicate is what surfaces legacy tweets on first rollout.
+          // X Articles are excluded (Decision 4 — they already render real md).
+          if (
+            fm.platform === "twitter"
+            && fm.is_article !== true
+            && fm[enrichmentVersionField("tweetBody")] === undefined
+          ) {
+            byCategory.tweetBody.add(id);
           }
         }
       } catch { /* skip */ }

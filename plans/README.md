@@ -77,7 +77,7 @@ Note: at planning time the working tree had uncommitted changes to
 | 028d | DEBT-01 Phase D — delete dead per-pipeline skeletons | P3 | S | 028c | QUEUED |
 | 029  | Drop dead `docs/` reference from agent-memory Settings copy (D-01) | P2 | XS | — | MERGED → `main` @ `49f3e9c` |
 | 030  | Remove 70 dead imports/locals (no-unused-vars) — DX-01 follow-up | P2 | M | 027 | MERGED → `main` @ `95912d7` |
-| 031  | Render X tweets as formatted markdown bodies (new `tweetBody` enrichment) | P2 | L | — | TODO — written + adversarially reviewed 2026-06-12 |
+| 031  | Render X tweets as formatted markdown bodies (new `tweetBody` enrichment) | P2 | L | — | IMPLEMENTED 2026-06-12 (text-fidelity core: renderer + both wirings + backfill + tests; inline media embeds deferred; scan-predicate unit test deferred — see notes) |
 
 > **031 (direction/feature, 2026-06-12).** User-requested refactor: X text tweets are
 > stored as a generated `card.png` with an **empty note body** (text only in the
