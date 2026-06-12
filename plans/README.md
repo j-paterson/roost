@@ -80,6 +80,24 @@ Note: at planning time the working tree had uncommitted changes to
 | 031  | Render X tweets as formatted markdown bodies (new `tweetBody` enrichment) | P2 | L | — | IMPLEMENTED 2026-06-12 (text-fidelity core: renderer + both wirings + backfill + tests; inline media embeds deferred; scan-predicate unit test deferred — see notes) |
 | 032  | Recover recipes the extractor misses — gather by subcategory + caption/transcript fixes | P2 | S | — | IMPLEMENTED 2026-06-12 (all 3 fixes: gather-by-filing + caption fast-path + narrative/repair/empty→null; 9 new tests in recipe-extraction-recovery.test.ts; typecheck clean) |
 | 033  | Backfill video transcripts via local ASR (Whisper) for silent recipe demos | P2 | L | 032 | TODO (design + phased; 2 decisions to confirm) |
+| 034  | Make every pipeline's saved intent actionable — source link + search deep links + media chip fix | P2 | M | — | DONE (branch `advisor/034-actionable-pipelines`, uncommitted; search-fallback URLs only — canonical media links are 035) |
+| 035  | Carry resolved media ids to the gallery card so renderMedia builds *canonical* Letterboxd/AniList/Spotify deep links | P2 | S | 034 | TODO (base **post-034**; widens `MediaExtraction` + both cache load paths, then upgrades 034's `renderMedia` action link) |
+
+> **034 / 035 (pipeline actionability, 2026-06-12).** A pipeline audit ("a bookmark
+> is a saved intent; surface what makes it actionable") found enrichments extract
+> what the user needs then drop them at a read-only summary. **034** adds a shared
+> action affordance to every detail renderer (Watch-source link + intent-specific
+> deep link: Open-in-Maps for places, Play/Find for media, Find-where-to-buy for
+> products) and fixes a media-chip gate bug (`enrichment_v_mediaExtraction` vs the
+> stamped `pipeline_v_media` alias) — using **search-fallback URLs** so it needs no
+> new resolved data. **035** is the canonical follow-on: the media pipeline already
+> resolves + writes Spotify/TMDB/AniList ids to frontmatter, but the card's
+> `MediaExtraction` type omits them, so 034's `renderMedia` can only build search
+> URLs. 035 adds the five ids to `MediaExtraction`, carries them through **both**
+> cache load paths (`loadPipelineData` reads `entry.playback`/`entry.deepLink`;
+> `reconstructMediaCache` reads `media_*` frontmatter), and upgrades the exact
+> `renderActionLinks` call site 034 created to emit canonical links when ids exist
+> (reusing the list view's `watchableUrl`; series stays search-only by design).
 
 > **032 / 033 (recipe ingest gap, 2026-06-12).** A gap analysis of the 98 TikTok
 > `Recipes` notes with no ingredient/step list (workflow over all 98 + full read of
