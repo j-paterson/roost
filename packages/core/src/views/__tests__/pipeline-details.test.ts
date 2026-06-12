@@ -185,7 +185,7 @@ describe("renderPipelineDetail — recipe", () => {
     expect(labels).toContain("Ingredients");
     expect(labels).toContain("Steps");
     expect(el.querySelectorAll(".roost-pipeline-ingredients li").length).toBe(3);
-    expect(el.querySelectorAll(".roost-pipeline-steps li").length).toBe(3);
+    expect(el.querySelectorAll(".roost-pipeline-step-list li").length).toBe(3);
   });
 
   it("minimal extraction omits optional rows", () => {
