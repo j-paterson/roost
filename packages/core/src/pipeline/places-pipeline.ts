@@ -26,6 +26,10 @@ import {
   loadPipelineCache,
   savePipelineCache,
 } from "@/pipeline/shared";
+import {
+  runCategoryPipeline,
+  type CategoryPipelineConfig,
+} from "@/pipeline/run-category-pipeline";
 import { resolveGeoNames } from "@/lib/geonames";
 import { nominatimSearch } from "@/lib/nominatim";
 
@@ -598,6 +602,55 @@ async function backfillGeoCoords(
 
 // ── Main pipeline ──
 
+/** Places wiring for {@link runCategoryPipeline}. Built per-call because
+ *  extractPlace needs the vault. POI fast-path replaces the inline auto-triage;
+ *  the once-per-CACHE_VERSION geo backfill stays in runPlacesPipeline. */
+function buildPlacesConfig(app: App): CategoryPipelineConfig<
+  PlaceCandidate,
+  PlaceExtraction,
+  PlaceTriage,
+  PlacesPipelineResult
+> {
+  return {
+    cacheFile: CACHE_FILE,
+    concurrency: CONCURRENCY,
+    extractVerdict: "place",
+    skipVerdict: "skip",
+    onExtractFailure: "demote",
+    onTriageFailure: "skip",
+    gatherCandidates,
+    fastPathTriage: c => (c.poi ? triageFromPoi(c.poi) : null),
+    triageItem,
+    extractItem: c => extractPlace(app.vault, c),
+    onExtractError: (roostId, err) =>
+      console.warn(`[roost] places: extraction error for ${roostId}:`, err),
+    writeToBookmark: (a, c, ex) => writePlaceToBookmark(a, c.file, ex),
+    buildResult: (candidates, cache, errors) => {
+      const done = candidates.filter(
+        c => cache[c.roostId]?.triage === "place" && cache[c.roostId]?.extraction,
+      );
+      return {
+        candidates: candidates.length,
+        places: done.length,
+        skipped: candidates.filter(c => cache[c.roostId]?.triage === "skip").length,
+        errors,
+        countries: new Set(done.map(c => cache[c.roostId]!.extraction!.country || "Unknown")).size,
+      };
+    },
+    log: {
+      candidatesFound: n => `Found ${n} place candidates`,
+      triageExtractCounts: (uncached, needExtract, complete) =>
+        `${uncached} need triage, ${needExtract} need extraction (${complete} complete)`,
+      fastPath: n => `POI auto-triage: ${n} items`,
+      triageProgress: (done, total) => `Triaged ${done}/${total}`,
+      wroteCached: n => `Wrote ${n} cached place fields onto source bookmarks`,
+      extracting: n => `Extracting ${n} places...`,
+      extractProgress: (done, total) => `Extracted ${done}/${total}`,
+      done: r => `Done: ${r.places} places in ${r.countries} countries, ${r.skipped} skipped, ${r.errors} errors`,
+    },
+  };
+}
+
 export async function runPlacesPipeline(
   app: App,
   syncFolder: string,
@@ -605,11 +658,13 @@ export async function runPlacesPipeline(
 ): Promise<PlacesPipelineResult> {
   const log = onLog || (() => {});
   const vault = app.vault;
-  const cache = loadPipelineCache<PlaceCacheEntry>(vault, CACHE_FILE);
 
-  // Version-gated backfill: runs once per version bump, no LLM calls.
+  // Version-gated backfill stays OUTSIDE the generic runner: it patches the
+  // cache once per CACHE_VERSION bump with no LLM calls, and must complete
+  // before the runner loads the cache for the main passes.
   const cachedVersion = readCacheVersion(vault);
   if (cachedVersion < CACHE_VERSION) {
+    const cache = loadPipelineCache<PlaceCacheEntry>(vault, CACHE_FILE);
     log(`Cache v${cachedVersion} → v${CACHE_VERSION}: backfilling geo coords...`);
     const { patched, exact, scanned } = await backfillGeoCoords(vault, syncFolder, cache, log);
     savePipelineCache(vault, CACHE_FILE, cache);
@@ -617,113 +672,7 @@ export async function runPlacesPipeline(
     log(`Backfilled ${patched}/${scanned} entries (${exact} exact POI-level, ${patched - exact} city-level)`);
   }
 
-  // 1. Gather candidates
-  log("Scanning bookmarks...");
-  const candidates = gatherCandidates(app, syncFolder);
-  log(`Found ${candidates.length} place candidates`);
-
-  const uncached = candidates.filter(c => !cache[c.roostId]);
-  const needExtract = candidates.filter(
-    c => cache[c.roostId]?.triage === "place" && !cache[c.roostId]?.extraction,
-  ).length;
-  log(`${uncached.length} need triage, ${needExtract} need extraction (${candidates.length - uncached.length - needExtract} complete)`);
-
-  // 2. Triage — POI fast path + LLM
-  // Fast path: auto-triage items with specific-venue POI
-  let poiFastCount = 0;
-  for (const c of uncached) {
-    if (c.poi) {
-      const result = triageFromPoi(c.poi);
-      if (result !== null) {
-        cache[c.roostId] = { triage: result, extraction: null };
-        poiFastCount++;
-      }
-    }
-  }
-  if (poiFastCount > 0) {
-    savePipelineCache(vault, CACHE_FILE, cache);
-    log(`POI auto-triage: ${poiFastCount} items`);
-  }
-
-  // LLM triage for remaining uncached
-  const needTriage = uncached.filter(c => !cache[c.roostId]);
-  if (needTriage.length > 0) {
-    log(`Triaging ${needTriage.length} items...`);
-    for (let i = 0; i < needTriage.length; i += CONCURRENCY) {
-      const batch = needTriage.slice(i, i + CONCURRENCY);
-      const results = await Promise.all(batch.map(c => triageItem(c).catch(() => "skip" as PlaceTriage)));
-      for (let j = 0; j < batch.length; j++) {
-        cache[batch[j].roostId] = { triage: results[j], extraction: null };
-      }
-      savePipelineCache(vault, CACHE_FILE, cache);
-      log(`Triaged ${Math.min(i + CONCURRENCY, needTriage.length)}/${needTriage.length}`);
-    }
-  }
-
-  // 3. Write fields for already-cached extractions first
-  let placesWritten = 0;
-
-  const alreadyCached = candidates.filter(
-    c => cache[c.roostId]?.triage === "place" && cache[c.roostId]?.extraction,
-  );
-  for (const c of alreadyCached) {
-    const extraction = cache[c.roostId].extraction!;
-    await writePlaceToBookmark(app, c.file, extraction);
-    placesWritten++;
-  }
-  if (alreadyCached.length > 0) {
-    log(`Wrote ${alreadyCached.length} cached place fields onto source bookmarks`);
-  }
-
-  // 4. Extract new places
-  const toExtract = candidates.filter(
-    c => cache[c.roostId]?.triage === "place" && !cache[c.roostId]?.extraction,
-  );
-  let errors = 0;
-
-  if (toExtract.length > 0) {
-    log(`Extracting ${toExtract.length} places...`);
-    for (let i = 0; i < toExtract.length; i += CONCURRENCY) {
-      const batch = toExtract.slice(i, i + CONCURRENCY);
-      const results = await Promise.all(
-        batch.map(c => extractPlace(vault, c).catch((err) => {
-          console.warn(`[roost] places: extraction error for ${c.roostId}:`, err);
-          return null;
-        })),
-      );
-
-      for (let j = 0; j < batch.length; j++) {
-        const extraction = results[j];
-        if (extraction) {
-          cache[batch[j].roostId] = { triage: "place", extraction };
-          await writePlaceToBookmark(app, batch[j].file, extraction);
-          placesWritten++;
-        } else {
-          // Mark as skip if extraction failed (name = "Unknown" or parse error)
-          cache[batch[j].roostId] = { triage: "skip", extraction: null };
-          errors++;
-        }
-      }
-
-      savePipelineCache(vault, CACHE_FILE, cache);
-      log(`Extracted ${Math.min(i + CONCURRENCY, toExtract.length)}/${toExtract.length} (${placesWritten} places so far)`);
-    }
-  }
-
-  // Count results
-  const skipped = candidates.filter(c => cache[c.roostId]?.triage === "skip").length;
-  const allExtractions = candidates
-    .filter(c => cache[c.roostId]?.triage === "place" && cache[c.roostId]?.extraction)
-    .map(c => cache[c.roostId].extraction!);
-  const countries = new Set(allExtractions.map(e => e.country || "Unknown")).size;
-
-  return {
-    candidates: candidates.length,
-    places: placesWritten,
-    skipped,
-    errors,
-    countries,
-  };
+  return runCategoryPipeline(app, syncFolder, buildPlacesConfig(app), onLog);
 }
 
 // ─── Cache reconstruction ─────────────────────────────────────────────────────

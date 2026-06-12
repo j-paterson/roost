@@ -22,6 +22,10 @@ import {
   loadPipelineCache,
   savePipelineCache,
 } from "@/pipeline/shared";
+import {
+  runCategoryPipeline,
+  type CategoryPipelineConfig,
+} from "@/pipeline/run-category-pipeline";
 
 // ── Enrichment field map ──
 
@@ -369,117 +373,57 @@ interface TutorialsPipelineResult {
   areas: number;
 }
 
+/** Tutorials wiring for {@link runCategoryPipeline} — standard profile (tag fast-path, triage-throw → skip, extract-failure → demote), plus a distinct skillArea count (`areas`) computed in buildResult. */
+const TUTORIALS_CONFIG: CategoryPipelineConfig<
+  TutorialCandidate,
+  TutorialExtraction,
+  "tutorial" | "skip",
+  TutorialsPipelineResult
+> = {
+  cacheFile: CACHE_FILE,
+  concurrency: CONCURRENCY,
+  extractVerdict: "tutorial",
+  skipVerdict: "skip",
+  onExtractFailure: "demote",
+  onTriageFailure: "skip",
+  gatherCandidates,
+  fastPathTriage: c => (hasTutorialFastPath(c.tags) ? "tutorial" : null),
+  triageItem,
+  extractItem: extractTutorial,
+  onExtractError: (roostId, err) =>
+    console.warn(`[roost] tutorials: extraction error for ${roostId}:`, err),
+  writeToBookmark: (app, c, ex) => writeTutorialToBookmark(app, c.file, ex),
+  buildResult: (candidates, cache, errors) => {
+    const done = candidates.filter(
+      c => cache[c.roostId]?.triage === "tutorial" && cache[c.roostId]?.extraction,
+    );
+    return {
+      candidates: candidates.length,
+      tutorials: done.length,
+      skipped: candidates.filter(c => cache[c.roostId]?.triage === "skip").length,
+      errors,
+      areas: new Set(done.map(c => (cache[c.roostId]!.extraction as TutorialExtraction).skillArea)).size,
+    };
+  },
+  log: {
+    candidatesFound: n => `Found ${n} tutorial candidates`,
+    triageExtractCounts: (uncached, needExtract, complete) =>
+      `${uncached} need triage, ${needExtract} need extraction (${complete} complete)`,
+    fastPath: n => `Tag fast-path: ${n} items auto-triaged as tutorial`,
+    triageProgress: (done, total) => `Triaged ${done}/${total}`,
+    wroteCached: n => `Enriched ${n} cached tutorials`,
+    extracting: n => `Extracting ${n} tutorials...`,
+    extractProgress: (done, total) => `Extracted ${done}/${total}`,
+    done: r => `Done: ${r.tutorials} tutorials across ${r.areas} skill areas, ${r.skipped} skipped, ${r.errors} errors`,
+  },
+};
+
 export async function runTutorialsPipeline(
   app: App,
   syncFolder: string,
   onLog?: (msg: string) => void,
 ): Promise<TutorialsPipelineResult> {
-  const log = onLog || (() => {});
-  const vault = app.vault;
-  const cache = loadPipelineCache<CacheEntry>(vault, CACHE_FILE);
-
-  // 1. Gather candidates
-  log("Scanning bookmarks...");
-  const candidates = gatherCandidates(app, syncFolder);
-  log(`Found ${candidates.length} tutorial candidates`);
-
-  const uncached = candidates.filter(c => !cache[c.roostId]);
-  const needExtract = candidates.filter(
-    c => cache[c.roostId]?.triage === "tutorial" && !cache[c.roostId]?.extraction,
-  ).length;
-  log(`${uncached.length} need triage, ${needExtract} need extraction (${candidates.length - uncached.length - needExtract} complete)`);
-
-  // 2. Triage — tag fast-path + LLM
-  let fastCount = 0;
-  for (const c of uncached) {
-    if (hasTutorialFastPath(c.tags)) {
-      cache[c.roostId] = { triage: "tutorial", extraction: null };
-      fastCount++;
-    }
-  }
-  if (fastCount > 0) {
-    savePipelineCache(vault, CACHE_FILE, cache);
-    log(`Tag fast-path: ${fastCount} items auto-triaged as tutorial`);
-  }
-
-  const needTriage = uncached.filter(c => !cache[c.roostId]);
-  if (needTriage.length > 0) {
-    log(`Triaging ${needTriage.length} items...`);
-    for (let i = 0; i < needTriage.length; i += CONCURRENCY) {
-      const batch = needTriage.slice(i, i + CONCURRENCY);
-      const results = await Promise.all(
-        batch.map(c => triageItem(c).catch(() => "skip" as const)),
-      );
-      for (let j = 0; j < batch.length; j++) {
-        cache[batch[j].roostId] = { triage: results[j], extraction: null };
-      }
-      savePipelineCache(vault, CACHE_FILE, cache);
-      log(`Triaged ${Math.min(i + CONCURRENCY, needTriage.length)}/${needTriage.length}`);
-    }
-  }
-
-  // 3. Enrich cached extractions first (in-place, no separate notes)
-  let written = 0;
-
-  const alreadyCached = candidates.filter(
-    c => cache[c.roostId]?.triage === "tutorial" && cache[c.roostId]?.extraction,
-  );
-  for (const c of alreadyCached) {
-    const extraction = cache[c.roostId].extraction!;
-    await writeTutorialToBookmark(app, c.file, extraction);
-    written++;
-  }
-  if (alreadyCached.length > 0) {
-    log(`Enriched ${alreadyCached.length} cached tutorials`);
-  }
-
-  // 4. Extract new tutorials
-  const toExtract = candidates.filter(
-    c => cache[c.roostId]?.triage === "tutorial" && !cache[c.roostId]?.extraction,
-  );
-  let errors = 0;
-
-  if (toExtract.length > 0) {
-    log(`Extracting ${toExtract.length} tutorials...`);
-    for (let i = 0; i < toExtract.length; i += CONCURRENCY) {
-      const batch = toExtract.slice(i, i + CONCURRENCY);
-      const results = await Promise.all(
-        batch.map(c => extractTutorial(c).catch((err) => {
-          console.warn(`[roost] tutorials: extraction error for ${c.roostId}:`, err);
-          return null;
-        })),
-      );
-
-      for (let j = 0; j < batch.length; j++) {
-        const extraction = results[j];
-        if (extraction) {
-          cache[batch[j].roostId] = { triage: "tutorial", extraction };
-          await writeTutorialToBookmark(app, batch[j].file, extraction);
-          written++;
-        } else {
-          cache[batch[j].roostId] = { triage: "skip", extraction: null };
-          errors++;
-        }
-      }
-
-      savePipelineCache(vault, CACHE_FILE, cache);
-      log(`Extracted ${Math.min(i + CONCURRENCY, toExtract.length)}/${toExtract.length} (${written} enriched so far)`);
-    }
-  }
-
-  const skipped = candidates.filter(c => cache[c.roostId]?.triage === "skip").length;
-  const allTutorials = candidates.filter(
-    c => cache[c.roostId]?.triage === "tutorial" && cache[c.roostId]?.extraction,
-  );
-  const areas = new Set(allTutorials.map(c => (cache[c.roostId].extraction as TutorialExtraction).skillArea)).size;
-
-  return {
-    candidates: candidates.length,
-    tutorials: written,
-    skipped,
-    errors,
-    areas,
-  };
+  return runCategoryPipeline(app, syncFolder, TUTORIALS_CONFIG, onLog);
 }
 
 // ─── Cache reconstruction ─────────────────────────────────────────────────────

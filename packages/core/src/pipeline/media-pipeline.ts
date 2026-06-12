@@ -24,6 +24,10 @@ import {
   loadPipelineCache,
   savePipelineCache,
 } from "@/pipeline/shared";
+import {
+  runCategoryPipeline,
+  type CategoryPipelineConfig,
+} from "@/pipeline/run-category-pipeline";
 import { resolveTmdb } from "./resolvers/tmdb-resolver";
 import { resolveAnilist } from "./resolvers/anilist-resolver";
 import { canonicalizeTitle } from "./resolvers/resolver-utils";
@@ -593,221 +597,162 @@ export async function runMediaPipeline(
   // because it needs no key.
   tmdbApiKey: string = "",
 ): Promise<MediaPipelineResult> {
-  const log = onLog || (() => {});
-  const vault = app.vault;
-  const cache = loadPipelineCache<CacheEntry>(vault, CACHE_FILE);
-
-  // 1. Gather candidates
-  if (filter) {
-    const scope = filter.subcategory ? `${filter.category}/${filter.subcategory}` : filter.category;
-    log(`Scanning bookmarks scoped to ${scope}...`);
-  } else {
-    log("Scanning bookmarks...");
-  }
-  const candidates = gatherCandidates(app, syncFolder, filter);
-  log(`Found ${candidates.length} media candidates`);
-
-  const uncached = candidates.filter(c => !cache[c.roostId]);
-  const needExtract = candidates.filter(
-    c => cache[c.roostId]?.triage === "media" && !cache[c.roostId]?.extraction,
-  ).length;
-  log(`${uncached.length} need triage, ${needExtract} need extraction (${candidates.length - uncached.length - needExtract} complete)`);
-
-  // 2. Write fields onto already-cached candidates FIRST. These don't
-  //    depend on triage or extraction — the data's already on disk,
-  //    waiting to be stamped. Doing this before the slow LLM passes
-  //    means the Media list table populates immediately with what's
-  //    available, then grows as triage + extraction land more items.
-  let written = 0;
-  const alreadyCached = candidates.filter(
-    c => cache[c.roostId]?.triage === "media" && cache[c.roostId]?.extraction,
-  );
-  if (alreadyCached.length > 0) {
-    log(`Stamping ${alreadyCached.length} cached extractions onto bookmarks...`);
-    for (const c of alreadyCached) {
-      const entry = cache[c.roostId];
-      await writeMediaToBookmark(app, c, entry.extraction!, entry.playback, entry.deepLink);
-      written++;
-    }
-    log(`Stamped ${alreadyCached.length} bookmarks — table should populate now`);
-  }
-
-  // 3. Triage — tag fast-path + LLM
-  let fastCount = 0;
-  for (const c of uncached) {
-    if (hasMediaFastPath(c.tags)) {
-      cache[c.roostId] = { triage: "media", extraction: null };
-      fastCount++;
-    }
-  }
-  if (fastCount > 0) {
-    savePipelineCache(vault, CACHE_FILE, cache);
-    log(`Tag fast-path: ${fastCount} items auto-triaged as media`);
-  }
-
-  const needTriage = uncached.filter(c => !cache[c.roostId]);
-  if (needTriage.length > 0) {
-    log(`Triaging ${needTriage.length} items...`);
-    for (let i = 0; i < needTriage.length; i += CONCURRENCY) {
-      const batch = needTriage.slice(i, i + CONCURRENCY);
-      const results = await Promise.all(
-        batch.map(c => triageItem(c).catch(() => "skip" as const)),
-      );
-      for (let j = 0; j < batch.length; j++) {
-        cache[batch[j].roostId] = { triage: results[j], extraction: null };
-      }
-      savePipelineCache(vault, CACHE_FILE, cache);
-      log(`Triaged ${Math.min(i + CONCURRENCY, needTriage.length)}/${needTriage.length}`);
-    }
-  }
-
-  // 4. Extract new media
-  const toExtract = candidates.filter(
-    c => cache[c.roostId]?.triage === "media" && !cache[c.roostId]?.extraction,
-  );
-  let errors = 0;
-
-  if (toExtract.length > 0) {
-    log(`Extracting ${toExtract.length} media items...`);
-    for (let i = 0; i < toExtract.length; i += CONCURRENCY) {
-      const batch = toExtract.slice(i, i + CONCURRENCY);
-      const results = await Promise.all(
-        batch.map(c => extractMedia(c).catch((err) => {
-          console.warn(`[roost] media: extraction error for ${c.roostId}:`, err);
-          return null;
-        })),
-      );
-
-      for (let j = 0; j < batch.length; j++) {
-        const extraction = results[j];
-        if (extraction) {
-          cache[batch[j].roostId] = { triage: "media", extraction };
-          await writeMediaToBookmark(app, batch[j], extraction);
-          written++;
-        } else {
-          cache[batch[j].roostId] = { triage: "skip", extraction: null };
-          errors++;
-        }
-      }
-
-      savePipelineCache(vault, CACHE_FILE, cache);
-      log(`Extracted ${Math.min(i + CONCURRENCY, toExtract.length)}/${toExtract.length} (${written} stamped so far)`);
-    }
-  }
-
-  // 5. Resolve playback URLs for music items. Three signals qualify a
-  //    candidate as music (any one is enough): TikTok DSP data,
-  //    user-curated Music subcategory, or LLM-extracted music type.
-  //    The user-curated path matters because the LLM often classifies
-  //    music videos as podcast/other.
-  const isMusicCandidate = (c: MediaCandidate): boolean => {
-    if (c.spotifyTrackId) return true;
-    if (cache[c.roostId]?.extraction?.mediaType === "music") return true;
-    const fm = app.metadataCache.getFileCache(c.file)?.frontmatter;
-    const subcat = fm?.[SUBCATEGORY_FIELD];
-    return typeof subcat === "string" && MUSIC_SUBCATEGORIES.has(subcat.toLowerCase());
-  };
-  const musicItems = candidates.filter(isMusicCandidate);
-  const needPlayback = musicItems.filter(c => cache[c.roostId]?.playback === undefined);
+  // Post-stage counters: mutated by afterCore, read by buildResult (closures).
   let playbackResolved = 0;
-  if (musicItems.length > 0) {
-    log(`Playback step: ${musicItems.length} music items in scope (${needPlayback.length} need resolution)`);
-  }
-  if (needPlayback.length > 0) {
-    log(`Resolving Spotify track IDs for ${needPlayback.length} items...`);
-    // Resolution is sync (just reads c.spotifyTrackId); writes are
-    // async (vault.modify). Parallelize the writes within each batch.
-    for (let i = 0; i < needPlayback.length; i += PLAYBACK_CONCURRENCY) {
-      const batch = needPlayback.slice(i, i + PLAYBACK_CONCURRENCY);
-      await Promise.all(batch.map(async (c) => {
-        const playback = resolvePlaybackForItem(c);
-        // Items reached via TikTok-DSP or user-curated subcategory
-        // signals may not have a CacheEntry yet (no triage was ever
-        // run on them). Create a minimal one so the playback persists.
-        const existing = cache[c.roostId];
-        if (existing) existing.playback = playback;
-        else cache[c.roostId] = { triage: "skip", extraction: null, playback };
-        await writeMediaToBookmark(app, c, cache[c.roostId].extraction, playback);
-        if (playback.spotifyId) playbackResolved++;
-      }));
-      savePipelineCache(vault, CACHE_FILE, cache);
-      const done = Math.min(i + PLAYBACK_CONCURRENCY, needPlayback.length);
-      log(`Resolved ${done}/${needPlayback.length} (Spotify: ${playbackResolved})`);
-    }
-  }
-
-  // 6. Resolve watchable deep links (Films/Series/Anime/Documentaries → Letterboxd or AniList)
-  // Non-anime watchables need the TMDB key; if it's not configured, skip them
-  // entirely rather than burning attempts. Items stay with `deepLink: undefined`
-  // so a future run after the key gets set picks them up cleanly.
-  const tmdbConfigured = Boolean(tmdbApiKey);
-  let skippedNoTmdbKey = 0;
-  const needDeepLink = candidates.filter((c) => {
-    const sub = c.subcategory.toLowerCase();
-    if (!WATCHABLE_SUBCATEGORIES.has(sub)) return false;
-    const entry = cache[c.roostId];
-    if (!entry?.extraction) return false;
-    if (!needsWatchableResolution(entry.deepLink)) return false;
-    if (sub !== "anime" && !tmdbConfigured) {
-      skippedNoTmdbKey++;
-      return false;
-    }
-    return true;
-  });
-  if (skippedNoTmdbKey > 0) {
-    log(`Skipping ${skippedNoTmdbKey} Letterboxd item(s) — TMDB API key not configured in plugin settings.`);
-  }
-
   let letterboxdResolved = 0;
   let anilistResolved = 0;
 
-  if (needDeepLink.length > 0) {
-    log(`Resolving watchable deep links for ${needDeepLink.length} items...`);
-    let done = 0;
-    for (let i = 0; i < needDeepLink.length; i += RESOLVER_CONCURRENCY) {
-      const batch = needDeepLink.slice(i, i + RESOLVER_CONCURRENCY);
-      const results = await Promise.all(
-        batch.map((c) =>
-          resolveWatchableForItem(
-            c,
-            cache[c.roostId]!.extraction,
-            tmdbApiKey,
-            cache[c.roostId]!.deepLink,
-          ),
-        ),
-      );
-      for (let j = 0; j < batch.length; j++) {
-        const c = batch[j];
-        const deepLink = results[j];
-        cache[c.roostId] = { ...cache[c.roostId]!, deepLink };
-        if (deepLink.tmdbId) letterboxdResolved++;
-        if (deepLink.anilistId) anilistResolved++;
-        await writeMediaToBookmark(app, c, cache[c.roostId]!.extraction!, undefined, deepLink);
-        done++;
+  const config: CategoryPipelineConfig<
+    MediaCandidate,
+    MediaExtraction,
+    "media" | "skip",
+    MediaPipelineResult,
+    CacheEntry
+  > = {
+    cacheFile: CACHE_FILE,
+    concurrency: CONCURRENCY,
+    extractVerdict: "media",
+    skipVerdict: "skip",
+    onExtractFailure: "demote",
+    onTriageFailure: "skip",
+    // Stamp cached items BEFORE the slow LLM passes so the Media list table
+    // populates immediately, then grows as triage + extraction land more items.
+    backfillCachedFirst: true,
+    gatherCandidates: (a, sf) => gatherCandidates(a, sf, filter),
+    fastPathTriage: c => (hasMediaFastPath(c.tags) ? "media" : null),
+    triageItem,
+    extractItem: extractMedia,
+    onExtractError: (roostId, err) =>
+      console.warn(`[roost] media: extraction error for ${roostId}:`, err),
+    writeToBookmark: (a, c, ex) => writeMediaToBookmark(a, c, ex),
+    // Cached stamps carry the entry's playback + deepLink through.
+    writeCachedToBookmark: (a, c, entry) =>
+      writeMediaToBookmark(a, c, entry.extraction!, entry.playback, entry.deepLink),
+    afterCore: async ({ app: a, candidates, cache, log }) => {
+      const vault = a.vault;
+
+      // 5. Resolve playback URLs for music items. Three signals qualify a
+      //    candidate as music (any one is enough): TikTok DSP data,
+      //    user-curated Music subcategory, or LLM-extracted music type.
+      //    The user-curated path matters because the LLM often classifies
+      //    music videos as podcast/other.
+      const isMusicCandidate = (c: MediaCandidate): boolean => {
+        if (c.spotifyTrackId) return true;
+        if (cache[c.roostId]?.extraction?.mediaType === "music") return true;
+        const fm = a.metadataCache.getFileCache(c.file)?.frontmatter;
+        const subcat = fm?.[SUBCATEGORY_FIELD];
+        return typeof subcat === "string" && MUSIC_SUBCATEGORIES.has(subcat.toLowerCase());
+      };
+      const musicItems = candidates.filter(isMusicCandidate);
+      const needPlayback = musicItems.filter(c => cache[c.roostId]?.playback === undefined);
+      if (musicItems.length > 0) {
+        log(`Playback step: ${musicItems.length} music items in scope (${needPlayback.length} need resolution)`);
       }
-      savePipelineCache(vault, CACHE_FILE, cache);
-      log(`Resolved ${done}/${needDeepLink.length} (Letterboxd: ${letterboxdResolved}, AniList: ${anilistResolved})`);
-    }
-  }
+      if (needPlayback.length > 0) {
+        log(`Resolving Spotify track IDs for ${needPlayback.length} items...`);
+        // Resolution is sync (just reads c.spotifyTrackId); writes are
+        // async (vault.modify). Parallelize the writes within each batch.
+        for (let i = 0; i < needPlayback.length; i += PLAYBACK_CONCURRENCY) {
+          const batch = needPlayback.slice(i, i + PLAYBACK_CONCURRENCY);
+          await Promise.all(batch.map(async (c) => {
+            const playback = resolvePlaybackForItem(c);
+            // Items reached via TikTok-DSP or user-curated subcategory
+            // signals may not have a CacheEntry yet (no triage was ever
+            // run on them). Create a minimal one so the playback persists.
+            const existing = cache[c.roostId];
+            if (existing) existing.playback = playback;
+            else cache[c.roostId] = { triage: "skip", extraction: null, playback };
+            await writeMediaToBookmark(a, c, cache[c.roostId].extraction, playback);
+            if (playback.spotifyId) playbackResolved++;
+          }));
+          savePipelineCache(vault, CACHE_FILE, cache);
+          const done = Math.min(i + PLAYBACK_CONCURRENCY, needPlayback.length);
+          log(`Resolved ${done}/${needPlayback.length} (Spotify: ${playbackResolved})`);
+        }
+      }
 
-  const skipped = candidates.filter(c => cache[c.roostId]?.triage === "skip").length;
-  // Distinct media types present across all extracted bookmarks.
-  const types = new Set(
-    candidates
-      .filter(c => cache[c.roostId]?.extraction)
-      .map(c => cache[c.roostId].extraction!.mediaType),
-  ).size;
+      // 6. Resolve watchable deep links (Films/Series/Anime/Documentaries → Letterboxd or AniList)
+      // Non-anime watchables need the TMDB key; if it's not configured, skip them
+      // entirely rather than burning attempts. Items stay with `deepLink: undefined`
+      // so a future run after the key gets set picks them up cleanly.
+      const tmdbConfigured = Boolean(tmdbApiKey);
+      let skippedNoTmdbKey = 0;
+      const needDeepLink = candidates.filter((c) => {
+        const sub = c.subcategory.toLowerCase();
+        if (!WATCHABLE_SUBCATEGORIES.has(sub)) return false;
+        const entry = cache[c.roostId];
+        if (!entry?.extraction) return false;
+        if (!needsWatchableResolution(entry.deepLink)) return false;
+        if (sub !== "anime" && !tmdbConfigured) {
+          skippedNoTmdbKey++;
+          return false;
+        }
+        return true;
+      });
+      if (skippedNoTmdbKey > 0) {
+        log(`Skipping ${skippedNoTmdbKey} Letterboxd item(s) — TMDB API key not configured in plugin settings.`);
+      }
 
-  return {
-    candidates: candidates.length,
-    media: written,
-    skipped,
-    errors,
-    types,
-    playbackResolved,
-    letterboxdResolved,
-    anilistResolved,
+      if (needDeepLink.length > 0) {
+        log(`Resolving watchable deep links for ${needDeepLink.length} items...`);
+        let done = 0;
+        for (let i = 0; i < needDeepLink.length; i += RESOLVER_CONCURRENCY) {
+          const batch = needDeepLink.slice(i, i + RESOLVER_CONCURRENCY);
+          const results = await Promise.all(
+            batch.map((c) =>
+              resolveWatchableForItem(
+                c,
+                cache[c.roostId]!.extraction,
+                tmdbApiKey,
+                cache[c.roostId]!.deepLink,
+              ),
+            ),
+          );
+          for (let j = 0; j < batch.length; j++) {
+            const c = batch[j];
+            const deepLink = results[j];
+            cache[c.roostId] = { ...cache[c.roostId]!, deepLink };
+            if (deepLink.tmdbId) letterboxdResolved++;
+            if (deepLink.anilistId) anilistResolved++;
+            await writeMediaToBookmark(a, c, cache[c.roostId]!.extraction!, undefined, deepLink);
+            done++;
+          }
+          savePipelineCache(vault, CACHE_FILE, cache);
+          log(`Resolved ${done}/${needDeepLink.length} (Letterboxd: ${letterboxdResolved}, AniList: ${anilistResolved})`);
+        }
+      }
+    },
+    buildResult: (candidates, cache, errors) => ({
+      candidates: candidates.length,
+      media: candidates.filter(
+        c => cache[c.roostId]?.triage === "media" && cache[c.roostId]?.extraction,
+      ).length,
+      skipped: candidates.filter(c => cache[c.roostId]?.triage === "skip").length,
+      errors,
+      // Distinct media types present across all extracted bookmarks.
+      types: new Set(
+        candidates
+          .filter(c => cache[c.roostId]?.extraction)
+          .map(c => cache[c.roostId].extraction!.mediaType),
+      ).size,
+      playbackResolved,
+      letterboxdResolved,
+      anilistResolved,
+    }),
+    log: {
+      candidatesFound: n => `Found ${n} media candidates`,
+      triageExtractCounts: (uncached, needExtract, complete) =>
+        `${uncached} need triage, ${needExtract} need extraction (${complete} complete)`,
+      fastPath: n => `Tag fast-path: ${n} items auto-triaged as media`,
+      triageProgress: (done, total) => `Triaged ${done}/${total}`,
+      wroteCached: n => `Stamped ${n} cached extractions onto bookmarks`,
+      extracting: n => `Extracting ${n} media items...`,
+      extractProgress: (done, total) => `Extracted ${done}/${total}`,
+      done: r => `Done: ${r.media} media items across ${r.types} types, ${r.skipped} skipped, ${r.errors} errors`,
+    },
   };
+
+  return runCategoryPipeline(app, syncFolder, config, onLog);
 }
 
 // ─── Cache reconstruction ─────────────────────────────────────────────────────
