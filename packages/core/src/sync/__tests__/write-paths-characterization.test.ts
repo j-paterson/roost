@@ -129,7 +129,7 @@ function makeTwitterTextRecord(): NormalizedRecord {
           result: { core: { name: "Bob", screen_name: "bob" } },
         },
       },
-      legacy: { full_text: "just some words, no media here" },
+      legacy: { full_text: "just some words from @alice about #pasta" },
     },
     saved_at: "2026-02-04T00:00:00.000Z",
     published_at: null,
@@ -286,7 +286,20 @@ describe("VaultWriter.writeBatch — Twitter text/card record", () => {
 
     expect(note).toContain('roost_id: "twitter:222"');
     expect(note).toContain("platform: twitter");
-    expect(note).toContain("title: just some words, no media here");
+    // title stays the plain single-line text (newlines flattened to spaces).
+    // The leading "#" makes buildFrontmatter YAML-quote the value.
+    expect(note).toContain('title: "just some words from @alice about #pasta"');
+
+    // NEW (plan 031): the note body is now the rendered markdown — non-empty
+    // and carrying the linkified tweet text (@mention + #hashtag as real links).
+    const bodyStart = note.indexOf("\n---\n");
+    const body = note.slice(bodyStart + 5);
+    expect(body.trim().length).toBeGreaterThan(0);
+    expect(body).toContain("[@alice](https://x.com/alice)");
+    expect(body).toContain("[#pasta](https://x.com/hashtag/pasta)");
+    // The enrichment version is stamped at write time so the note isn't
+    // re-flagged by the first-rollout detection predicate.
+    expect(note).toContain("enrichment_v_tweetBody: 1");
 
     // CHARACTERIZATION: in a real Obsidian/Electron environment renderCardAsync
     // uses OffscreenCanvas to produce a PNG card. In happy-dom, OffscreenCanvas is
