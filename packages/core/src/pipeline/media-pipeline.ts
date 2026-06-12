@@ -64,6 +64,15 @@ interface MediaExtraction {
   description: string;
   rating: string | null;
   where: string | null;
+  // Resolved canonical deep-link ids (mirrors the wider roost.d.ts
+  // MediaExtraction so reconstructMediaCache can carry them from frontmatter
+  // to the gallery card without a cast). Optional so producers that don't
+  // resolve ids still satisfy the type.
+  spotifyId?: string | null;
+  tmdbId?: string | null;
+  tmdbType?: "movie" | "tv" | null;
+  anilistId?: string | null;
+  year?: number | null;
 }
 
 /** Cached playback-URL resolution for a music item. Spotify track ID
@@ -759,6 +768,18 @@ export async function runMediaPipeline(
 /** Rebuild the media pipeline cache from source-bookmark frontmatter.
  *  Scans Bookmarks/ for notes with pipeline_v_media or enrichment_v_mediaExtraction set,
  *  reads the media_* fields, and returns a cache record keyed by roost_id. */
+/** Read an id-style frontmatter value (mirrors media-list.ts parseNullableId):
+ *  absent / empty / literal "null" → null; a trimmed non-empty string → that
+ *  string. Collapses both "key absent" and "present-but-empty" to null since
+ *  the rebuilt extraction only needs the resolved value or its absence. */
+function readNullableIdFm(fm: Record<string, unknown>, key: string): string | null {
+  const raw = fm[key];
+  if (typeof raw !== "string") return null;
+  const t = raw.trim();
+  if (!t || t.toLowerCase() === "null") return null;
+  return t;
+}
+
 export function reconstructMediaCache(
   app: App,
 ): Record<string, { triage: "media"; extraction: MediaExtraction }> {
@@ -769,6 +790,7 @@ export function reconstructMediaCache(
     if (!fm || (typeof fm.pipeline_v_media !== "number" && typeof fm.enrichment_v_mediaExtraction !== "number")) continue;
     const id = typeof fm.roost_id === "string" ? fm.roost_id : null;
     if (!id) continue;
+    const tmdbTypeRaw = fm[MEDIA_FIELDS.tmdbType];
     out[id] = {
       triage: "media",
       extraction: {
@@ -779,6 +801,14 @@ export function reconstructMediaCache(
         rating: typeof fm.media_rating === "string" ? fm.media_rating : null,
         where: typeof fm.media_where === "string" ? fm.media_where : null,
         description: typeof fm.media_description === "string" ? fm.media_description : "",
+        // Carry the resolved canonical deep-link ids so the gallery card can
+        // build canonical (not just search) links even when the cache file was
+        // wiped and rebuilt from frontmatter.
+        spotifyId: readNullableIdFm(fm, MEDIA_FIELDS.spotifyId),
+        tmdbId: readNullableIdFm(fm, MEDIA_FIELDS.tmdbId),
+        tmdbType: tmdbTypeRaw === "movie" || tmdbTypeRaw === "tv" ? tmdbTypeRaw : null,
+        anilistId: readNullableIdFm(fm, MEDIA_FIELDS.anilistId),
+        year: typeof fm[MEDIA_FIELDS.year] === "number" ? fm[MEDIA_FIELDS.year] as number : null,
       },
     };
   }

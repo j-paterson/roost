@@ -95,6 +95,13 @@ export interface PlaceExtraction {
 export interface MediaExtraction {
   mediaType: string; title: string; creator: string;
   genre: string; description: string; rating: string | null; where: string | null;
+  // Resolved canonical deep-link ids (carried from the pipeline cache /
+  // frontmatter so the gallery card can build canonical links, not just search).
+  spotifyId?: string | null;
+  tmdbId?: string | null;
+  tmdbType?: "movie" | "tv" | null;
+  anilistId?: string | null;
+  year?: number | null;
 }
 
 export interface ProductExtraction {

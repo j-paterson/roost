@@ -399,6 +399,75 @@ describe("renderActionLinks via renderPipelineDetail — media", () => {
     const spotify = actionLinks(el).find(a => a.getAttribute("href")!.includes("open.spotify.com/search"));
     expect(spotify).toBeTruthy();
   });
+
+  // ── Canonical deep links (plan 035): renderMedia builds a canonical
+  //    Letterboxd/AniList/Spotify URL when a resolved id is present, falling
+  //    back to 034's search URL when it isn't. ──
+
+  it("films with a resolved tmdbId yields a canonical Letterboxd link (not search)", () => {
+    const el = host();
+    renderPipelineDetail(
+      el,
+      { type: "media", extraction: makeMediaExtraction({ title: "Dune", mediaType: "film", tmdbId: "438631", tmdbType: "movie" }) } as any,
+      { url: "https://www.tiktok.com/@x/video/1", author: "x", subcategory: "films" },
+    );
+    const deep = actionLinks(el).find(a => a.getAttribute("href")!.includes("letterboxd.com"));
+    expect(deep).toBeTruthy();
+    expect(deep!.getAttribute("href")).toBe("https://letterboxd.com/tmdb/438631/");
+    expect(deep!.getAttribute("href")).not.toContain("/search/");
+    expect(deep!.textContent).toContain("Open");
+  });
+
+  it("anime with a resolved anilistId yields a canonical AniList link", () => {
+    const el = host();
+    renderPipelineDetail(
+      el,
+      { type: "media", extraction: makeMediaExtraction({ title: "Made in Abyss", mediaType: "anime", anilistId: "99423" }) } as any,
+      { url: null, author: null, subcategory: "anime" },
+    );
+    const deep = actionLinks(el).find(a => a.getAttribute("href")!.includes("anilist.co"));
+    expect(deep).toBeTruthy();
+    expect(deep!.getAttribute("href")).toBe("https://anilist.co/anime/99423");
+  });
+
+  it("music with a resolved spotifyId yields a canonical Spotify track link", () => {
+    const el = host();
+    renderPipelineDetail(
+      el,
+      { type: "media", extraction: makeMediaExtraction({ title: "Song", creator: "Artist", mediaType: "music", spotifyId: "abc123" }) } as any,
+      { url: null, author: null, subcategory: "music" },
+    );
+    const deep = actionLinks(el).find(a => a.getAttribute("href")!.includes("open.spotify.com/track"));
+    expect(deep).toBeTruthy();
+    expect(deep!.getAttribute("href")).toBe("https://open.spotify.com/track/abc123");
+    expect(deep!.textContent).toContain("Open in Spotify");
+  });
+
+  it("series stays a search link even with a tmdbId (Letterboxd TMDB redirect is films-only)", () => {
+    const el = host();
+    renderPipelineDetail(
+      el,
+      { type: "media", extraction: makeMediaExtraction({ title: "The Bear", mediaType: "series", tmdbId: "1399", tmdbType: "tv" }) } as any,
+      { url: null, author: null, subcategory: "series" },
+    );
+    const deep = actionLinks(el).find(a => a.getAttribute("href")!.includes("letterboxd.com"));
+    expect(deep).toBeTruthy();
+    expect(deep!.getAttribute("href")).toContain("letterboxd.com/search/tv/");
+    expect(deep!.getAttribute("href")).not.toContain("/tmdb/1399/");
+  });
+
+  it("films with no resolved id falls back to a Letterboxd search link (034 behavior)", () => {
+    const el = host();
+    renderPipelineDetail(
+      el,
+      { type: "media", extraction: makeMediaExtraction({ title: "Some Film", mediaType: "film", tmdbId: null }) } as any,
+      { url: null, author: null, subcategory: "films" },
+    );
+    const deep = actionLinks(el).find(a => a.getAttribute("href")!.includes("letterboxd.com"));
+    expect(deep).toBeTruthy();
+    expect(deep!.getAttribute("href")).toContain("letterboxd.com/search/films/");
+    expect(deep!.textContent).toContain("Find it");
+  });
 });
 
 describe("renderActionLinks — no source", () => {
