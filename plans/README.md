@@ -83,6 +83,26 @@ Note: at planning time the working tree had uncommitted changes to
 | 034  | Make every pipeline's saved intent actionable — source link + search deep links + media chip fix | P2 | M | — | DONE (branch `advisor/034-actionable-pipelines`, uncommitted; search-fallback URLs only — canonical media links are 035) |
 | 035  | Carry resolved media ids to the gallery card so renderMedia builds *canonical* Letterboxd/AniList/Spotify deep links | P2 | S | 034 | DONE (branch `advisor/035-media-canonical-deeplinks`, uncommitted; widened both `MediaExtraction` types + both cache load paths, upgraded `renderMedia` to canonical via `watchableUrl`/Spotify track; +7 tests) |
 | 036  | Make the rendered tweet-body backfill *additive* — preserve inline media, add searchable text | P1 | S–M | 031 | DONE (branch `advisor/036-tweet-body-preserve-media`, uncommitted; `renderTweetBody` gained an optional `mediaEmbeds` arg + `appendMediaEmbeds`, `rewriteNoteBody` now preserves existing `![[…]]` embeds via `extractEmbedLines` (additive, naming-era-agnostic), `writeTwitterRecord` embeds real downloaded media (photos/video-poster/card-thumb, NEVER card.png); idempotency proven by a render→extract→render fixed-point test; +9 tests. The backfill is now safe on all 13,407 X notes) |
+| 037  | Auto-run the tweet-body render once — retire the manual command to a migration fallback | P1 | S | 031, 036 | TODO (branch off `local/deploy-all` @ `9bcf030`; one-time, deferred, flag-gated auto catch-up of ~13,407 legacy X notes on plugin load — adds `tweetBodyBackfillDone` settings flag + a `maybeAutoRunTweetBodyBackfill` orchestrator that reuses the unchanged 031 driver (cache + re-entrancy guard) and the 036 idempotent render; triggered from a `window.setTimeout` in `onload`. Manual "Render X tweet bodies" command stays as fallback. No renderer/driver/write-path changes) |
+
+> **037 (auto-run the tweet-body render — systemic "backfills are manual/undiscoverable" fix, 2026-06-12).**
+> 036 made the `tweetBody` render additive + idempotent, so it's finally *safe* to run
+> unattended — but its only trigger is still the hidden manual "Render X tweet bodies"
+> command, so most vaults never get the **~13,407 legacy (pre-031) notes** caught up. New
+> tweets already render+stamp at write time (`twitter-record-writer.ts`), so the only
+> remaining work is a **one-time legacy catch-up**. 037 wires that to run **automatically,
+> once, deferred and non-blocking** off plugin load: a new `tweetBodyBackfillDone` settings
+> flag (internal one-time marker, mirrors `welcomeCompleted` — no UI, default-on) gates a
+> thin `maybeAutoRunTweetBodyBackfill` orchestrator that calls the **unchanged** 031 driver
+> (its resumable `.roost/cache` + `backfillRunning` guard + 036's `newContent === existing`
+> no-op make even a forced re-run a converging no-op), then sets the flag after success
+> (left `false` on failure → retry next load). Triggered from a `window.setTimeout` in
+> `onload` (same deferral pattern as the first-launch hub open) so startup is never blocked.
+> The manual command **stays registered** as the migration/fallback. Chosen over an
+> every-sync-end hook because the load+flag approach runs exactly once for *every* user,
+> sync-or-not. Scope is pure wiring: `settings.ts` (flag) + `tweet-body-backfill.ts` (pure
+> decision fn + orchestrator) + `main.ts` (deferred call) + a unit test; the renderer,
+> driver, and write path are untouched.
 
 > **034 / 035 (pipeline actionability, 2026-06-12).** A pipeline audit ("a bookmark
 > is a saved intent; surface what makes it actionable") found enrichments extract
