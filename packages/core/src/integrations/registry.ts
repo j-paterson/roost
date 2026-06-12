@@ -32,7 +32,7 @@ export const INTEGRATIONS: Integration[] = [
       (await ctx.httpProbe(`${OLLAMA_URL}/api/tags`)) ? "available" : "unavailable",
     setup: {
       instructions:
-        "Install Ollama from ollama.com, run `ollama serve`, then `ollama pull nomic-embed-text` (embeddings) and a chat model for rerank.",
+        "Easiest: run `npm run setup:integrations` (or `scripts/setup-integrations.sh`) — it installs Ollama, starts it, and pulls the models Roost uses. Manual: install from ollama.com → `ollama serve` → `ollama pull nomic-embed-text` + a chat model.",
       docsUrl: "https://ollama.com",
     },
   },
@@ -46,7 +46,7 @@ export const INTEGRATIONS: Integration[] = [
       (await ctx.httpProbe(`${EMBED_URL}/api/tags`)) ? "available" : "unavailable",
     setup: {
       instructions:
-        "Create a Python venv, `pip install -r scripts/requirements.txt`, then run `scripts/embed-sidecar.py --vault-root <vault>` so it serves on port 11435.",
+        "Optional (Ollama already provides embeddings). Easiest: `scripts/setup-integrations.sh --vault-root <vault>` sets up the Python venv and starts it on :11435 with a base model; drop a fine-tuned model in `.roost/build/nomic-finetuned-hardneg` for higher accuracy.",
     },
   },
   {
