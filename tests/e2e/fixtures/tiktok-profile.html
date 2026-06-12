@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Fixture profile — @e2euser</title>
+  <style>
+    body { margin: 0; font-family: sans-serif; }
+    /* Push the Collections button below the fold so a no-scroll coordinate
+       click would miss it — mirrors the real-world bug. */
+    .spacer { height: 1400px; }
+    #collections { padding: 8px 16px; }
+    #collection-list a { display: block; }
+  </style>
+</head>
+<body>
+  <!--
+    Deterministic stand-in for a logged-in TikTok profile, used by
+    61-tiktok-collections.spec.ts to verify the sync's Collections-tab
+    activation against a REAL loaded page in the Electron webview.
+
+    The #collections button is TRUSTED-GATED: it only reveals the collection
+    links when it receives an isTrusted click (a real Chromium-level mouse or
+    keyboard event), exactly like TikTok's React tab — a synthetic
+    element.click() (isTrusted:false) does nothing. So the test tells us which
+    sync mechanism produces a trusted activation.
+  -->
+  <div role="tablist">
+    <button role="tab" id="favorites-tab">Favorites</button>
+  </div>
+
+  <div class="spacer"></div>
+
+  <button id="collections" type="button">Collections 45</button>
+
+  <!-- Hidden until the Collections tab is activated by a TRUSTED click. -->
+  <div id="collection-list" style="display:none">
+    <a href="https://www.tiktok.com/@e2euser/collection/Recipes-7111111111111111111">Recipes</a>
+    <a href="https://www.tiktok.com/@e2euser/collection/Travel-7222222222222222222">Travel</a>
+    <a href="https://www.tiktok.com/@e2euser/collection/Workouts-7333333333333333333">Workouts</a>
+  </div>
+
+  <script>
+    // Minimal globals the sync's username-extraction reads (tiktok-sync.ts).
+    window.__TIKTOK_FAVORITES__ = { appContext: { $user: { uniqueId: "e2euser" } } };
+    window.__UNIVERSAL_DATA_FOR_REHYDRATION__ = {
+      __DEFAULT_SCOPE__: { "webapp.app-context": { user: { uniqueId: "e2euser" } } }
+    };
+
+    // The Collections tab reveals its links ONLY on a trusted click — the crux
+    // of what TikTok requires and what we're verifying.
+    document.getElementById("collections").addEventListener("click", function (e) {
+      if (!e.isTrusted) return; // synthetic .click() is ignored, like TikTok
+      document.getElementById("collection-list").style.display = "block";
+    });
+
+    // Expose how the button was last hit, for clear test diagnostics.
+    window.__lastCollectionsClick = null;
+    document.getElementById("collections").addEventListener("click", function (e) {
+      window.__lastCollectionsClick = { trusted: e.isTrusted };
+    });
+  </script>
+</body>
+</html>
