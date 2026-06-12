@@ -22,6 +22,7 @@ import {
   getWhereColor,
   getCompactChips,
   renderPipelineDetail,
+  buildMapsUrl,
 } from "@/views/pipeline-details";
 import {
   makeRecipeExtraction,
@@ -304,5 +305,115 @@ describe("kvRow invariant", () => {
     expect(kvLabels).not.toContain("Type");
     expect(kvLabels).not.toContain("Best for");
     expect(kvLabels).not.toContain("Address");
+  });
+});
+
+// ── Action links (source link + intent-specific deep link) ───────────────────
+
+function actionLinks(el: HTMLElement): HTMLAnchorElement[] {
+  return Array.from(el.querySelectorAll<HTMLAnchorElement>(".roost-pipeline-actions a"));
+}
+
+describe("buildMapsUrl", () => {
+  it("prefers coords when both lat and lng are numbers", () => {
+    const url = buildMapsUrl({ lat: 45.8, lng: 9.0, name: "Lake Como", city: "Como" });
+    expect(url).toBe("https://www.google.com/maps/search/?api=1&query=45.8,9");
+  });
+
+  it("falls back to an encoded name/address query when coords missing", () => {
+    const url = buildMapsUrl({ lat: null, lng: null, name: "Trattoria Da Enzo", city: "Rome", country: "Italy" });
+    expect(url).toContain("https://www.google.com/maps/search/?api=1&query=");
+    expect(url).toContain(encodeURIComponent("Trattoria Da Enzo Rome Italy"));
+  });
+
+  it("returns null when neither coords nor any query field is present", () => {
+    expect(buildMapsUrl({ lat: null, lng: null, name: null, address: null, city: null, country: null })).toBeNull();
+  });
+});
+
+describe("renderActionLinks via renderPipelineDetail — place", () => {
+  it("place with coords renders a Maps link and a Watch on TikTok link", () => {
+    const el = host();
+    renderPipelineDetail(
+      el,
+      { type: "place", extraction: makePlaceExtraction({ lat: 45.8, lng: 9.0 }) } as any,
+      { url: "https://www.tiktok.com/@x/video/1", author: "x", subcategory: "places" },
+    );
+    const links = actionLinks(el);
+    expect(links.length).toBe(2);
+    expect(links.some(a => a.getAttribute("href")!.includes("google.com/maps"))).toBe(true);
+    const tiktok = links.find(a => a.getAttribute("href") === "https://www.tiktok.com/@x/video/1");
+    expect(tiktok).toBeTruthy();
+    expect(tiktok!.textContent).toContain("Watch on TikTok");
+  });
+
+  it("place with no coords but a name/city uses the encoded query Maps form", () => {
+    const el = host();
+    renderPipelineDetail(
+      el,
+      { type: "place", extraction: makePlaceExtraction({ lat: null, lng: null, name: "Trattoria Da Enzo", city: "Rome", country: "Italy" }) } as any,
+      { url: null, author: null, subcategory: "places" },
+    );
+    const maps = actionLinks(el).find(a => a.getAttribute("href")!.includes("google.com/maps"));
+    expect(maps).toBeTruthy();
+    expect(maps!.getAttribute("href")).toContain("query=" + encodeURIComponent("Trattoria Da Enzo Rome Italy"));
+  });
+});
+
+describe("renderActionLinks via renderPipelineDetail — product", () => {
+  it("product with brand + name renders a where-to-buy Google search link", () => {
+    const el = host();
+    renderPipelineDetail(
+      el,
+      { type: "product", extraction: makeProductExtraction({ brand: "Vitamix", name: "5200" }) } as any,
+      { url: null, author: null, subcategory: "products" },
+    );
+    const buy = actionLinks(el).find(a => a.getAttribute("href")!.includes("google.com/search"));
+    expect(buy).toBeTruthy();
+    expect(buy!.getAttribute("href")).toContain("buy");
+  });
+});
+
+describe("renderActionLinks via renderPipelineDetail — media", () => {
+  it("films subcategory yields a watchable search deep link plus the source link", () => {
+    const el = host();
+    renderPipelineDetail(
+      el,
+      { type: "media", extraction: makeMediaExtraction({ title: "Dune", mediaType: "movie" }) } as any,
+      { url: "https://x.com/u/status/9", author: "u", subcategory: "films" },
+    );
+    const links = actionLinks(el);
+    expect(links.some(a => a.getAttribute("href")!.includes("letterboxd.com"))).toBe(true);
+    const x = links.find(a => a.getAttribute("href") === "https://x.com/u/status/9");
+    expect(x).toBeTruthy();
+    expect(x!.textContent).toContain("View on X");
+  });
+
+  it("music subcategory yields a Spotify search deep link", () => {
+    const el = host();
+    renderPipelineDetail(
+      el,
+      { type: "media", extraction: makeMediaExtraction({ title: "Song", creator: "Artist", mediaType: "music" }) } as any,
+      { url: null, author: null, subcategory: "music" },
+    );
+    const spotify = actionLinks(el).find(a => a.getAttribute("href")!.includes("open.spotify.com/search"));
+    expect(spotify).toBeTruthy();
+  });
+});
+
+describe("renderActionLinks — no source", () => {
+  it("renders no actions row when source is undefined and there is no deep link", () => {
+    const el = host();
+    renderPipelineDetail(el, { type: "workout", extraction: makeWorkoutExtraction() } as any);
+    expect(el.querySelectorAll(".roost-pipeline-actions").length).toBe(0);
+  });
+
+  it("renders no actions row for a place with no source and no coords/query", () => {
+    const el = host();
+    renderPipelineDetail(
+      el,
+      { type: "place", extraction: makePlaceExtraction({ lat: null, lng: null, name: "", city: "", country: "", address: null }) } as any,
+    );
+    expect(el.querySelectorAll(".roost-pipeline-actions").length).toBe(0);
   });
 });

@@ -217,7 +217,13 @@ export function hydrateGalleryCard(
       if (!enrichment.chips?.length) continue;
       const versionField = `enrichment_v_${enrichment.id}`;
       const versionValue = safeGetValue(entry, `note.${versionField}`);
-      const hasVersion = versionValue != null && versionValue !== "";
+      let hasVersion = versionValue != null && versionValue !== "";
+      if (!hasVersion && enrichment.legacyAliases) {
+        for (const alias of enrichment.legacyAliases) {
+          const v = safeGetValue(entry, `note.${alias}`);
+          if (v != null && v !== "") { hasVersion = true; break; }
+        }
+      }
       if (!hasVersion) continue;
       for (const chip of enrichment.chips) {
         const fieldValue = safeGetValue(entry, `note.${chip.field}`);
