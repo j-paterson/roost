@@ -341,7 +341,8 @@ interface RecipePipelineResult {
  * Recipe wiring for the generic {@link runCategoryPipeline}. Every value here
  * reproduces the recipe pipeline's prior inline behavior verbatim — the
  * "recipe" extract verdict, the "skip" verdict, recipe's retry/leave failure
- * policy, the recipeLink post-extract attach, and the exact log strings.
+ * policy, and the recipeLink post-extract attach. Recipe has no tag fast-path,
+ * so {@link CategoryPipelineConfig.fastPathTriage} is intentionally omitted.
  */
 const RECIPE_CONFIG: CategoryPipelineConfig<
   RecipeCandidate,
@@ -351,6 +352,7 @@ const RECIPE_CONFIG: CategoryPipelineConfig<
 > = {
   cacheFile: CACHE_FILE,
   concurrency: CONCURRENCY,
+  label: "recipes",
   extractVerdict: "recipe",
   skipVerdict: "skip",
   onExtractFailure: "retry",
@@ -369,16 +371,6 @@ const RECIPE_CONFIG: CategoryPipelineConfig<
     skipped: candidates.filter(c => cache[c.roostId]?.triage === "skip").length,
     errors,
   }),
-  log: {
-    candidatesFound: n => `Found ${n} food/recipe candidates`,
-    triageExtractCounts: (uncached, needExtract, complete) =>
-      `${uncached} need triage, ${needExtract} need extraction (${complete} complete)`,
-    triageProgress: (done, total) => `Triage: ${done}/${total}`,
-    wroteCached: n => `Wrote ${n} cached recipes`,
-    extracting: n => `Extracting ${n} new recipes`,
-    extractProgress: (done, total) => `Extract: ${done}/${total}`,
-    done: r => `Done: ${r.recipes} recipes, ${r.restaurants} restaurants, ${r.skipped} skipped, ${r.errors} errors`,
-  },
 };
 
 export async function runRecipePipeline(
