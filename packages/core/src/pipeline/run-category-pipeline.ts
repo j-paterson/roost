@@ -25,7 +25,7 @@
  *     playback/deepLink) beyond {triage, extraction}
  */
 import type { App, TFile } from "obsidian";
-import { loadPipelineCache, savePipelineCache } from "@/pipeline/shared";
+import { forEachBatch, loadPipelineCache, savePipelineCache } from "@/pipeline/shared";
 
 /** Cache shape shared by all category pipelines. */
 export type PipelineCacheEntry<TVerdict extends string, TExtract> = {
@@ -177,8 +177,7 @@ export async function runCategoryPipeline<
   // 2b. LLM triage for remaining uncached items
   const needTriage = uncached.filter(c => !cache[c.roostId]);
   let triageCount = 0;
-  for (let i = 0; i < needTriage.length; i += config.concurrency) {
-    const batch = needTriage.slice(i, i + config.concurrency);
+  await forEachBatch(needTriage, config.concurrency, async batch => {
     const results = await Promise.allSettled(
       batch.map(async c => {
         const triage = await config.triageItem(c);
@@ -200,7 +199,7 @@ export async function runCategoryPipeline<
 
     savePipelineCache(vault, config.cacheFile, cache);
     log(config.log.triageProgress(triageCount, needTriage.length));
-  }
+  });
 
   // 3. Backfill previously cached extractions onto their source bookmarks
   if (!config.backfillCachedFirst) await backfillCached();
@@ -212,8 +211,7 @@ export async function runCategoryPipeline<
 
   let extractCount = 0;
   let extractErrors = 0;
-  for (let i = 0; i < toExtract.length; i += config.concurrency) {
-    const batch = toExtract.slice(i, i + config.concurrency);
+  await forEachBatch(toExtract, config.concurrency, async batch => {
     const results = await Promise.allSettled(
       batch.map(async c => {
         const extraction = await config.extractItem(c);
@@ -244,7 +242,7 @@ export async function runCategoryPipeline<
 
     savePipelineCache(vault, config.cacheFile, cache);
     log(config.log.extractProgress(extractCount, toExtract.length));
-  }
+  });
 
   // 4. Post-core stages (media: playback + deep-link resolution)
   if (config.afterCore) {
