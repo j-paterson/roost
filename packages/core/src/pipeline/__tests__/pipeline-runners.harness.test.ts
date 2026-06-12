@@ -1293,6 +1293,143 @@ describe("pipeline runners — uniform harness", () => {
       expect(result.errors).toBe(1);
     });
   });
+
+  // ── Group 4: the tag fast-path (DEBT-01 characterization) ──
+  //
+  // home/products/tutorials/workouts run a FUNCTIONAL tag fast-path BEFORE the
+  // LLM triage loop: a candidate whose tags hit that pipeline's FAST_PATH_TAGS
+  // set is auto-kept and enriched WITHOUT any LLM triage call. (recipe has no
+  // fast-path.) Phase A's fixtures all use empty tags, so this pre-triage pass
+  // is currently untested. Pin it before the parametric runner absorbs it.
+  //
+  // Distinguishing fixture: the triage stub returns "skip". If the fast-path
+  // did NOT fire, the item would be triaged "skip" → no fields written, cache
+  // entry { triage: "skip", extraction: null } (exactly the Group-1 skip tests
+  // above). Because the item DOES get its <x>_* fields and a KEEP verdict in the
+  // cache, the tag fast-path provably beat the LLM — a skip-stub plus an
+  // enriched result can only happen via the fast-path.
+  //
+  // The fast-path tag is injected through the raw.json `challenges` array — the
+  // pipelines fold `challenges[].title` into a candidate's `tags`, which the
+  // harness's regex-based metadataCache cannot express as a YAML list in
+  // frontmatter. This is test-side fixture work only; no production code changes.
+
+  describe("tag fast-path (auto-keep, no LLM triage)", () => {
+    /** Append a hashtag to the raw.json sidecar's `challenges` array. The
+     *  pipelines fold `challenges[].title` into the candidate's `tags`, where
+     *  the `has<X>FastPath` check looks. Mirrors makeRawSyncFile's path math. */
+    function injectFastPathTag(
+      baseDir: string,
+      roostId: string,
+      syncFolder: string,
+      tag: string,
+    ): void {
+      const colonIdx = roostId.indexOf(":");
+      const platform = roostId.slice(0, colonIdx);
+      const itemId = roostId.slice(colonIdx + 1);
+      const platformFolder = platform === "twitter" ? "X" : "TikTok";
+      const attachFolder = `${platform}-${itemId}`;
+      const rawPath = path.join(
+        baseDir, syncFolder, platformFolder, attachFolder, "raw.json",
+      );
+      const raw = JSON.parse(fs.readFileSync(rawPath, "utf-8"));
+      raw.challenges = [...(raw.challenges ?? []), { title: tag }];
+      fs.writeFileSync(rawPath, JSON.stringify(raw));
+    }
+
+    interface FastPathCase {
+      id: string;
+      embeddingCategory: string;
+      /** A real member of the pipeline's FAST_PATH_TAGS set. */
+      fastPathTag: string;
+      extractionFixture: AnyExtractionData;
+      /** The keep verdict cached when the fast-path fires (not "skip"). */
+      keepVerdict: string;
+      /** A representative <x>_* data field that extraction writes. */
+      dataField: string;
+      /** The enrichment-version field stamped on the source bookmark. */
+      versionField: string;
+    }
+
+    const FAST_PATH_CASES: FastPathCase[] = [
+      {
+        id: "home",
+        embeddingCategory: "home",
+        fastPathTag: "roomtour",      // ∈ home FAST_PATH_TAGS
+        extractionFixture: makeHomeExtraction(),
+        keepVerdict: "home",
+        dataField: "home_title",
+        versionField: "enrichment_v_home",
+      },
+      {
+        id: "product",
+        embeddingCategory: "product",
+        fastPathTag: "unboxing",      // ∈ products FAST_PATH_TAGS
+        extractionFixture: makeProductExtraction(),
+        keepVerdict: "product",
+        dataField: "product_name",
+        versionField: "enrichment_v_product",
+      },
+      {
+        id: "tutorial",
+        embeddingCategory: "tutorial",
+        fastPathTag: "stepbystep",    // ∈ tutorials FAST_PATH_TAGS
+        extractionFixture: makeTutorialExtraction(),
+        keepVerdict: "tutorial",
+        dataField: "tutorial_topic",
+        versionField: "enrichment_v_tutorial",
+      },
+      {
+        id: "workout",
+        embeddingCategory: "fitness",
+        fastPathTag: "gymtok",        // ∈ workouts FAST_PATH_TAGS
+        extractionFixture: makeWorkoutExtraction(),
+        keepVerdict: "workout",
+        dataField: "workout_name",
+        versionField: "enrichment_v_workout",
+      },
+    ];
+
+    for (const c of FAST_PATH_CASES) {
+      it(`${c.id}: tag fast-path auto-keeps a tagged item even when LLM triage would skip it`, async () => {
+        const roostId = `tiktok:${c.id}_fastpath`;
+        makeRawSyncFile(tmp, roostId, "Bookmarks/synced", c.embeddingCategory);
+        injectFastPathTag(tmp, roostId, "Bookmarks/synced", c.fastPathTag);
+
+        // Triage stub says "skip" — if the LLM were consulted, the item would be
+        // dropped. Extraction (num_predict > 10) still returns the fixture.
+        installOllamaStub("skip", c.extractionFixture);
+
+        const app = makeApp(tmp);
+        const def = PIPELINES.find(p => p.id === c.id) as PipelineDef;
+        const result = await def.runner(app, { syncFolder: "Bookmarks/synced" });
+
+        expect(result.errors).toBe(0);
+        // The fast-path kept + enriched the item despite the skip-stub.
+        expect(result.written).toBe(1);
+
+        // 1. The source bookmark gained its <x>_* enrichment fields.
+        const sourceFile = app.vault.getMarkdownFiles()
+          .find((f: any) => f.path.startsWith("Bookmarks/synced/")) as any;
+        expect(sourceFile).toBeDefined();
+        const fm = (app as any).metadataCache.getFileCache(sourceFile)?.frontmatter ?? {};
+        expect(fm, `expected ${c.dataField} on the fast-pathed bookmark`).toHaveProperty(c.dataField);
+        expect(fm).toHaveProperty(c.versionField);
+
+        // 2. The pipeline cache records the KEEP verdict (not "skip"), with an
+        //    extraction — proving the tag fast-path classified it without the LLM.
+        //    Contrast the Group-1 skip tests, where a skip-stub yields
+        //    { triage: "skip", extraction: null } and no fields.
+        const cachePath = path.join(tmp, ".roost", "cache", def.cacheFile);
+        const cache = JSON.parse(fs.readFileSync(cachePath, "utf-8"));
+        const entry = cache[roostId];
+        expect(entry, `missing cache entry for ${roostId} in ${def.cacheFile}`).toBeTruthy();
+        expect(entry.triage).toBe(c.keepVerdict);
+        expect(entry.triage).not.toBe("skip");
+        expect(entry.extraction).toBeTruthy();
+      });
+    }
+  });
 });
 
 // ── Tutorial in-place enrichment ──
