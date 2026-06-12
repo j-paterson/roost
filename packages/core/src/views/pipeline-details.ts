@@ -208,7 +208,7 @@ function pillList(parent: HTMLElement, items: string[]): void {
 
 function numberedList(parent: HTMLElement, items: string[]): void {
   if (!items || items.length === 0) return;
-  const ol = parent.createEl("ol", { cls: "roost-pipeline-steps" });
+  const ol = parent.createEl("ol", { cls: "roost-pipeline-step-list" });
   for (const step of items) {
     ol.createEl("li", { text: step });
   }
