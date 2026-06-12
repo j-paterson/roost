@@ -74,10 +74,11 @@ packages/core/src/
 │   └── …                            # webview-manager, eagle-import, bases-setup, card-renderer
 ├── pipeline/
 │   ├── evaluate.ts, describe-items.ts, taxonomy.ts   # Smart Assign core
-│   ├── digest-pipeline.ts           # Weekly digest synthesis
+│   ├── digest-pipeline.ts           # Weekly digest SYNTHESIS pipeline (not on the runner — see its banner)
 │   ├── memory/                      # Agent memory writer (digest → Memory/ tree)
-│   ├── *-pipeline.ts                # Category extraction runners (recipe, place, media, …)
-│   └── shared.ts                    # Embeddings, centroids, pipeline caches
+│   ├── run-category-pipeline.ts     # Parametric runner: the one category-enrichment skeleton
+│   ├── *-pipeline.ts                # Per-category CategoryPipelineConfig wirings (recipe, place, media, …)
+│   └── shared.ts                    # Embeddings, centroids, pipeline caches, forEachBatch, withLLMRetry
 ├── lib/
 │   ├── enrichments.ts               # EnrichmentDef registry + PIPELINE_ENRICHMENTS ids
 │   ├── pipeline-gate.ts             # llmAvailable, isPipelineActive (pure)
@@ -133,6 +134,7 @@ Several cross-cutting concerns are centralized to avoid duplication:
 | `lib/enrichments.ts` | `ENRICHMENTS`, `PIPELINE_ENRICHMENTS`, `getEnrichmentForCategory()` | register-roost-commands, hub, library tree |
 | `lib/pipeline-gate.ts` | `llmAvailable()`, `isPipelineActive()` | pipeline-gate-plugin, hub prereqs |
 | `lib/pipeline-gate-plugin.ts` | `gateCtxFromPlugin()`, `isCategoryPipelineActive()`, `guardPipelineActive()` | commands, gallery dispatch, library tree |
+| `pipeline/shared.ts` | `loadPipelineCache()`/`savePipelineCache()`, `ollamaGenerate()`, embedding cache, `stripJsonFence()`, `forEachBatch()`, `withLLMRetry()` | run-category-pipeline, all `*-pipeline.ts`, digest-pipeline, Smart Assign |
 
 ## User Flows
 
@@ -356,18 +358,35 @@ End-to-end flow for LLM-backed category extractors:
 | Hub | `ui/hub/pipelines-panel.tsx`, `pipeline-rows.ts` | Per-pipeline On/Off toggles (`settings.pipelines`) |
 | Sidebar | `ui/hooks/use-roost-pipeline-rows.ts`, `library-tree.tsx` | Run/cancel; Run hidden when inactive |
 
-All seven category-enrichment pipelines (recipe, products, workouts, tutorials,
-home, places, media) delegate to a single parametric runner,
-`runCategoryPipeline` (`packages/core/src/pipeline/run-category-pipeline.ts`).
-Each pipeline supplies a `CategoryPipelineConfig` — gather/triage/extract/write
-callbacks, failure policies, and log strings — while the runner owns the
-skeleton: cache load, fast-path + LLM triage in concurrent batches, cached
-backfill, extraction, per-batch cache saves. Pipeline-specific stages stay
-config-driven: places runs a version-gated geo backfill before delegating;
-media uses `backfillCachedFirst` (stamps cached items before triage) and
-`afterCore` (Spotify playback + Letterboxd/AniList deep-link resolution).
-`digest-pipeline.ts` is intentionally NOT on the runner — it has no
-triage/extract shape.
+The pipeline layer is structured in three tiers:
+
+1. **Invocation contract** — `EnrichmentDef` registry (`lib/enrichments.ts`):
+   the uniform "runnable backfill job" interface the UI/commands/health-panel
+   see. Spans more than the runner (article/thread/media-file backfills too).
+2. **Shape template** — `runCategoryPipeline`
+   (`packages/core/src/pipeline/run-category-pipeline.ts`): all seven
+   category-enrichment pipelines (recipe, products, workouts, tutorials, home,
+   places, media) delegate to this single parametric runner. Each supplies a
+   `CategoryPipelineConfig` — gather/triage/extract/write callbacks, failure
+   policies, and log strings — while the runner owns the skeleton: cache load,
+   fast-path + LLM triage in concurrent batches, cached backfill, extraction,
+   per-batch cache saves. Pipeline-specific stages stay config-driven: places
+   runs a version-gated geo backfill before delegating; media uses
+   `backfillCachedFirst` (stamps cached items before triage) and `afterCore`
+   (Spotify playback + Letterboxd/AniList deep-link resolution).
+3. **Shared mechanics** — `pipeline/shared.ts`: cache I/O
+   (`loadPipelineCache`/`savePipelineCache`), `forEachBatch` (sequential
+   chunked iteration), `withLLMRetry` (produce-and-parse retry with typed
+   fallback), `ollamaGenerate`, embedding cache. Used by the runner AND by
+   pipelines that don't fit the runner's shape.
+
+`digest-pipeline.ts` is intentionally NOT on the runner: it is a synthesis
+pipeline (time-windowed candidates, cluster-keyed LLM work, week-keyed cache,
+a NEW aggregate note as output), not a per-item triage→extract→write-in-place
+enrichment. It composes tier 3 only; its module banner states this. If a
+second synthesis-shaped pipeline ever appears, that is the trigger for a
+`runSynthesisPipeline` sibling template — one instance of a shape does not
+justify a template.
 
 **When is a pipeline active?** Toggle on in `settings.pipelines` **and** `llmAvailable()`:
 
@@ -425,7 +444,7 @@ The **Pipelines** subsection under Integrations lists all `PIPELINE_ENRICHMENT_I
 
 ## Weekly Digest & Agent Memory
 
-- **Digest** — `pipeline/digest-pipeline.ts` aggregates weekly bookmarks into `Pipelines/Digest/Weekly/*.md`; cache at `.roost/cache/digest-cache.json`.
+- **Digest** — `pipeline/digest-pipeline.ts` aggregates weekly bookmarks into `Pipelines/Digest/Weekly/*.md`; cache at `.roost/cache/digest-cache.json`. A synthesis pipeline, deliberately not on `runCategoryPipeline` — see [Category extraction pipelines](#category-extraction-pipelines).
 - **Memory** — optional post-digest write to `Memory/` via `pipeline/memory/writer.ts`; cache at `.roost/cache/roost-memory-cache.json`.
 - **Digest cards** — `roost-card-block.ts` embeds gallery-style expanded cards in digest notes.
 
