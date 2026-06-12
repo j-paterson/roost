@@ -1671,7 +1671,7 @@
 .roost-pipeline-tips,
 .roost-pipeline-ingredients,
 .roost-pipeline-exercises,
-.roost-pipeline-steps {
+.roost-pipeline-step-list {
   margin: 4px 0 0 0;
   padding-left: 20px;
   font-size: 13px;
@@ -1681,7 +1681,7 @@
 .roost-pipeline-tips li,
 .roost-pipeline-ingredients li,
 .roost-pipeline-exercises li,
-.roost-pipeline-steps li {
+.roost-pipeline-step-list li {
   margin-bottom: 2px;
 }
 .roost-pipeline-recipe-link {
