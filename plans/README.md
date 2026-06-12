@@ -78,6 +78,23 @@ Note: at planning time the working tree had uncommitted changes to
 | 029  | Drop dead `docs/` reference from agent-memory Settings copy (D-01) | P2 | XS | — | MERGED → `main` @ `49f3e9c` |
 | 030  | Remove 70 dead imports/locals (no-unused-vars) — DX-01 follow-up | P2 | M | 027 | MERGED → `main` @ `95912d7` |
 | 031  | Render X tweets as formatted markdown bodies (new `tweetBody` enrichment) | P2 | L | — | IMPLEMENTED 2026-06-12 (text-fidelity core: renderer + both wirings + backfill + tests; inline media embeds deferred; scan-predicate unit test deferred — see notes) |
+| 032  | Recover recipes the extractor misses — gather by subcategory + caption/transcript fixes | P2 | S | — | TODO — assigned to executor 2026-06-12 |
+| 033  | Backfill video transcripts via local ASR (Whisper) for silent recipe demos | P2 | L | 032 | TODO (design + phased; 2 decisions to confirm) |
+
+> **032 / 033 (recipe ingest gap, 2026-06-12).** A gap analysis of the 98 TikTok
+> `Recipes` notes with no ingredient/step list (workflow over all 98 + full read of
+> `pipeline/recipe-pipeline.ts`) found: **49% are miscategorized non-recipes** the
+> pipeline correctly skipped; the recoverable remainder is gated by three root
+> causes — candidate gathering keys off the embedding category/tags and **ignores
+> `roost_subcategory: Recipes`** (so notes were never processed), triage keys off
+> the transcript and loses caption recipes, and narrated transcripts return empty
+> (cached as "done"). **032** fixes all three (gather-by-filing + caption fast-path
+> + narrative extraction with repair-retry & empty→retry) — S-effort, no new I/O,
+> recovers ~20 immediately and **unblocks 033**. **033** adds local Whisper ASR
+> (sidecar `/transcribe`) to transcribe the **largest bucket — 29 silent recipe
+> demos (29 already have `video.mp4` on disk)** — then re-extract; written as design
+> + phased impl with engine/scope decisions to confirm. Both target the decomposed
+> `origin/main` lineage; base `94f9c78`.
 
 > **031 (direction/feature, 2026-06-12).** User-requested refactor: X text tweets are
 > stored as a generated `card.png` with an **empty note body** (text only in the
