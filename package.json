@@ -11,6 +11,7 @@
     "dev": "vite build && node scripts/deploy-to-vault.mjs",
     "install:vault": "vite build && node scripts/deploy-to-vault.mjs",
     "build": "vite build",
+    "setup:integrations": "bash scripts/setup-integrations.sh",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "verify:agents": "tsx scripts/verify-agents.ts",
     "fixture:vault": "node tests/fixtures/build-fixture-vault.mjs",

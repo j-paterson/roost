@@ -38,6 +38,10 @@ os.environ.setdefault("PYTORCH_MPS_HIGH_WATERMARK_RATIO", "0.0")
 
 DEFAULT_PORT = 11435
 DEFAULT_MAX_SEQ = 384  # match training-time max_seq_length
+# Base embedding model used when no fine-tuned model is present, so the sidecar
+# runs out of the box (the fine-tuned model from finetune-embeddings.py is an
+# optional quality upgrade).
+DEFAULT_BASE_MODEL = "nomic-ai/nomic-embed-text-v1.5"
 
 
 def resolve_vault_root(cli_value):
@@ -197,11 +201,18 @@ def main():
 
     vault_root = resolve_vault_root(args.vault_root)
     model_path = Path(args.model_path) if args.model_path else (vault_root / ".roost" / "build" / "nomic-finetuned-hardneg")
-    if not model_path.exists():
-        log.error(f"Model path does not exist: {model_path}")
-        sys.exit(1)
-
-    load_model(model_path, args.max_seq)
+    if model_path.exists():
+        load_model(model_path, args.max_seq)
+    else:
+        # No fine-tuned model present — fall back to the base model from
+        # HuggingFace so the sidecar runs out of the box (it downloads on first
+        # run). The fine-tuned model from finetune-embeddings.py is an optional
+        # quality upgrade; pass it via --model-path once you have one.
+        log.warning(
+            f"Fine-tuned model not found at {model_path} — using base model "
+            f"'{DEFAULT_BASE_MODEL}' (downloads on first run)."
+        )
+        load_model(DEFAULT_BASE_MODEL, args.max_seq)
 
     server = HTTPServer((args.host, args.port), EmbedHandler)
     log.info(f"Serving on http://{args.host}:{args.port}")
