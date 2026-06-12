@@ -48,6 +48,7 @@ describe("countFor", () => {
       thread: fill(counts.thread),
       articleBody: fill(counts.articleBody),
       playback: fill(counts.playback),
+      tweetBody: fill(counts.tweetBody),
     };
   }
 
