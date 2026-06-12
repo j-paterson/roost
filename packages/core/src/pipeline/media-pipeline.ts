@@ -23,6 +23,7 @@ import {
   extractDescription,
   loadPipelineCache,
   savePipelineCache,
+  forEachBatch,
 } from "@/pipeline/shared";
 import {
   runCategoryPipeline,
@@ -652,8 +653,7 @@ export async function runMediaPipeline(
         log(`Resolving Spotify track IDs for ${needPlayback.length} items...`);
         // Resolution is sync (just reads c.spotifyTrackId); writes are
         // async (vault.modify). Parallelize the writes within each batch.
-        for (let i = 0; i < needPlayback.length; i += PLAYBACK_CONCURRENCY) {
-          const batch = needPlayback.slice(i, i + PLAYBACK_CONCURRENCY);
+        await forEachBatch(needPlayback, PLAYBACK_CONCURRENCY, async (batch, startIndex) => {
           await Promise.all(batch.map(async (c) => {
             const playback = resolvePlaybackForItem(c);
             // Items reached via TikTok-DSP or user-curated subcategory
@@ -666,9 +666,9 @@ export async function runMediaPipeline(
             if (playback.spotifyId) playbackResolved++;
           }));
           savePipelineCache(vault, CACHE_FILE, cache);
-          const done = Math.min(i + PLAYBACK_CONCURRENCY, needPlayback.length);
+          const done = startIndex + batch.length;
           log(`Resolved ${done}/${needPlayback.length} (Spotify: ${playbackResolved})`);
-        }
+        });
       }
 
       // 6. Resolve watchable deep links (Films/Series/Anime/Documentaries → Letterboxd or AniList)
@@ -696,8 +696,7 @@ export async function runMediaPipeline(
       if (needDeepLink.length > 0) {
         log(`Resolving watchable deep links for ${needDeepLink.length} items...`);
         let done = 0;
-        for (let i = 0; i < needDeepLink.length; i += RESOLVER_CONCURRENCY) {
-          const batch = needDeepLink.slice(i, i + RESOLVER_CONCURRENCY);
+        await forEachBatch(needDeepLink, RESOLVER_CONCURRENCY, async batch => {
           const results = await Promise.all(
             batch.map((c) =>
               resolveWatchableForItem(
@@ -719,7 +718,7 @@ export async function runMediaPipeline(
           }
           savePipelineCache(vault, CACHE_FILE, cache);
           log(`Resolved ${done}/${needDeepLink.length} (Letterboxd: ${letterboxdResolved}, AniList: ${anilistResolved})`);
-        }
+        });
       }
     },
     buildResult: (candidates, cache, errors) => ({
