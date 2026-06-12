@@ -383,3 +383,39 @@ export function stripJsonFence(raw: string): string {
   const m = trimmed.match(/^```(?:json)?\n?([\s\S]*?)\n?```$/);
   return m ? m[1] : trimmed;
 }
+
+/**
+ * Visit `items` in sequential chunks of `size`, awaiting `fn` per chunk.
+ * The body owns its own intra-batch concurrency (Promise.all/allSettled) and
+ * post-batch work (cache saves, progress logs) — this helper only owns the
+ * chunking iteration shared by every pipeline's triage/extract/resolve loops.
+ * A rejection from `fn` propagates (no batches after it run).
+ */
+export async function forEachBatch<T>(
+  items: readonly T[],
+  size: number,
+  fn: (batch: readonly T[], startIndex: number) => Promise<void>,
+): Promise<void> {
+  for (let i = 0; i < items.length; i += size) {
+    await fn(items.slice(i, i + size), i);
+  }
+}
+
+/**
+ * Run an LLM produce-and-parse step up to `attempts` times, returning the
+ * first non-null result, or `fallback` if every attempt parses to null.
+ * Throws are NOT caught — a transport error propagates immediately, matching
+ * the bespoke retry loops this replaces (retry is for malformed output, not
+ * for a down backend).
+ */
+export async function withLLMRetry<T>(
+  produce: () => Promise<T | null>,
+  fallback: T,
+  attempts = 2,
+): Promise<T> {
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    const parsed = await produce();
+    if (parsed !== null) return parsed;
+  }
+  return fallback;
+}
