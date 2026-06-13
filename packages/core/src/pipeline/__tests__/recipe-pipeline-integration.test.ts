@@ -2,7 +2,11 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
-import { runRecipePipeline } from "@/pipeline/recipe-pipeline";
+import {
+  runRecipePipeline,
+  RECIPE_ENRICHMENT,
+  FILED_RECIPE_CATEGORIES,
+} from "@/pipeline/recipe-pipeline";
 import {
   __setRequestUrlImpl,
   __resetRequestUrlImpl,
@@ -161,5 +165,18 @@ describe("runRecipePipeline — integration", () => {
     const cache = JSON.parse(fs.readFileSync(path.join(tmp, ".roost", "cache", "recipe-cache.json"), "utf8"));
     expect(cache["twitter:rec1"].triage).toBe("recipe");
     expect(cache["twitter:rec1"].extraction.dish).toBe("Carbonara");
+  });
+});
+
+describe("recipe filed-category single source of truth", () => {
+  it("keeps the gather gate (FILED_RECIPE_CATEGORIES) and RECIPE_ENRICHMENT.categoryMatches in sync", () => {
+    // The gather gate compares lowercased filed categories; the registry uses the
+    // original-cased display values. They must describe the same set, otherwise the
+    // candidate-gather gate and UI/settings gating silently desync.
+    const fromGate = [...FILED_RECIPE_CATEGORIES].sort();
+    const fromRegistry = (RECIPE_ENRICHMENT.categoryMatches ?? [])
+      .map(c => c.toLowerCase())
+      .sort();
+    expect(fromRegistry).toEqual(fromGate);
   });
 });

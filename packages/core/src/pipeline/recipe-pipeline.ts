@@ -81,10 +81,17 @@ const RECIPE_TAG_KEYWORDS = [
   "dinner", "lunch", "breakfast", "ingredient",
 ];
 
+/** Single source of truth for the roost_category / roost_subcategory values the
+ *  recipe pipeline owns. Consumed by FILED_RECIPE_CATEGORIES (the gather gate,
+ *  lowercased) and RECIPE_ENRICHMENT.categoryMatches (UI/settings gating), so the
+ *  two can't silently desync. */
+const RECIPE_FILED_CATEGORIES = ["Recipes", "Food", "Food & Drink", "Cooking"] as const;
+
 /** roost_category / roost_subcategory values the recipe pipeline owns. A note
  *  the user (or Smart-Assign) filed under one of these enters triage even if
- *  its embedding category/tags don't match. Mirrors RECIPE_ENRICHMENT.categoryMatches. */
-const FILED_RECIPE_CATEGORIES = new Set(["recipes", "food", "food & drink", "cooking"]);
+ *  its embedding category/tags don't match. Derived from RECIPE_FILED_CATEGORIES.
+ *  Exported for the sync test that guards it against RECIPE_ENRICHMENT.categoryMatches. */
+export const FILED_RECIPE_CATEGORIES = new Set(RECIPE_FILED_CATEGORIES.map(c => c.toLowerCase()));
 
 const CACHE_FILE = "recipe-cache.json";
 const CONCURRENCY = 3;
@@ -490,7 +497,7 @@ export const RECIPE_ENRICHMENT: EnrichmentDef = {
     await runRecipePipeline(plugin.app, plugin.settings.syncFolder, opts?.onLog);
   },
   panelDetail: "Extract ingredients and steps from food/cooking bookmarks. Writes recipe_* fields onto each source bookmark.",
-  categoryMatches: ["Recipes", "Food", "Food & Drink", "Cooking"],
+  categoryMatches: [...RECIPE_FILED_CATEGORIES],
   fieldsWritten: ["recipe_dish", "recipe_cuisine", "recipe_prep_time", "recipe_cook_time", "recipe_difficulty", "recipe_link", "recipe_ingredients", "recipe_steps"],
   chips: [
     { field: "recipe_prep_time", kind: "time" },
