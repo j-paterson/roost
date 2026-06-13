@@ -10,6 +10,7 @@ import { exportXCookies } from "@/plugin/export-x-cookies";
 import { regenerateCardForActiveNote } from "@/plugin/regenerate-card-command";
 import { fetchCoversCommand } from "@/plugin/fetch-covers-command";
 import { maybeAutoRunTweetBodyBackfill } from "@/sync/tweet-body-backfill";
+import { RoostJobQueue } from "@/lib/job-queue";
 // Side-effect import: each pipeline-view module registers itself with the
 // pipeline-view registry on load. Adding a new pipeline visualization is
 // one entry in src/views/pipeline-views/index.ts.
@@ -75,6 +76,9 @@ export default class RoostPlugin extends Plugin {
    *  result without re-running the (expensive) full-vault scan. */
   lastIncompleteScan: import("./sync/vault-writer").IncompleteByCategory | null = null;
 
+  /** Serial queue for heavy jobs — see IRoostPlugin.jobQueue. */
+  readonly jobQueue = new RoostJobQueue();
+
   get bulkWriteInProgress(): boolean {
     return this.buses.bulkWrite.value;
   }
@@ -122,6 +126,10 @@ export default class RoostPlugin extends Plugin {
   fireLog(msg: string): void {
     console.log("[roost]", msg);
     this.buses.log.emit(msg);
+  }
+
+  runJob<T>(label: string, fn: () => Promise<T>): Promise<T> {
+    return this.jobQueue.enqueue(label, fn);
   }
 
   onFilterChange(fn: (filter: RoostFilter) => void): () => void {

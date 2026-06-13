@@ -31,11 +31,12 @@ export function useRoostPipelineRows({ plugin, log }: UseRoostPipelineRowsParams
     const controller = new AbortController();
     setPipelineState(s => ({ ...s, [key]: { status: "running", controller } }));
     try {
-      await enrichment.runBackfill(plugin, {
+      const label = subcategory ? `${category} / ${subcategory}` : category;
+      await plugin.runJob(label, () => enrichment.runBackfill(plugin, {
         onLog: log,
         signal: controller.signal,
         filter: { category, subcategory },
-      });
+      }));
       // Pipeline mutated frontmatter on existing items; force Bases
       // views to re-read so new fields (media_spotify_id, etc.) show.
       plugin.fireDataRefresh();

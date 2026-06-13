@@ -35,7 +35,10 @@ type TweetBodyCache = Record<string, TweetBodyCacheEntry>;
 
 let backfillRunning = false;
 
-export async function runTweetBodyBackfill(plugin: IRoostPlugin): Promise<void> {
+export async function runTweetBodyBackfill(
+  plugin: IRoostPlugin,
+  awaitIdle?: () => Promise<void>,   // NEW — default undefined = never yield
+): Promise<void> {
   if (backfillRunning) {
     new Notice("Tweet body backfill is already running.");
     return;
@@ -110,6 +113,11 @@ export async function runTweetBodyBackfill(plugin: IRoostPlugin): Promise<void> 
 
     let succeeded = 0, failed = 0;
     for (let i = 0; i < queue.length; i++) {
+      // Yield to manual jobs: if a sync/backfill/pipeline run is queued or
+      // running, pause this low-priority catch-up until the queue drains, so we
+      // never thrash the vault alongside user-triggered work (plan 040).
+      if (awaitIdle) await awaitIdle();
+
       const q = queue[i];
       const cacheKey = `twitter:${q.outerItemId}`;
       const record: NormalizedRecord = {
@@ -169,7 +177,8 @@ export function shouldAutoRunTweetBodyBackfill(done: boolean | undefined): boole
  *  (`maybeAutoRunTweetBodyBackfill(this)`) and gets the real driver verbatim. */
 export async function maybeAutoRunTweetBodyBackfill(
   plugin: IRoostPlugin,
-  run: (plugin: IRoostPlugin) => Promise<void> = runTweetBodyBackfill,
+  run: (plugin: IRoostPlugin) => Promise<void> =
+    (p) => runTweetBodyBackfill(p, () => p.jobQueue.onIdle()),
 ): Promise<void> {
   if (!shouldAutoRunTweetBodyBackfill(plugin.settings.tweetBodyBackfillDone)) return;
   try {
@@ -192,6 +201,9 @@ export const RENDERED_TWEET_ENRICHMENT: EnrichmentDef = {
   schemaVersion: 1,
   commandId: "backfill-tweet-bodies",
   commandName: "Render X tweet bodies",
-  runBackfill: runTweetBodyBackfill,
+  // The enrichment driver takes no BackfillOpts (it derives its own log/queue
+  // from the plugin); ignore opts and run with no yield hook — a manual command
+  // run is itself a queued job, so it must NOT yield to the queue (plan 040).
+  runBackfill: (plugin) => runTweetBodyBackfill(plugin),
   panelDetail: "X tweets whose note body is still image-only. Backfill renders the tweet text as formatted markdown (links, quotes, thread structure) into the note body.",
 };
