@@ -18,7 +18,6 @@
 import * as fs from "fs";
 import * as path from "path";
 import { Notice } from "obsidian";
-import { VaultWriter } from "@/sync/vault-writer";
 import type { NormalizedRecord } from "@/lib/normalize";
 import { vaultBasePath } from "@/lib/vault-utils";
 import { cacheDir } from "@/lib/roost-paths";
@@ -99,6 +98,7 @@ export async function runTweetBodyBackfill(plugin: IRoostPlugin): Promise<void> 
     log(`Queue: ${queue.length} items (skipped ${skippedArticles} articles, ${cacheHits} cache hits)`);
     new Notice(`Rendering ${queue.length} tweet bodies…`);
 
+    const { VaultWriter } = await import("@/sync/vault-writer");
     const writer = new VaultWriter({
       vault: plugin.app.vault,
       syncFolder: plugin.settings.syncFolder,

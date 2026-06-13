@@ -18,7 +18,6 @@
 import * as fs from "fs";
 import * as path from "path";
 import { Notice, TFolder, TAbstractFile } from "obsidian";
-import { VaultWriter } from "@/sync/vault-writer";
 import type { NormalizedRecord } from "@/lib/normalize";
 import { vaultBasePath } from "@/lib/vault-utils";
 import { cacheDir } from "@/lib/roost-paths";
@@ -122,6 +121,7 @@ export async function runMediaBackfill(plugin: IRoostPlugin): Promise<void> {
   //    via the probe.
   const wm = plugin.getWebviewManager();
   const tiktokWebview = wm.getElement("tiktok") ?? undefined;
+  const { VaultWriter } = await import("@/sync/vault-writer");
   const writer = new VaultWriter({
     vault: plugin.app.vault,
     syncFolder: plugin.settings.syncFolder,

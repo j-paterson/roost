@@ -25,6 +25,18 @@ describe("ENRICHMENTS registry", () => {
     expect(getEnrichmentById("media" as never)).toBeUndefined();
   });
 
+  it("every registered enrichment initialises (no module-init-order holes)", () => {
+    // Locks the import-cycle fix (plan 038A): if a driver re-introduces a value
+    // import of VaultWriter, importing enrichments in isolation (as this file does)
+    // can leave undefined holes in ENRICHMENTS, and PIPELINE_ENRICHMENTS' filter on
+    // e.categoryMatches throws at module load.
+    expect(ENRICHMENTS.length).toBeGreaterThan(0);
+    expect(ENRICHMENTS.every((e) => e !== undefined)).toBe(true);
+    // PIPELINE_ENRICHMENTS is derived at module top-level; importing it proves the
+    // .filter(e => e.categoryMatches) ran without throwing.
+    expect(PIPELINE_ENRICHMENT_IDS.length).toBeGreaterThan(0);
+  });
+
 });
 
 describe("getEnrichmentById", () => {
@@ -128,6 +140,14 @@ describe("isVersionStale with legacyAliases", () => {
     const fm = { enrichment_v_mediaFiles: 2, pipeline_v_media: 1 };
     const result = isVersionStale("mediaFiles", fm, 2, ["pipeline_v_media"]);
     expect(result).toBe(false);
+  });
+
+  it("flags a media note that has only pipeline_v_media < schemaVersion (via the live alias)", () => {
+    const def = getEnrichmentById("mediaExtraction")!;
+    // schemaVersion is 2; an un-migrated note has only the legacy field at v1.
+    expect(isVersionStale(def.id, { pipeline_v_media: 1 }, def.schemaVersion, def.legacyAliases)).toBe(true);
+    // A current legacy stamp is NOT stale.
+    expect(isVersionStale(def.id, { pipeline_v_media: def.schemaVersion }, def.schemaVersion, def.legacyAliases)).toBe(false);
   });
 });
 

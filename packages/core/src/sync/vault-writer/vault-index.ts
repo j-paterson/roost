@@ -246,7 +246,7 @@ export class VaultIndex {
           | undefined;
         if (fm) {
           for (const def of ENRICHMENTS) {
-            if (isVersionStale(def.id, fm, def.schemaVersion)) {
+            if (isVersionStale(def.id, fm, def.schemaVersion, def.legacyAliases)) {
               (byCategory as unknown as Record<string, Set<string>>)[def.id]?.add(id);
             }
           }

@@ -7,7 +7,7 @@ import type { MatchDetail } from "@/types/roost";
 import { safeGetValue } from "@/lib/bases-entry";
 import { cleanCaption } from "@/lib/caption";
 import { ENRICHMENTS } from "@/lib/enrichments";
-import { getPipelineData, renderPipelineOverlay, getCompactChips } from "@/views/pipeline-details";
+import { getPipelineData, renderPipelineOverlay } from "@/views/pipeline-details";
 import { renderChip } from "@/views/pipeline-views/shared/chip";
 import { setupGalleryVideoScrub } from "@/views/gallery-video-scrub";
 import type { GalleryExpandState } from "@/views/gallery-expanded";
@@ -156,11 +156,6 @@ export function hydrateGalleryCard(
     const pipelineHit = getPipelineData(roostIdVal);
     if (pipelineHit) {
       renderPipelineOverlay(coverEl, pipelineHit.type);
-      const chips = getCompactChips(pipelineHit);
-      if (chips) {
-        const chipsEl = el.createDiv({ cls: "roost-compact-chips" });
-        chipsEl.textContent = chips;
-      }
     }
   }
 

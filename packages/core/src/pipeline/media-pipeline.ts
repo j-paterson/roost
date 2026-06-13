@@ -44,7 +44,14 @@ import { canonicalizeTitle } from "./resolvers/resolver-utils";
  *  Items extracted at v1 keep their extraction cache; the new steps pick up
  *  where they left off when the user re-runs the pipeline. */
 const MEDIA_PIPELINE_VERSION = 2;
-const MEDIA_VERSION_FIELD = "pipeline_v_media";
+/** The registry id for this pipeline's enrichment. Kept as a local literal so
+ *  the canonical version field (MEDIA_FIELDS.version, derived below) can be
+ *  built WITHOUT a value import of enrichmentVersionField from @/lib/enrichments
+ *  — that import would close the enrichments↔media-pipeline module cycle and
+ *  crash module init (same failure class as plan 038A). The value matches
+ *  enrichmentVersionField("mediaExtraction") === `enrichment_v_mediaExtraction`,
+ *  asserted in the pipeline-runners harness characterization test. */
+const MEDIA_ENRICHMENT_ID = "mediaExtraction" as const;
 
 /** How many bookmark writes to run in parallel during the playback
  *  step. Resolution itself is sync; the bottleneck is vault.modify. */
@@ -420,7 +427,7 @@ export const MEDIA_FIELDS = {
   tmdbType: "media_tmdb_type",
   anilistId: "media_anilist_id",
   year: "media_year",
-  version: MEDIA_VERSION_FIELD,
+  version: `enrichment_v_${MEDIA_ENRICHMENT_ID}`,
 } as const;
 
 /** Write the extracted media fields onto the source bookmark's frontmatter.
@@ -819,7 +826,7 @@ export function reconstructMediaCache(
 import type { EnrichmentDef } from "@/lib/enrichments";
 
 export const MEDIA_EXTRACTION_ENRICHMENT: EnrichmentDef = {
-  id: "mediaExtraction",
+  id: MEDIA_ENRICHMENT_ID,
   displayName: "Media (books, films, shows, music, podcasts)",
   schemaVersion: MEDIA_PIPELINE_VERSION,
   commandId: "run-media-pipeline",

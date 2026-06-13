@@ -561,7 +561,7 @@ describe("pipeline runners — uniform harness", () => {
       const fm = (app as any).metadataCache.getFileCache(sourceFile)?.frontmatter ?? {};
       expect(fm).toHaveProperty("media_title");
       expect(fm).toHaveProperty("media_creator");
-      expect(fm).toHaveProperty("pipeline_v_media");
+      expect(fm).toHaveProperty("enrichment_v_mediaExtraction");
       // Single source of truth for the type lives in roost_subcategory
       // (rule 2 backfilled it). The pipeline does NOT also write media_type
       // — having both invites divergence.
