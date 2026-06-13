@@ -14,6 +14,7 @@ import type { WebviewManager } from "@/sync/webview-manager";
 import type { IncompleteByCategory } from "@/sync/vault-writer";
 import type { Embedder, SelectEmbedderOpts } from "@/lib/embedder";
 import type { DetectStatus, IntegrationId } from "@/integrations/registry";
+import type { RoostJobQueue } from "@/lib/job-queue";
 
 export interface IRoostPlugin {
   app: App;
@@ -79,6 +80,14 @@ export interface IRoostPlugin {
   setFilter(filter: RoostFilter): void;
   saveSettings(): Promise<void>;
   triggerHubStateChange(): void;
+
+  /** Serial job queue — every manually-triggered heavy job (sync, backfill,
+   *  pipeline run) runs through it one-at-a-time. The 037 auto catch-up is NOT
+   *  enqueued; it yields to queued/running jobs via jobQueue.onIdle(). */
+  jobQueue: RoostJobQueue;
+  /** Convenience: enqueue `fn` under `label` on the serial queue and return
+   *  its promise (same value/rejection). */
+  runJob<T>(label: string, fn: () => Promise<T>): Promise<T>;
 
   onFilterChange(fn: (filter: RoostFilter) => void): () => void;
   onItemClick(fn: (data: ItemClickData) => void): () => void;

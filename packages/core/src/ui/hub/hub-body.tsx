@@ -88,7 +88,7 @@ export function HubBody({ app, plugin }: { app: App; plugin: IRoostPlugin }) {
       return;
     }
     try {
-      await runPlatformSync({
+      await plugin.runJob(`Sync ${platform}`, () => runPlatformSync({
         plugin,
         app,
         platform,
@@ -142,7 +142,7 @@ export function HubBody({ app, plugin }: { app: App; plugin: IRoostPlugin }) {
           });
         },
         suppressNotice: true,
-      });
+      }));
     } finally {
       setLiveSyncs((prev) => ({ ...prev, [platform]: null }));
       plugin.triggerHubStateChange();

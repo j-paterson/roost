@@ -15,6 +15,10 @@ function makePluginStub(overrides?: { pipelineOn?: boolean; llmBackend?: "skip" 
       cmds.set(c.id, c.callback);
     },
     addRibbonIcon: vi.fn(),
+    // The enrichment command callback now routes through plugin.runJob (the
+    // serial queue, plan 040). The stub just runs the fn so the guard
+    // assertions (runBackfill called / not called) are unchanged.
+    runJob: <T,>(_label: string, fn: () => Promise<T>) => fn(),
     app: {},
     settings: {
       llmBackend: overrides?.llmBackend ?? "skip",
