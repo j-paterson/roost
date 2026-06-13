@@ -193,55 +193,6 @@ export function getWhereColor(where: string | null | undefined): string | null {
   return WHERE_COLORS[key] ?? null;
 }
 
-// ── Compact card chips ──
-
-/** Return a short chip string for compact cards, e.g. "Italian · 30min · Easy" */
-export function getCompactChips(hit: PipelineHit): string | null {
-  // hit.type and hit.extraction are separate fields so TypeScript can't narrow
-  // the extraction union automatically — we cast to the specific type in each branch.
-  let parts: (string | null | undefined)[];
-  switch (hit.type) {
-    case "recipe": {
-      const d = hit.extraction as RecipeExtraction;
-      parts = [d.cuisine, d.cookTime, d.difficulty ? capitalize(d.difficulty) : null];
-      break;
-    }
-    case "place": {
-      const d = hit.extraction as PlaceExtraction;
-      return [d.city, d.country].filter(Boolean).join(", ") || null;
-    }
-    case "media": {
-      const d = hit.extraction as MediaExtraction;
-      parts = [d.where, d.genre];
-      break;
-    }
-    case "product": {
-      const d = hit.extraction as ProductExtraction;
-      parts = [d.price, d.whereToBuy];
-      break;
-    }
-    case "workout": {
-      const d = hit.extraction as WorkoutExtraction;
-      parts = [d.targetArea, d.difficulty ? capitalize(d.difficulty) : null];
-      break;
-    }
-    case "tutorial": {
-      const d = hit.extraction as TutorialExtraction;
-      parts = [d.skillArea ? capitalize(d.skillArea) : null, d.timeEstimate];
-      break;
-    }
-    case "home": {
-      const d = hit.extraction as HomeExtraction;
-      parts = [d.room ? capitalize(d.room) : null, d.style];
-      break;
-    }
-    default:
-      return null;
-  }
-  const filtered = parts.filter((p): p is string => Boolean(p));
-  return filtered.length > 0 ? filtered.join(" · ") : null;
-}
-
 // ── Helpers ──
 
 function kvRow(parent: HTMLElement, label: string, value: string | null | undefined): void {

@@ -20,7 +20,6 @@ import { describe, it, expect, beforeAll } from "vitest";
 import {
   parseRatingStars,
   getWhereColor,
-  getCompactChips,
   renderPipelineDetail,
   buildMapsUrl,
 } from "@/views/pipeline-details";
@@ -70,76 +69,6 @@ describe("getWhereColor", () => {
     expect(getWhereColor(null)).toBeNull();
     expect(getWhereColor(undefined)).toBeNull();
     expect(getWhereColor("")).toBeNull();
-  });
-});
-
-// ── Task 2.2: getCompactChips per-type ───────────────────────────────────────
-
-describe("getCompactChips", () => {
-  it("recipe: cuisine · cookTime · Difficulty", () => {
-    const chips = getCompactChips({
-      type: "recipe",
-      extraction: makeRecipeExtraction({ cuisine: "Italian", cookTime: "15 min", difficulty: "easy" }),
-    } as any);
-    expect(chips).toBe("Italian · 15 min · Easy");
-  });
-
-  it("place: city, country", () => {
-    const chips = getCompactChips({
-      type: "place",
-      extraction: makePlaceExtraction({ city: "Rome", country: "Italy" }),
-    } as any);
-    expect(chips).toBe("Rome, Italy");
-  });
-
-  it("media: where · genre", () => {
-    const chips = getCompactChips({
-      type: "media",
-      extraction: makeMediaExtraction({ where: "Netflix", genre: "drama" }),
-    } as any);
-    expect(chips).toBe("Netflix · drama");
-  });
-
-  it("product: price · whereToBuy", () => {
-    const chips = getCompactChips({
-      type: "product",
-      extraction: makeProductExtraction({ price: "$50", whereToBuy: "Amazon" }),
-    } as any);
-    expect(chips).toBe("$50 · Amazon");
-  });
-
-  it("workout: targetArea · Difficulty", () => {
-    // Plan used "hard" (not a valid WorkoutExtraction difficulty).
-    // Adjusted to "advanced" → expected output "legs · Advanced".
-    const chips = getCompactChips({
-      type: "workout",
-      extraction: makeWorkoutExtraction({ targetArea: "legs", difficulty: "advanced" }),
-    } as any);
-    expect(chips).toBe("legs · Advanced");
-  });
-
-  it("tutorial: SkillArea · timeEstimate", () => {
-    const chips = getCompactChips({
-      type: "tutorial",
-      extraction: makeTutorialExtraction({ skillArea: "coffee", timeEstimate: "5 min" }),
-    } as any);
-    expect(chips).toBe("Coffee · 5 min");
-  });
-
-  it("home: Room · style", () => {
-    const chips = getCompactChips({
-      type: "home",
-      extraction: makeHomeExtraction({ room: "kitchen", style: "scandi" }),
-    } as any);
-    expect(chips).toBe("Kitchen · scandi");
-  });
-
-  it("returns null when all chip fields are empty", () => {
-    const chips = getCompactChips({
-      type: "recipe",
-      extraction: makeRecipeExtraction({ cuisine: "", cookTime: null as any, difficulty: "" as any }),
-    } as any);
-    expect(chips).toBeNull();
   });
 });
 

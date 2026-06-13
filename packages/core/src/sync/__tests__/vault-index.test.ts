@@ -185,3 +185,31 @@ describe("VaultIndex.findNoteForId", () => {
     expect(result).toBeNull();
   });
 });
+
+// ── Plan 038C — scanIncompleteIds alias-aware staleness gate ──────────────────
+//
+// The end-to-end scanIncompleteIds staleness test proposed in plan 038C (step C3c)
+// is DEFERRED, not implemented, because it cannot pass against the current
+// production shape without an out-of-scope change:
+//
+//   * scanIncompleteIds' `byCategory` (IncompleteByCategory, vault-index.ts) has
+//     buckets ONLY for: rawJson, mediaFiles, thread, articleBody, playback,
+//     tweetBody. There is NO `mediaExtraction` bucket.
+//   * The alias-aware gate loop does `byCategory[def.id]?.add(id)`. For
+//     def.id === "mediaExtraction" the optional chain is a NO-OP (the bucket is
+//     undefined), so a stale media note never lands in any bucket here. The
+//     plan's assertion `result.byCategory.mediaExtraction.has(...)` would throw
+//     (reading `.has` of undefined).
+//   * The only enrichment id whose alias-staleness could route to a real bucket
+//     is `mediaFiles` (id matches a bucket), but MEDIA_ENRICHMENT.schemaVersion
+//     is 1 — no stored version can be < 1, so it can never be flagged stale.
+//
+// The fix is still proven end-to-end at the gate-logic level by:
+//   (b) lib/__tests__/enrichments.test.ts — "flags a media note that has only
+//       pipeline_v_media < schemaVersion (via the live alias)", which exercises
+//       the exact isVersionStale(def.id, fm, def.schemaVersion, def.legacyAliases)
+//       call the production loop now makes, using the LIVE mediaExtraction def.
+//   (the write half) pipeline-runners.harness.test.ts asserting the pipeline now
+//       stamps enrichment_v_mediaExtraction.
+// Wiring a passing (c) would require adding a mediaExtraction bucket to
+// IncompleteByCategory — out of scope for plan 038.

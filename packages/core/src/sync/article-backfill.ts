@@ -12,7 +12,7 @@ import * as fs from "fs";
 import * as path from "path";
 import { Notice } from "obsidian";
 import { ArticleFetcher } from "@/sync/article-fetcher";
-import { VaultWriter } from "@/sync/vault-writer";
+import type { VaultWriter } from "@/sync/vault-writer";
 import type { IRoostPlugin } from "@/types/plugin";
 import type { EnrichmentDef } from "@/lib/enrichments";
 import { vaultBasePath } from "@/lib/vault-utils";
@@ -118,6 +118,7 @@ export async function runArticleBackfill(plugin: IRoostPlugin): Promise<void> {
   }
 
   // 4. Set up VaultWriter — needed for both fetch path AND refresh-only path.
+  const { VaultWriter } = await import("@/sync/vault-writer");
   const writer = new VaultWriter({
     vault: plugin.app.vault,
     syncFolder: plugin.settings.syncFolder,

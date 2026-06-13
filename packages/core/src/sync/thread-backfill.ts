@@ -19,7 +19,6 @@ import * as fs from "fs";
 import * as path from "path";
 import { Notice } from "obsidian";
 import { ThreadFetcher } from "@/sync/thread-fetcher";
-import { VaultWriter } from "@/sync/vault-writer";
 import { roostUnwrapTweet, type NormalizedRecord } from "@/lib/normalize";
 import { getTweetAuthorId, getConversationId } from "@/lib/extract";
 import { vaultBasePath } from "@/lib/vault-utils";
@@ -139,6 +138,7 @@ export async function runThreadBackfill(plugin: IRoostPlugin): Promise<void> {
   new Notice(`Backfilling ${queue.length} thread items…`);
 
   // 3. Set up VaultWriter so we can resyncRecord per item.
+  const { VaultWriter } = await import("@/sync/vault-writer");
   const writer = new VaultWriter({
     vault: plugin.app.vault,
     syncFolder: plugin.settings.syncFolder,
