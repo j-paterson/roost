@@ -263,7 +263,9 @@ export function HubBody({ app, plugin }: { app: App; plugin: IRoostPlugin }) {
         return;
       }
       await Promise.all(
-        active.map(d => plugin.runJob(d.commandName, () => d.runBackfill(plugin))),
+        active.map(d => plugin.runJob(d.commandName, () =>
+          d.runBackfill(plugin, { onLog: (m) => plugin.fireLog(`[${d.id}] ${m}`) }),
+        )),
       );
     } finally {
       setPipelinesRunning(false);
