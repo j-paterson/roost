@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, it, expect } from "vitest";
-import { OllamaEmbedder, HttpEmbedder, SidecarEmbedder, selectEmbedder } from "@/lib/embedder";
+import { OllamaEmbedder, HttpEmbedder, SidecarEmbedder, selectEmbedder, describeActiveEmbedding } from "@/lib/embedder";
 
 // ── OllamaEmbedder ───────────────────────────────────────────────────────────
 
@@ -106,5 +106,29 @@ describe("SidecarEmbedder", () => {
     const e = new SidecarEmbedder();
     e.dispose();
     expect(e.ready).toBe(false);
+  });
+});
+
+describe("describeActiveEmbedding", () => {
+  const up = async () => true;
+  const down = async () => false;
+
+  it("forced ollama → ollama, not flagged", async () => {
+    expect(await describeActiveEmbedding({ settings: { embeddingBackend: "ollama" }, probeSidecar: down }))
+      .toEqual({ backend: "ollama", model: "nomic-embed-text", reason: "configured-ollama", sidecarConfiguredButDown: false });
+  });
+  it("forced sidecar but down → sidecar, flagged down", async () => {
+    const r = await describeActiveEmbedding({ settings: { embeddingBackend: "sidecar" }, probeSidecar: down });
+    expect(r.backend).toBe("sidecar");
+    expect(r.reason).toBe("configured-sidecar");
+    expect(r.sidecarConfiguredButDown).toBe(true);
+  });
+  it("auto + sidecar up → sidecar", async () => {
+    const r = await describeActiveEmbedding({ settings: { embeddingBackend: "auto" }, probeSidecar: up });
+    expect(r).toEqual({ backend: "sidecar", model: "fine-tuned", reason: "auto-sidecar", sidecarConfiguredButDown: false });
+  });
+  it("auto + sidecar down → ollama fallback, flagged (the silent-degradation case)", async () => {
+    const r = await describeActiveEmbedding({ settings: { embeddingBackend: "auto" }, probeSidecar: down });
+    expect(r).toEqual({ backend: "ollama", model: "nomic-embed-text", reason: "auto-fallback-ollama", sidecarConfiguredButDown: true });
   });
 });
