@@ -8,10 +8,13 @@
 > maintain the index.
 >
 > **Drift check (run first)**:
-> `git diff --stat ae7335a..HEAD -- packages/core/src/pipeline packages/core/src/lib/enrichments.ts packages/core/src/main.ts packages/core/src/types/plugin.ts packages/core/src/ui/hub packages/core/src/ui/hooks/use-smart-assign.ts packages/core/src/ui/hooks/use-roost-platform-sync.ts packages/core/src/ui/hooks/use-roost-pipeline-rows.ts`
+> `git diff --stat 5957fe7..HEAD -- packages/core/src/pipeline packages/core/src/lib/enrichments.ts packages/core/src/main.ts packages/core/src/types/plugin.ts packages/core/src/ui/hub packages/core/src/ui/hooks/use-smart-assign.ts packages/core/src/ui/hooks/use-roost-platform-sync.ts packages/core/src/ui/hooks/use-roost-pipeline-rows.ts`
 > If any in-scope file changed since this plan was written, compare the
 > "Current state" excerpts against the live code before proceeding; on a
-> mismatch, treat it as a STOP condition.
+> mismatch, treat it as a STOP condition. This plan was **refreshed at `5957fe7`**
+> against the live hub state after commit `d63718c` ("embedding backend
+> visibility") reshaped `state.ts` / `use-hub-state.ts` — the line refs below
+> reflect that post-`d63718c` shape.
 
 ## Status
 
@@ -20,7 +23,7 @@
 - **Risk**: MED
 - **Depends on**: none (composes with 040 serial job queue, already merged). 053 and 054 are independent and may land before or after.
 - **Category**: direction (feature)
-- **Planned at**: commit `ae7335a`, 2026-06-15
+- **Planned at**: commit `ae7335a`, refreshed against `5957fe7`, 2026-06-15
 
 ## Why this matters
 
@@ -120,12 +123,22 @@ Files and the exact code this plan extends:
   unconditionally.
 - `packages/core/src/types/plugin.ts` — `IRoostPlugin` interface; `lastIncompleteScan`
   (line 47) is the field to mirror.
-- `packages/core/src/ui/hub/state.ts` — pure hub derivation. `HubInputs` (6-27),
-  `deriveBacklogs(byCategory)` (79-87) → `Backlogs`, `HubState.global` (52-56),
-  `deriveHubState` (127-160). `incompleteByCategory` flows in at line 24/129.
-- `packages/core/src/ui/hub/use-hub-state.ts` — `gatherInputs(app, plugin)` (14-31) builds
-  `HubInputs`; line 30 reads `plugin.lastIncompleteScan`. Re-renders on `roost:hub-state-changed`
-  (53). This is the existing event channel — reuse it, add no new event.
+- `packages/core/src/ui/hub/state.ts` — pure hub derivation. **Post-`d63718c` shape:**
+  `HubInputs` (6-29) now also carries an optional `embedding?` field (27-28);
+  `deriveBacklogs(byCategory)` (82-90) → `Backlogs`; `HubState` (51-60) now has FOUR top-level
+  keys — `prereqs`, `platforms`, `global` (54-58, unchanged: `lastFullUpdate`,
+  `anythingToUpdate`, `anythingNeedsAttention`), and a sibling `embedding: { label; warn } | null`
+  (59); `deriveHubState` (130-170) returns `{ prereqs, platforms, global, embedding }` (line 169),
+  building the `global` object literal at line 169 and the `embedding` value at 162-167.
+  `incompleteByCategory` flows in at line 24/132. **Add `pendingPipelines` to `HubInputs` next to
+  `incompleteByCategory`, and `pipelinesPending` INSIDE the `global` object** (not as a new sibling
+  — keep `embedding` separate).
+- `packages/core/src/ui/hub/use-hub-state.ts` — **Post-`d63718c`:** `gatherInputs(app, plugin,
+  embeddingInput?)` (18-48) now takes a third arg and returns `embedding: embeddingInput` (46);
+  it reads `plugin.lastIncompleteScan` at line 38 (`incompleteByCategory: plugin.lastIncompleteScan`).
+  Add `pendingPipelines: plugin.lastPendingPipelines` right after that line — do NOT change the
+  signature. Re-renders on `roost:hub-state-changed` (86). This is the existing event channel —
+  reuse it, add no new event.
 - `packages/core/src/ui/hub/pipeline-rows.ts` — `PipelineRow` (`{id,label,blurb,enabled,status}`)
   and `buildPipelineRows(flags, llm)`.
 - `packages/core/src/ui/hub/pipelines-panel.tsx` — renders each row; middle column shows
@@ -158,7 +171,7 @@ Imports use the `@/` alias. New per-pipeline exports stay colocated in each `*-p
 |-----------|---------|---------------------|
 | Install   | `npm ci` | exit 0 |
 | Typecheck | `npm run typecheck` | exit 0, no output |
-| Unit tests | `npm test` | all pass (~1236 baseline + new) |
+| Unit tests | `npm test` | all pass (~1250 baseline at `5957fe7` + new) |
 | Build | `npm run build` | `dist/main.js` + `dist/styles.css` |
 
 ## Scope
@@ -347,13 +360,19 @@ cheap. Do not add a debounce here — callers debounce at the trigger (`refreshP
 
 ### Step 5: Surface in the hub (badges + subline)
 
-- `state.ts`: add `pendingPipelines: PendingPipelinesResult | null;` to `HubInputs`. Add to
-  `HubState.global` a `pipelinesPending: { total: number; byPipeline: { id: PipelineId; pending: number; stale: number; blocked: boolean }[] }`. Add `derivePipelinesPending(input)`:
-  re-apply the live gate via `input` (a pipeline `blocked` in the scan stays blocked; a pipeline
-  with `pending+stale>0` and not blocked contributes). **Dedup the global `total` across pipelines**
-  using `pendingItemIds` (an item matching two pipelines counts once in the headline total, but each
-  pipeline's own badge keeps its full count). Wire it into `deriveHubState`.
-- `use-hub-state.ts`: in `gatherInputs`, add `pendingPipelines: plugin.lastPendingPipelines`.
+- `state.ts`: add `pendingPipelines: PendingPipelinesResult | null;` to `HubInputs` (next to
+  `incompleteByCategory`, line 24). Add to `HubState.global` (the object at lines 54-58) a
+  `pipelinesPending: { total: number; byPipeline: { id: PipelineId; pending: number; stale: number; blocked: boolean }[] }`.
+  Add `derivePipelinesPending(input)`: re-apply the live gate via `input` (a pipeline `blocked` in
+  the scan stays blocked; a pipeline with `pending+stale>0` and not blocked contributes). **Dedup
+  the global `total` across pipelines** using `pendingItemIds` (an item matching two pipelines
+  counts once in the headline total, but each pipeline's own badge keeps its full count). Wire it
+  into the `global` object literal returned by `deriveHubState` (line 169) — note that function
+  already returns a 4-key object `{ prereqs, platforms, global, embedding }`; add `pipelinesPending`
+  inside `global`, leave the `embedding` sibling alone.
+- `use-hub-state.ts`: in `gatherInputs` (now 3-arg, post-`d63718c`), add
+  `pendingPipelines: plugin.lastPendingPipelines` right after the `incompleteByCategory` line (38).
+  Do not touch the `embedding`/`embeddingInput` plumbing.
 - `pipeline-rows.ts`: extend `PipelineRow` with `pending: number; stale: number;` and have
   `buildPipelineRows(flags, llm, pending?: PendingPipelinesResult | null)` set them per row
   (0 when absent/blocked).
