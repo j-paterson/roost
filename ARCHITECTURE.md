@@ -97,7 +97,9 @@ spawns or installs Ollama, the Python sidecar, or any other external process.
 Availability is determined solely through the integration registry (HTTP probes
 and binary resolution).
 
-### Integration Registry
+### Integration Registry (the "lego" catalog)
+
+Roost is **a local bookmarks core + optional composable "legos."** The core (sync · store · gallery · organize) runs with zero add-ons; everything beyond it is an optional lego — a capability gated on an integration, installed via the opt-in `setup-integrations.sh`, detected at runtime, and degrading gracefully when absent. The integration registry **is** that lego catalog. Today's legos: Smart Categorization (Ollama LLM), Fine-tuned Embeddings (sidecar + a user-trained model — the lone non-borrowable lego), Video Vision (ffmpeg), and Semantic Search (vendored vault-search). A Roost MCP Server lego is planned. (Design: `docs/superpowers/specs/2026-06-15-lego-model-design.md`.)
 
 `packages/core/src/integrations/` tracks the four optional tools the plugin can use:
 
@@ -106,13 +108,17 @@ and binary resolution).
 | `ollama` | HTTP server (`http://localhost:11434`) | `settings.integrations.ollama` |
 | `sidecar` | HTTP server (`http://localhost:11435`) | `settings.integrations.sidecar` |
 | `ffmpeg` | CLI binary | `settings.integrations.ffmpeg` |
-| `vault-search` | CLI binary | `settings.integrations.vaultSearch` |
+| `vault-search` | CLI binary (vendored) | `settings.integrations.vaultSearch` |
+
+The **Semantic Search lego** (`vault-search`) is now **vendored into the repo** at `tools/vault-search/` (deliberately outside the `packages/*` workspace so its native deps aren't built on every `npm install`). It's opt-in: `setup-integrations.sh --with-search` builds the CLI, symlinks it into a `COMMON_BIN_DIRS` location so `findBinary` resolves it, and writes a default `.env` (Ollama + vault paths). `deploy-to-vault.mjs` bundles the source into the plugin scripts dir. Phase 1 ships search + install; managed-index lifecycle is Phase 2; the bundled MCP server is not enabled (that's the future Roost MCP lego).
 
 Each entry in `INTEGRATIONS` (`registry.ts`) carries a `detect(ctx)` method that receives injected `httpProbe` and `resolveBinary` functions — no hardcoded paths, no real I/O in unit tests. Detection results are cached for 5 seconds (`detectIntegration`); the cache can be cleared with `clearDetectCache` after settings changes.
 
 The plugin **never installs or spawns** these tools. It detects availability and, when a tool is unavailable, surfaces setup instructions to the user. A tool is used only when its flag is enabled in `settings.integrations` **and** `detect()` succeeds.
 
 The **embedding sidecar** now serves `POST /transcribe` (faster-whisper, lazily loaded so embedding-only installs are unaffected; Silero VAD reports `no_speech` on music/silence) alongside its `/api/embed` endpoint; `/api/tags` reports `asr_available`. The plugin still doesn't spawn it — but it can be installed as a **durable auto-start service** (per-user macOS LaunchAgent / Linux systemd `--user` unit, running on a standalone uv-managed Python venv) via `scripts/install-sidecar-service.sh`, which `setup-integrations.sh` runs.
+
+**Backend transparency.** Because the sidecar is a separate process and `embeddingBackend: "auto"` *silently* falls back to raw Ollama when it's down, the active backend used to be invisible — and production silently ran raw embeddings for ~3 weeks. The transparency layer fixes this: `describeActiveEmbedding` (`lib/embedder.ts`) reports the *resolved* backend (not just the configured setting); `lib/embedding-provenance.ts` stamps which backend produced the cache (`.roost/cache/embedding-provenance.json`) and `classifyMismatch` detects `sidecar-down` / `vault-moved` / `upgrade-available`; the Smart Assign embed step warns at run-start and the Hub status strip shows the live backend; a "Re-embed all" command is the one-click recovery. Crucially, the honest Ollama-only default is never flagged as degraded. (`lib/sidecar-probe.ts` is the single shared probe.)
 
 Three capabilities are explicitly gated by these flags:
 
