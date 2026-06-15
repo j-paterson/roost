@@ -425,13 +425,16 @@ button.roost-tree-action.roost-tree-action:disabled {
    * background so the Roost view blends with the surrounding workspace. */
 }
 
-/* Bulk-write visual mask — applied to the bases view container during
- * Smart Assign confirm and category/subcategory rename. Dims the grid so
- * Obsidian's internal re-indexing flicker is masked behind a clean
- * "operation in progress" affordance. */
+/* Bulk-write visual cue — applied to the bases view container while a bulk
+ * write or heavy job (Smart Assign confirm, category/subcategory rename,
+ * sync, backfills, category pipelines) is in flight. A light dim signals
+ * "operation in progress" and pairs with the .roost-bulk-write-overlay pill.
+ * The grid stays INTERACTIVE — heavy jobs can run for minutes/hours, so the
+ * user must be able to keep browsing. Flicker is already prevented by the
+ * onDataUpdated rebuild-suppression guards (which read bulkWriteInProgress),
+ * not by this rule, so there is no need to block pointer events. */
 .roost-bulk-write-active {
-  opacity: 0.5;
-  pointer-events: none;
+  opacity: 0.8;
   transition: opacity 200ms ease;
 }
 
