@@ -117,14 +117,14 @@ describe("MediaDownloader.downloadAndSave", () => {
   });
 });
 
-describe("MediaDownloader.clearLegacyCarousel", () => {
-  it("no-op on missing folder: does not throw", async () => {
+describe("MediaDownloader.quarantineLegacyCarousel", () => {
+  it("no-op on missing folder: returns empty array, does not throw", async () => {
     const fakeVault = makeFakeVaultWithBinary();
     const md = makeMediaDownloader(fakeVault);
 
-    // Path that has no folder in the vault — should not throw
+    // Path that has no folder in the vault — should not throw, returns []
     await expect(
-      md.clearLegacyCarousel("Bookmarks/X/nonexistent-folder")
-    ).resolves.toBeUndefined();
+      md.quarantineLegacyCarousel("Bookmarks/X/nonexistent-folder")
+    ).resolves.toEqual([]);
   });
 });
