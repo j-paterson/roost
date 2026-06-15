@@ -23,8 +23,6 @@ interface BacklogRow {
   key: string;
   label: string;
   count: number;
-  cta: string;
-  bucket: string;
 }
 
 function backlogRowsFor(
@@ -33,13 +31,13 @@ function backlogRowsFor(
 ): BacklogRow[] {
   if (platform === "tiktok") {
     return backlogs.mediaFiles > 0
-      ? [{ key: "mediaFiles", label: "missing media", count: backlogs.mediaFiles, cta: "Backfill", bucket: "mediaFiles" }]
+      ? [{ key: "mediaFiles", label: "missing media", count: backlogs.mediaFiles }]
       : [];
   }
   if (platform === "x") {
     const rows: BacklogRow[] = [];
-    if (backlogs.thread > 0) rows.push({ key: "thread", label: "threads incomplete", count: backlogs.thread, cta: "Resolve", bucket: "thread" });
-    if (backlogs.articleBody > 0) rows.push({ key: "article", label: "article bodies queued", count: backlogs.articleBody, cta: "Fetch", bucket: "articleBody" });
+    if (backlogs.thread > 0) rows.push({ key: "thread", label: "threads incomplete", count: backlogs.thread });
+    if (backlogs.articleBody > 0) rows.push({ key: "article", label: "article bodies queued", count: backlogs.articleBody });
     return rows;
   }
   return [];
@@ -175,7 +173,6 @@ export function PlatformCard({
   onReconnect,
   onCancelLogin,
   onDisconnect,
-  onBackfill,
   onCancel,
 }: {
   platform: PlatformId;
@@ -192,7 +189,6 @@ export function PlatformCard({
   /** Clear session + sync state. Omitted for platforms without a session
    *  (e.g. Eagle); the Disconnect button only renders when provided. */
   onDisconnect?: () => void;
-  onBackfill: (id: string) => void;
   onCancel?: () => void;
 }) {
   const title = TITLES[platform];
@@ -288,7 +284,6 @@ export function PlatformCard({
                 <span className="font-medium text-foreground">{row.count.toLocaleString()}</span> {row.label}
               </span>
             }
-            action={<Button variant="outline" size="xs" onClick={() => onBackfill(row.bucket)}>{row.cta}</Button>}
             indent
           />
         ))}

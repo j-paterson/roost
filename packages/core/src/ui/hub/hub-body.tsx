@@ -3,14 +3,15 @@ import { useHubState } from "@/ui/hub/use-hub-state";
 import { GlobalActionBar } from "@/ui/hub/global-action-bar";
 import { PrereqStrip } from "@/ui/hub/prereq-strip";
 import { PlatformCard, type PlatformId } from "@/ui/hub/platform-card";
-import { getEnrichmentById, type EnrichmentId } from "@/lib/enrichments";
+import { ENRICHMENTS, PIPELINE_ENRICHMENTS, isPipelineEnrichmentId } from "@/lib/enrichments";
 import { runPlatformSync } from "@/sync/run-platform-sync";
 import { IntegrationsPanel } from "@/ui/hub/integrations-panel";
 import { buildIntegrationRows } from "@/ui/hub/integration-rows";
 import { clearDetectCache, type IntegrationId } from "@/integrations/registry";
 import { PipelinesPanel } from "@/ui/hub/pipelines-panel";
 import { buildPipelineRows } from "@/ui/hub/pipeline-rows";
-import { gateCtxFromPlugin } from "@/lib/pipeline-gate-plugin";
+import { gateCtxFromPlugin, isCategoryPipelineActive } from "@/lib/pipeline-gate-plugin";
+import { Button } from "@/ui/components/ui/button";
 import type { PipelineId } from "@/lib/enrichments";
 import { Notice } from "obsidian";
 import type { App } from "obsidian";
@@ -19,6 +20,9 @@ import type { Platform, StopSignal, SyncPhaseProgress } from "@/types/sync";
 import type { SyncProgress } from "@/ui/components/progress-header";
 
 const HUB_PLATFORMS: readonly PlatformId[] = ["tiktok", "x", "eagle"] as const;
+
+/** The 6 content backfills (everything that isn't a category pipeline). */
+const DATA_BACKFILLS = ENRICHMENTS.filter(e => !isPipelineEnrichmentId(e.id));
 
 function hubPlatformToSyncId(p: PlatformId): "tiktok" | "twitter" | "eagle" {
   if (p === "x") return "twitter";
@@ -44,6 +48,8 @@ export interface LiveSync {
 export function HubBody({ app, plugin }: { app: App; plugin: IRoostPlugin }) {
   const state = useHubState(app, plugin);
   const [globalRunning, setGlobalRunning] = useState(false);
+  const [backfilling, setBackfilling] = useState(false);
+  const [pipelinesRunning, setPipelinesRunning] = useState(false);
   const [liveSyncs, setLiveSyncs] = useState<Record<Platform, LiveSync | null>>({
     tiktok: null,
     twitter: null,
@@ -231,11 +237,37 @@ export function HubBody({ app, plugin }: { app: App; plugin: IRoostPlugin }) {
     });
   };
 
-  const backfill = (bucket: string) => {
-    const def = getEnrichmentById(bucket as EnrichmentId);
-    if (!def) return;
-    (app as unknown as { commands: { executeCommandById: (id: string) => void } })
-      .commands?.executeCommandById?.(`roost:${def.commandId}`);
+  const backfillAll = async () => {
+    setBackfilling(true);
+    try {
+      await Promise.all(
+        DATA_BACKFILLS.map(d => plugin.runJob(d.commandName, () => d.runBackfill(plugin))),
+      );
+    } finally {
+      setBackfilling(false);
+    }
+  };
+
+  const runAllPipelines = async () => {
+    setPipelinesRunning(true);
+    try {
+      // Only run pipelines that are actually enabled (toggle + LLM), using the
+      // SAME silent gate that individual pipeline runs use
+      // (use-roost-pipeline-rows.ts → isCategoryPipelineActive). Each
+      // PIPELINE_ENRICHMENTS def has a non-empty categoryMatches.
+      const active = PIPELINE_ENRICHMENTS.filter(d =>
+        isCategoryPipelineActive(d.categoryMatches[0], plugin),
+      );
+      if (active.length === 0) {
+        new Notice("No pipelines are enabled. Toggle them on (and enable an LLM) in the Integrations section.");
+        return;
+      }
+      await Promise.all(
+        active.map(d => plugin.runJob(d.commandName, () => d.runBackfill(plugin))),
+      );
+    } finally {
+      setPipelinesRunning(false);
+    }
   };
 
   const pickFolder = () => {
@@ -277,6 +309,8 @@ export function HubBody({ app, plugin }: { app: App; plugin: IRoostPlugin }) {
     };
   }, [plugin]);
 
+  const anySyncing = globalRunning || isPlatformSyncing("tiktok") || isPlatformSyncing("twitter");
+
   return (
     <div className="roost-hub-body mx-auto max-w-3xl py-2">
       <header className="px-4 pt-3 pb-3 border-b border-border">
@@ -289,7 +323,7 @@ export function HubBody({ app, plugin }: { app: App; plugin: IRoostPlugin }) {
       <SectionHeader>Platforms &amp; sync</SectionHeader>
       <GlobalActionBar
         state={state}
-        isRunning={globalRunning || isPlatformSyncing("tiktok") || isPlatformSyncing("twitter")}
+        isRunning={anySyncing}
         onFastSync={() => void updateAll(true)}
         onDeepSync={() => void updateAll(false)}
         onCancel={() => {
@@ -316,11 +350,34 @@ export function HubBody({ app, plugin }: { app: App; plugin: IRoostPlugin }) {
               onReconnect={() => { if (syncId !== "eagle") void connect(syncId); }}
               onCancelLogin={() => { if (syncId !== "eagle") stopLogin(syncId as Platform); }}
               onDisconnect={syncId === "eagle" ? undefined : () => disconnect(syncId)}
-              onBackfill={backfill}
               onCancel={() => { if (syncId !== "eagle") cancelOne(syncId as Platform); }}
             />
           );
         })}
+      </div>
+
+      <SectionHeader>Backfill &amp; pipelines</SectionHeader>
+      <div className="border-b border-border pb-2 px-4 py-2 flex items-center gap-2 flex-wrap">
+        <Button
+          size="sm"
+          variant="secondary"
+          loading={backfilling}
+          disabled={anySyncing || pipelinesRunning}
+          onClick={() => void backfillAll()}
+          title="Run all content backfills (media, transcripts, tweet bodies, threads, article bodies, playback) — one at a time."
+        >
+          Backfill all
+        </Button>
+        <Button
+          size="sm"
+          variant="secondary"
+          loading={pipelinesRunning}
+          disabled={anySyncing || backfilling}
+          onClick={() => void runAllPipelines()}
+          title="Run all enabled category pipelines (recipe, place, product, …) across the library — one at a time. Needs an LLM."
+        >
+          Run pipelines
+        </Button>
       </div>
 
       <SectionHeader>Prerequisites</SectionHeader>

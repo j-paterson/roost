@@ -8,7 +8,7 @@ afterEach(cleanup);
 describe("PlatformCard — unconfigured", () => {
   it("shows Connect button and educational copy", () => {
     const onConnect = vi.fn();
-    render(<PlatformCard platform="tiktok" state={{ kind: "unconfigured" }} onConnect={onConnect} onSync={() => {}} onReconnect={() => {}} onBackfill={() => {}} />);
+    render(<PlatformCard platform="tiktok" state={{ kind: "unconfigured" }} onConnect={onConnect} onSync={() => {}} onReconnect={() => {}} />);
     expect(screen.getByText(/connect/i)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /connect/i }));
     expect(onConnect).toHaveBeenCalledOnce();
@@ -26,7 +26,6 @@ describe("PlatformCard — connected-idle", () => {
         onConnect={() => {}}
         onSync={onSync}
         onReconnect={() => {}}
-        onBackfill={() => {}}
       />
     );
     expect(screen.getByText(/4,732/)).toBeTruthy();
@@ -44,7 +43,6 @@ describe("PlatformCard — connected-idle", () => {
         onSync={() => {}}
         onReconnect={() => {}}
         onDisconnect={onDisconnect}
-        onBackfill={() => {}}
       />
     );
     fireEvent.click(screen.getByRole("button", { name: /disconnect/i }));
@@ -59,7 +57,6 @@ describe("PlatformCard — connected-idle", () => {
         onConnect={() => {}}
         onSync={() => {}}
         onReconnect={() => {}}
-        onBackfill={() => {}}
       />
     );
     expect(screen.queryByRole("button", { name: /disconnect/i })).toBeNull();
@@ -78,7 +75,6 @@ describe("PlatformCard — connected-idle", () => {
         onConnect={() => {}}
         onSync={() => {}}
         onReconnect={() => {}}
-        onBackfill={() => {}}
       />
     );
     // Backlog rows render the count in a styled span and the label in
@@ -101,7 +97,6 @@ describe("PlatformCard — syncing", () => {
         onConnect={() => {}}
         onSync={() => {}}
         onReconnect={() => {}}
-        onBackfill={() => {}}
       />
     );
     expect(screen.getByText(/412.*600/)).toBeTruthy();
@@ -118,7 +113,6 @@ describe("PlatformCard — error", () => {
         onConnect={() => {}}
         onSync={onSync}
         onReconnect={() => {}}
-        onBackfill={() => {}}
       />
     );
     expect(screen.getByText(/rate limit/i)).toBeTruthy();
@@ -137,7 +131,6 @@ describe("PlatformCard — expired-auth", () => {
         onConnect={() => {}}
         onSync={() => {}}
         onReconnect={onReconnect}
-        onBackfill={() => {}}
       />
     );
     fireEvent.click(screen.getByRole("button", { name: /reconnect/i }));
