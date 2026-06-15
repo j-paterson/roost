@@ -97,10 +97,26 @@ Note: at planning time the working tree had uncommitted changes to
 | 049  | Surface category-pipeline logs in the hub log panel | P2 | XS | 047 | MERGED → main @ 718d7ef |
 | 050  | Refresh plans index, README, ARCHITECTURE for plans 033–049 | P3 | S | — | MERGED → main @ 30a5f78 |
 | 051  | Keep the gallery interactive during bulk writes + heavy jobs (drop `pointer-events:none`) | P2 | XS | 041 | MERGED → main @ 8959d97 |
+| 052  | Track + surface (+ auto-enqueue) pending category-pipeline work after sync / Smart Assign | P2 | L | — | TODO |
+| 053  | Make the 5 embedded-only pipelines also gather by the filed `roost_category` | P2 | M | 052 | TODO |
+| 054  | Cancellable heavy jobs — abort a running/queued pipeline or backfill from the hub | P2 | M–L | — | TODO |
 
 > **041–051 were shipped as inline-spec dispatches** (no standalone `plans/0NN-*.md`
 > files — the spec lived in the dispatch, not the archive). The refs above are the
 > merge commits on `main`; the descriptions are the one-liners from those commits.
+>
+> **052–054 (pending-pipeline tracking — 2026-06-15).** A user-requested feature
+> set: "keep track of whether pipelines need running after a Smart Assign / recent
+> sync." Researched via a design workflow + first-party source verification.
+> Decisions captured from the user: **auto-enqueue** the affected pipelines (via the
+> serial queue) with a **manual run** option and **badges** as the safety net; build
+> the gather-alignment as a **separate plan (053)**; and add a **real cancel button
+> (054)**. 052 is the spine (derived per-pipeline pending count = each pipeline's own
+> `uncached + needExtract`, surfaced as badges, recomputed + auto-enqueued at the
+> Smart Assign / sync triggers). 053 makes a *manually filed* category actually get
+> enriched by the other 5 pipelines (recipe already does this via 032). 054 makes any
+> heavy job cancellable. Recommended order: 052 → 054 → 053 (053 depends on 052's
+> factored matchers; 054 is independent but most useful with 052).
 
 > **037 (auto-run the tweet-body render — systemic "backfills are manual/undiscoverable" fix, 2026-06-12).**
 > 036 made the `tweetBody` render additive + idempotent, so it's finally *safe* to run
