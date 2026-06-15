@@ -66,6 +66,19 @@ export function registerRoostCommands(plugin: RoostCommandHost): void {
     callback: () => { void plugin.activateHubLeaf(); },
   });
   plugin.addCommand({
+    id: "rerun-setup",
+    name: "Re-run first-time setup",
+    callback: () => {
+      // Clear the flag, open the Hub, and re-render — the inline onboarding
+      // panel re-appears at the top of the Hub.
+      plugin.settings.setupComplete = false;
+      void plugin.saveSettings().then(() => {
+        plugin.triggerHubStateChange();
+        return plugin.activateHubLeaf();
+      });
+    },
+  });
+  plugin.addCommand({
     id: "reembed-all",
     name: "Re-embed all bookmarks (refresh vectors)",
     callback: () => {

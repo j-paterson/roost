@@ -183,14 +183,16 @@ export default class RoostPlugin extends Plugin {
       void this.saveSettings();
     }
 
-    // Open the hub on first launch when no platforms are configured. The 500ms
-    // delay lets Obsidian's workspace settle before we open a new leaf.
+    // Open the hub on first launch when no platforms are configured, OR when
+    // first-time setup hasn't completed — the Hub renders the inline onboarding
+    // panel at its top (no modal). The 500ms delay lets Obsidian's workspace
+    // settle before we open a new leaf.
     window.setTimeout(() => {
       const hasAnyPlatform =
         Object.keys(this.settings.syncState ?? {}).length > 0 ||
         ((this.settings.eagleToken ?? "").length > 0 &&
           (this.settings.eagleLibraryPath ?? "").length > 0);
-      if (!hasAnyPlatform) {
+      if (!hasAnyPlatform || !this.settings.setupComplete) {
         void this.ws().activateHubLeaf();
       }
     }, 500);
