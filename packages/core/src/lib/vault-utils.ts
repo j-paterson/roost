@@ -3,6 +3,7 @@ import { CATEGORY_FIELD, SUBCATEGORY_FIELD } from "@/config";
 import * as path from "path";
 import { cacheDir } from "@/lib/roost-paths";
 import { loadEmbeddingCache, saveEmbeddingCache } from "@/pipeline/shared";
+import { resolveCollectionAlias, type CollectionAliasMap } from "@/lib/collection-aliases";
 
 /**
  * Return the absolute filesystem path for the vault root.
@@ -48,6 +49,7 @@ export function gatherVaultCollections(
   app: App,
   syncFolder: string,
   platform?: string,
+  aliases?: CollectionAliasMap,
 ): {
   itemIds: string[];
   itemCollections: Map<string, string>;
@@ -72,7 +74,13 @@ export function gatherVaultCollections(
     if (!fm?.roost_id) continue;
     const id = fm.roost_id as string;
     itemIds.push(id);
-    const raw = ((fm.roost_category ?? fm.collection) as string | undefined)?.trim();
+    const rawCollection = fm.collection as string | undefined;
+    // Platform default "tiktok" is safe: alias keys are namespaced
+    // (`tiktok:<name>`), and only TikTok sync stamps `collection`. Must match
+    // the same default on the WRITE side in use-roost-category-tree's rename
+    // capture so a key written on rename is found here on read.
+    const resolved = resolveCollectionAlias(aliases, (fm.platform as string) ?? "tiktok", rawCollection);
+    const raw = ((fm.roost_category ?? resolved ?? rawCollection) as string | undefined)?.trim();
     if (raw && raw !== "undefined" && raw !== "null") {
       itemCollections.set(id, raw);
       itemProvenance.set(id, fm.roost_assigned_by === "human" ? "human" : "auto");
@@ -196,6 +204,7 @@ export function gatherCategoryAndSubcategories(
   app: App,
   syncFolder: string,
   categoryName: string,
+  aliases?: CollectionAliasMap,
 ): {
   itemIds: string[];
   collections: Record<string, string[]>;
@@ -212,7 +221,11 @@ export function gatherCategoryAndSubcategories(
   for (const file of files) {
     const fm = app.metadataCache.getFileCache(file)?.frontmatter;
     if (!fm?.roost_id) continue;
-    const cat = ((fm[CATEGORY_FIELD] ?? fm.collection) as string | undefined)?.trim();
+    const rawCollection = fm.collection as string | undefined;
+    // See gatherVaultCollections: "tiktok" default is safe (namespaced keys)
+    // and must mirror the rename-capture write side.
+    const resolved = resolveCollectionAlias(aliases, (fm.platform as string) ?? "tiktok", rawCollection);
+    const cat = ((fm[CATEGORY_FIELD] ?? resolved ?? rawCollection) as string | undefined)?.trim();
     if (!cat || cat === "undefined" || cat === "null") continue;
     if (cat !== categoryName) continue;
     const id = fm.roost_id as string;
