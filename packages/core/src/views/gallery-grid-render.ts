@@ -82,7 +82,6 @@ export function rebuildGalleryGrid(host: GalleryGridRenderHost): boolean {
   if (needsSplitPane || needsPipelineSubstitute) {
     host.hydrationObserver?.disconnect();
     host.containerEl.empty();
-    host.containerEl.removeClass("roost-media-list-host");
 
     traceEvent("onDataUpdated:rebuild", {
       filteredCount: host.filteredIndices?.length ?? null,
