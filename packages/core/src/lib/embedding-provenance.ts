@@ -36,7 +36,10 @@ export function loadProvenance(vault: Vault): EmbeddingProvenance | null {
 
 export function saveProvenance(vault: Vault, prov: EmbeddingProvenance): void {
   try {
-    fs.writeFileSync(cachePath(vaultBasePath(vault), FILE), JSON.stringify(prov));
+    const target = cachePath(vaultBasePath(vault), FILE);
+    const tmp = `${target}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify(prov));
+    fs.renameSync(tmp, target);
   } catch (e) {
     console.warn("[roost] failed to write embedding provenance:", e instanceof Error ? e.message : String(e));
   }
