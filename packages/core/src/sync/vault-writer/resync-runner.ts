@@ -3,7 +3,7 @@ import type { ElectronWebview } from "@/types/sync";
 import { ensureFolder, updateNoteFrontmatter, type FrontmatterValue } from "@/lib/vault-helpers";
 import { type VaultIndex } from "./vault-index";
 import { type NoteFileWriter, articleFrontmatterFields } from "./note-file-writer";
-import { type MediaDownloader } from "./media-downloader";
+import { type MediaDownloader, type QuarantinedFile } from "./media-downloader";
 import { type TwitterRecordWriter } from "./twitter-record-writer";
 import { loadQuotedTweetBitmap, type ThreadMeta } from "./twitter-record-writer";
 import { type NormalizedRecord } from "../../lib/normalize";
@@ -100,8 +100,9 @@ export class ResyncRunner {
       const noteFile = this.index.findNoteForId(record.id, folderPath, handle, itemId);
       if (noteFile) {
         const content = await this.vault.read(noteFile);
-        const coverFile = media.images.length > 0 ? `${attachFolder}/1.jpg`
-          : media.coverUrl ? `${attachFolder}/cover.jpg` : null;
+        const hasFile = (name: string) => this.vault.getAbstractFileByPath(`${attachFolder}/${name}`) !== null;
+        const coverFile = hasFile("1.jpg") ? `${attachFolder}/1.jpg`
+          : hasFile("cover.jpg") ? `${attachFolder}/cover.jpg` : null;
         const updates: Record<string, FrontmatterValue> = {};
         if (text) updates.title = text.replace(/\n/g, " ");
         if (url) updates.url = url;
@@ -138,18 +139,34 @@ export class ResyncRunner {
       let threadMeta: ThreadMeta | null = null;
 
       if (isThreaded) {
-        // First-time thread materialization (no thread.json yet): clear any
-        // pre-enhancement numbered media so the new carousel can own N.jpg/N.png
-        // without colliding with the old single focal image or a leftover card.png.
+        // First-time thread materialization (no thread.json yet): quarantine any
+        // pre-enhancement numbered media so the new carousel can own N.jpg/N.png,
+        // but DO NOT destroy it until the new carousel is confirmed on disk —
+        // a dead-URL render must never lose the existing copy.
+        let quarantined: QuarantinedFile[] = [];
         if (!this.vault.getAbstractFileByPath(`${attachFolder}/thread.json`)) {
-          await this.mediaDownloader.clearLegacyCarousel(attachFolder);
+          quarantined = await this.mediaDownloader.quarantineLegacyCarousel(attachFolder);
         }
         const result = await this.twitterWriter.renderThreadPages({
           record, attachFolder, handle, username,
           mainThread, quotedThread, skipIfExists: true,
         });
-        coverFile = result.coverFile;
-        threadMeta = result.meta;
+        const coverOnDisk = !!result.coverFile
+          && this.vault.getAbstractFileByPath(result.coverFile) != null;
+        if (coverOnDisk) {
+          // New carousel produced a usable cover — safe to drop the old copies.
+          await this.mediaDownloader.dropQuarantine(quarantined);
+          coverFile = result.coverFile;
+          threadMeta = result.meta;
+        } else {
+          // Render produced no usable media (e.g. dead CDN URLs). Restore the
+          // quarantined originals, keep the existing cover, and do NOT
+          // materialize the thread this run so it retries when the source is
+          // alive again.
+          await this.mediaDownloader.restoreQuarantine(quarantined);
+          coverFile = null;
+          threadMeta = null;
+        }
       } else {
         if (twitterMedia.photos.length > 0) {
           await Promise.all(
