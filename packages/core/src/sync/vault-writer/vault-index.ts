@@ -172,8 +172,9 @@ export class VaultIndex {
           } else {
             missingVideo++;
           }
-        } else if (platform === "twitter" && !childNames.has("1.jpg") && (childNames.has("media.jpg") || childNames.has("thumb.png"))) {
-          // Old-format: media exists but not numbered — resync to rename + update cover.
+        } else if (platform === "twitter" && !childNames.has("1.jpg") && !childNames.has("1.png") && !childNames.has("video.mp4") && childNames.has("media.jpg")) {
+          // Legacy single: image exists only as the old media.jpg (no canonical
+          // 1.jpg, no PNG carousel, no video) — migrate media.jpg -> 1.jpg.
           byCategory.mediaFiles.add(id);
         } else if (platform === "twitter" && childNames.has("video.mp4") && !childNames.has("video-poster.jpg")) {
           // Video tweet missing its poster image — the gallery cover falls back to
