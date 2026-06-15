@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import type { App, TFile, BasesEntry } from "obsidian";
 import { TFile as RealTFile } from "obsidian";
-import { resolveImageUrl, resolveVideoUrl, getCoverFolder } from "@/views/feed/card-helpers";
+import { resolveImageUrl, resolveVideoUrl, getCoverFolder, isRasterizedTextCover } from "@/views/feed/card-helpers";
 
 function makeApp(files: Record<string, "file" | null>): App {
   return {
@@ -46,6 +46,36 @@ describe("resolveVideoUrl", () => {
     const app = makeApp({});
     const entry = makeEntry({ "note.cover": "Bookmarks/TikTok/tiktok-ABC/1.jpg" });
     expect(resolveVideoUrl(app, entry)).toBeNull();
+  });
+});
+
+describe("isRasterizedTextCover", () => {
+  it("treats a card.png cover as a generated text card", () => {
+    const app = makeApp({});
+    const entry = makeEntry({ "note.cover": "[[Bookmarks/X/x-ABC/card.png]]" });
+    expect(isRasterizedTextCover(app, entry)).toBe(true);
+  });
+
+  it("treats real downloaded media (jpg) as NOT a text card", () => {
+    const app = makeApp({});
+    const entry = makeEntry({ "note.cover": "Bookmarks/X/x-ABC/1.jpg" });
+    expect(isRasterizedTextCover(app, entry)).toBe(false);
+  });
+
+  it("treats a threaded numbered .png cover as a text card when thread.json exists", () => {
+    const app = makeApp({ "Bookmarks/X/x-ABC/thread.json": "file" });
+    const entry = makeEntry({ "note.cover": "Bookmarks/X/x-ABC/1.png" });
+    expect(isRasterizedTextCover(app, entry)).toBe(true);
+  });
+
+  it("does NOT treat a numbered .png cover as a text card without thread.json", () => {
+    const app = makeApp({});
+    const entry = makeEntry({ "note.cover": "Bookmarks/X/x-ABC/1.png" });
+    expect(isRasterizedTextCover(app, entry)).toBe(false);
+  });
+
+  it("returns false when there is no cover", () => {
+    expect(isRasterizedTextCover(makeApp({}), makeEntry({}))).toBe(false);
   });
 });
 

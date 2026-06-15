@@ -15,6 +15,7 @@ import { stripWikilink } from "@/lib/vault-utils";
 import {
   getCoverFolder,
   resolveVideoUrl,
+  isRasterizedTextCover,
 } from "@/views/feed/card-helpers";
 
 export interface EntryMediaResolvers {
@@ -124,11 +125,7 @@ function resolveDigestCoverUrl(
   const coverRaw = digestCoverRaw(entry);
   if (!coverRaw) return null;
   const folder = coverRaw.replace(/\/[^/]+$/, "");
-  const hasThreadJson = digestHasThreadJson(app, folder);
-  const isCardPngCover = /\/card\.png$/i.test(coverRaw);
-  const isNumberedPngCover = /\/\d+\.png$/i.test(coverRaw);
-  const coverIsRasterizedText =
-    isCardPngCover || (hasThreadJson && isNumberedPngCover);
+  const coverIsRasterizedText = isRasterizedTextCover(app, entry);
   const videoUrl = resolveVideoUrl(app, entry);
   if (coverIsRasterizedText) {
     if (videoUrl) {

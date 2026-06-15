@@ -54,6 +54,7 @@ import {
   galleryResolveAllImages,
   galleryResolveImageUrl,
   galleryResolveVideoUrl,
+  galleryIsTextTileCover,
 } from "@/views/gallery-media-bridge";
 import { createBookmarksPipelineHost } from "@/views/gallery-pipeline-setup";
 import type { PipelineGalleryHost } from "@/views/gallery-pipeline-host";
@@ -457,6 +458,7 @@ export class BookmarksBasesView extends BasesView
       resolveImageUrl: (entry: BasesEntry, propId: string) => galleryResolveImageUrl(this.app, entry, propId),
       resolveVideoUrl: (entry: BasesEntry) => galleryResolveVideoUrl(this.app, entry),
       hasMultipleImages: (entry: BasesEntry) => galleryHasMultipleImages(this.app, entry),
+      isTextTileCover: (entry: BasesEntry) => galleryIsTextTileCover(this.app, entry),
     };
   }
 

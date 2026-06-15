@@ -7,6 +7,7 @@ import {
   resolveVideoUrl,
   hasMultipleImages,
   resolveAllImages,
+  isRasterizedTextCover,
 } from "@/views/feed/card-helpers";
 import type { EntryMediaResolvers } from "@/views/entry-to-expanded-card";
 import type { GalleryCardConfig } from "@/views/gallery-cards";
@@ -41,4 +42,8 @@ export function galleryHasMultipleImages(app: App, entry: BasesEntry): boolean {
 
 export function galleryResolveAllImages(app: App, entry: BasesEntry): string[] {
   return resolveAllImages(app, entry);
+}
+
+export function galleryIsTextTileCover(app: App, entry: BasesEntry): boolean {
+  return isRasterizedTextCover(app, entry);
 }

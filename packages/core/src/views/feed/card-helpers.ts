@@ -41,6 +41,27 @@ export function resolveImageUrl(app: App, entry: BasesEntry, propId: string): st
   return null;
 }
 
+/**
+ * True when the entry's cover is a generated text-card image rather than real
+ * downloaded media — `card.png` (non-threaded text-only tweet) or a threaded
+ * numbered `.png` focal page (cover is `N.png` and a `thread.json` sidecar
+ * exists). Now that tweet bodies are backfilled into the note, these covers are
+ * redundant: the gallery renders a text tile from `note.title` instead. The
+ * digest path uses the same rule to suppress rasterized-text covers.
+ */
+export function isRasterizedTextCover(app: App, entry: BasesEntry): boolean {
+  const coverValue = safeGetValue(entry, "note.cover");
+  if (!coverValue) return false;
+  const coverRaw = stripWikilink(coverValue.toString());
+  if (!coverRaw) return false;
+  if (/\/card\.png$/i.test(coverRaw)) return true;
+  if (/\/\d+\.png$/i.test(coverRaw)) {
+    const folder = coverRaw.replace(/\/[^/]+$/, "");
+    return app.vault.getAbstractFileByPath(`${folder}/thread.json`) instanceof TFile;
+  }
+  return false;
+}
+
 /** Quick check: does the entry's folder contain a second image (e.g. 2.jpg)? */
 export function hasMultipleImages(app: App, entry: BasesEntry): boolean {
   const folder = getCoverFolder(entry);

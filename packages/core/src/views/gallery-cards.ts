@@ -35,6 +35,26 @@ export interface GalleryCardHandlers {
   resolveImageUrl: (entry: BasesEntry, propId: string) => string | null;
   resolveVideoUrl: (entry: BasesEntry) => string | null;
   hasMultipleImages: (entry: BasesEntry) => boolean;
+  /** True when the cover is a generated text card (card.png / threaded text
+   *  page). These render as a text tile from note.title instead of an <img>. */
+  isTextTileCover: (entry: BasesEntry) => boolean;
+}
+
+/** Render the cover area as a text tile (author + tweet body) instead of the
+ *  generated card.png screenshot. Pulls text from note.title — no file read. */
+function renderTextTileCover(coverEl: HTMLElement, entry: BasesEntry): void {
+  coverEl.addClass("roost-card-cover-text");
+  const authorValue = safeGetValue(entry, "note.author");
+  if (authorValue) {
+    const authorEl = coverEl.createDiv({ cls: "roost-card-cover-text-author" });
+    authorEl.textContent = authorValue.toString().replace(/\[\[People\/|\]\]/g, "");
+  }
+  const rawText = safeGetValue(entry, "note.title")?.toString() ?? "";
+  const text = cleanCaption(rawText) || rawText;
+  if (text) {
+    const bodyEl = coverEl.createDiv({ cls: "roost-card-cover-text-body" });
+    bodyEl.textContent = text;
+  }
 }
 
 /** Estimated card height from Bases view config sliders. */
@@ -122,8 +142,14 @@ export function hydrateGalleryCard(
     });
   }
 
-  const imageUrl = handlers.resolveImageUrl(entry, cfg.imagePropId);
-  if (imageUrl) {
+  // Text-only tweets whose body is now backfilled into the note render as a
+  // text tile rather than the redundant generated card.png. A real video
+  // (poster cover) still wins — that's genuine media, not a text card.
+  const isTextTile = handlers.isTextTileCover(entry) && !handlers.resolveVideoUrl(entry);
+  const imageUrl = isTextTile ? null : handlers.resolveImageUrl(entry, cfg.imagePropId);
+  if (isTextTile) {
+    renderTextTileCover(coverEl, entry);
+  } else if (imageUrl) {
     const img = coverEl.createEl("img");
     img.style.cssText = `width: 100%; height: 100%; object-fit: ${cfg.imageFit}; display: block;`;
     img.src = imageUrl;
@@ -161,16 +187,20 @@ export function hydrateGalleryCard(
 
   const body = el.createDiv({ cls: "roost-card-body" });
 
-  const titleValue = safeGetValue(entry, "note.title");
-  const rawTitle = titleValue?.toString() ?? entry.file.basename;
-  const title = cleanCaption(rawTitle) || entry.file.basename;
-  const titleEl = body.createDiv({ cls: "roost-card-title" });
-  titleEl.textContent = title;
-  if (title !== rawTitle) titleEl.title = rawTitle;
+  // Text tiles already show the tweet text (and author) in the cover area —
+  // skip the duplicate title line here so the body carries only meta/chips.
+  if (!isTextTile) {
+    const titleValue = safeGetValue(entry, "note.title");
+    const rawTitle = titleValue?.toString() ?? entry.file.basename;
+    const title = cleanCaption(rawTitle) || entry.file.basename;
+    const titleEl = body.createDiv({ cls: "roost-card-title" });
+    titleEl.textContent = title;
+    if (title !== rawTitle) titleEl.title = rawTitle;
+  }
 
   const meta = body.createDiv({ cls: "roost-card-meta" });
 
-  if (cfg.showAuthor) {
+  if (cfg.showAuthor && !isTextTile) {
     const authorValue = safeGetValue(entry, "note.author");
     if (authorValue) {
       const authorEl = meta.createSpan({ cls: "roost-card-author" });
