@@ -15,6 +15,7 @@ function mkState(over: Partial<HubState> = {}): HubState {
       eagle: { kind: "unconfigured" },
     },
     global: { lastFullUpdate: Date.now(), anythingToUpdate: true, anythingNeedsAttention: false },
+    embedding: null,
     ...over,
   };
 }

@@ -1,8 +1,13 @@
 import { useEffect, useState, useCallback } from "react";
 import type { App } from "obsidian";
+import { requestUrl } from "obsidian";
 import { useTickEvery } from "@/ui/hooks/use-tick-every";
 import { deriveHubState, type HubState, type HubInputs } from "@/ui/hub/state";
 import { llmAvailable } from "@/lib/pipeline-gate";
+import { describeActiveEmbedding } from "@/lib/embedder";
+import { loadProvenance, classifyMismatch } from "@/lib/embedding-provenance";
+import { vaultBasePath } from "@/lib/vault-utils";
+import { EMBED_URL } from "@/config";
 import type { IRoostPlugin } from "@/types/plugin";
 
 function ollamaStateFromDetect(status: "available" | "unavailable" | "unknown"): HubInputs["ollamaState"] {
@@ -11,7 +16,11 @@ function ollamaStateFromDetect(status: "available" | "unavailable" | "unknown"):
   return null;                                    // "unknown" / flag off
 }
 
-function gatherInputs(app: App, plugin: IRoostPlugin): HubInputs {
+function gatherInputs(
+  app: App,
+  plugin: IRoostPlugin,
+  embeddingInput?: HubInputs["embedding"],
+): HubInputs {
   const settings = plugin.settings;
   const folder = settings.syncFolder ?? "";
   const folderExists = folder.length > 0 && app.vault.getAbstractFileByPath(folder) !== null;
@@ -35,7 +44,31 @@ function gatherInputs(app: App, plugin: IRoostPlugin): HubInputs {
     eagleConfigured:
       (settings.eagleToken ?? "").length > 0 &&
       (settings.eagleLibraryPath ?? "").length > 0,
+    embedding: embeddingInput,
   };
+}
+
+async function probeEmbedding(
+  app: App,
+  plugin: IRoostPlugin,
+): Promise<HubInputs["embedding"]> {
+  try {
+    const active = await describeActiveEmbedding({
+      settings: { embeddingBackend: plugin.settings.embeddingBackend ?? "auto" },
+      probeSidecar: async () => {
+        try {
+          const res = await requestUrl({ url: `${EMBED_URL}/api/tags`, method: "GET" });
+          return res.status === 200;
+        } catch { return false; }
+      },
+    });
+    const vaultPath = vaultBasePath(app.vault);
+    const prov = loadProvenance(app.vault);
+    const mismatch = classifyMismatch(prov, active.backend, vaultPath);
+    return { backend: active.backend, mismatch: mismatch.kind };
+  } catch {
+    return undefined;
+  }
 }
 
 /** Subscribes to `roost:hub-state-changed` plugin events; also re-renders
@@ -45,6 +78,7 @@ export function useHubState(app: App, plugin: IRoostPlugin): HubState {
   const tick = useTickEvery(5_000);
   const [version, setVersion] = useState(0);
   const recompute = useCallback(() => setVersion((v) => v + 1), []);
+  const [embeddingInput, setEmbeddingInput] = useState<HubInputs["embedding"]>(undefined);
 
   useEffect(() => {
     // Obsidian Workspace's typed overloads don't accept arbitrary event names,
@@ -63,9 +97,20 @@ export function useHubState(app: App, plugin: IRoostPlugin): HubState {
     return () => window.clearInterval(id);
   }, [plugin]);
 
+  // Probe the active embedding backend on mount and every 30s. This is async
+  // so it's tracked in state separately and fed into HubInputs at derive time.
+  useEffect(() => {
+    void probeEmbedding(app, plugin).then(setEmbeddingInput);
+    const id = window.setInterval(
+      () => { void probeEmbedding(app, plugin).then(setEmbeddingInput); },
+      30_000,
+    );
+    return () => window.clearInterval(id);
+  }, [app, plugin]);
+
   // tick = time-based re-render (transient agent state has no event stream);
   // version = event-driven re-render. deriveHubState re-runs on either.
   void tick;
   void version;
-  return deriveHubState(gatherInputs(app, plugin));
+  return deriveHubState(gatherInputs(app, plugin, embeddingInput));
 }

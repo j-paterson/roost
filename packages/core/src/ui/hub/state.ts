@@ -24,6 +24,8 @@ export interface HubInputs {
   incompleteByCategory: IncompleteByCategory | null;
   /** True iff settings.eagleToken + eagleLibraryPath are populated. */
   eagleConfigured: boolean;
+  /** Pre-computed active embedding backend + provenance mismatch (async work done at the call site). */
+  embedding?: { backend: "sidecar" | "ollama"; mismatch: "none" | "match" | "sidecar-down" | "vault-moved" | "upgrade-available" };
 }
 
 export interface Backlogs {
@@ -54,6 +56,7 @@ export interface HubState {
     anythingToUpdate: boolean;
     anythingNeedsAttention: boolean;
   };
+  embedding: { label: string; warn: boolean } | null;
 }
 
 function derivePrereqs(input: HubInputs): { folder: PrereqStatus; ollama: PrereqStatus } {
@@ -156,5 +159,12 @@ export function deriveHubState(input: HubInputs): HubState {
   ].filter((t): t is number => typeof t === "number" && t > 0);
   const lastFullUpdate = timestamps.length > 0 ? Math.max(...timestamps) : null;
 
-  return { prereqs, platforms, global: { lastFullUpdate, anythingToUpdate, anythingNeedsAttention } };
+  const embedding = input.embedding
+    ? {
+        label: input.embedding.backend === "sidecar" ? "fine-tuned (sidecar)" : "Ollama base",
+        warn: input.embedding.mismatch === "sidecar-down" || input.embedding.mismatch === "vault-moved",
+      }
+    : null;
+
+  return { prereqs, platforms, global: { lastFullUpdate, anythingToUpdate, anythingNeedsAttention }, embedding };
 }

@@ -40,6 +40,11 @@ export function StatusStrip({
     >
       <span className={`shrink-0 ${tone} font-semibold`} aria-hidden>{icon}</span>
       <span className="flex-1 text-sm">{label}</span>
+      {state.embedding && (
+        <span className="text-muted-foreground text-xs">
+          {state.embedding.warn ? "⚠️ " : ""}Embeddings: {state.embedding.label}
+        </span>
+      )}
       <span className="text-muted-foreground text-xs opacity-70 group-hover:opacity-100">
         Open Hub →
       </span>
