@@ -8,7 +8,7 @@
  * styling so the table claims full width. */
 /* Master-detail split: table on the left, expanded-card preview on the
  * right. Both panes scroll independently inside the gallery container. */
-.roost-bases-grid.roost-media-list-host {
+.roost-media-list-host {
   display: flex;
   gap: 16px;
   height: 100%;

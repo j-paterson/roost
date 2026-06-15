@@ -1,5 +1,16 @@
 /**
  * Pipeline gallery view dispatch — mounts substitute/above views from the registry.
+ *
+ * Both modes are structurally symmetric:
+ *
+ *   above      — host creates aboveContainer, inserts it before the grid,
+ *                removes it on dispose/category-change.
+ *
+ *   substitute — host creates substituteContainer inside containerEl,
+ *                passes it to the view's render(), removes it on
+ *                dispose/category-change. The view never sees containerEl
+ *                directly and is not responsible for DOM cleanup beyond
+ *                its own internal state (inline players, etc.).
  */
 import type { App, BasesEntry } from "obsidian";
 import type { RoostFilter } from "@/types/roost";
@@ -32,6 +43,7 @@ export interface PipelineGalleryHostDeps {
 export class PipelineGalleryHost {
   private handle: PipelineGalleryHandle | null = null;
   private aboveContainer: HTMLElement | null = null;
+  private substituteContainer: HTMLElement | null = null;
   private dispatchedCategory: string | null = null;
 
   constructor(private deps: PipelineGalleryHostDeps) {}
@@ -45,6 +57,8 @@ export class PipelineGalleryHost {
     this.handle = null;
     this.aboveContainer?.remove();
     this.aboveContainer = null;
+    this.substituteContainer?.remove();
+    this.substituteContainer = null;
     this.dispatchedCategory = null;
   }
 
@@ -62,6 +76,8 @@ export class PipelineGalleryHost {
       this.handle = null;
       this.aboveContainer?.remove();
       this.aboveContainer = null;
+      this.substituteContainer?.remove();
+      this.substituteContainer = null;
       this.dispatchedCategory = null;
     }
 
@@ -84,9 +100,22 @@ export class PipelineGalleryHost {
     };
 
     if (view.mode === "substitute") {
+      // Render UNCONDITIONALLY (incl. same-category re-dispatch): the grid
+      // driver calls containerEl.empty() + dispatch() on every onDataUpdated
+      // while a substitute category is active, so the view must re-render to
+      // repopulate from current entries. Remove the prior wrapper first so
+      // same-category re-dispatch refreshes without accumulating wrappers
+      // (in production empty() already detached it; .remove() is then a no-op).
       this.handle?.dispose();
+      this.substituteContainer?.remove();
+      // Reset grid inline style so the substitute wrapper claims full height.
+      // The wrapper's .roost-media-list-host class handles flex layout via CSS.
       this.deps.containerEl.style.cssText = "";
-      this.handle = view.render(this.deps.containerEl, ctx);
+      this.substituteContainer = document.createElement("div");
+      this.substituteContainer.className = "roost-media-list-host";
+      this.substituteContainer.style.cssText = "height:100%;min-height:0;";
+      this.deps.containerEl.appendChild(this.substituteContainer);
+      this.handle = view.render(this.substituteContainer, ctx);
       this.dispatchedCategory = category;
       return true;
     }

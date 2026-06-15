@@ -87,7 +87,6 @@ describe("media-list substitute view dispose", () => {
 
     handle.dispose();
     expect(container.children.length).toBe(0);            // and cleaned it ALL up
-    expect(container.classList.contains("roost-media-list-host")).toBe(false);
   });
 
   it("populated table: dispose removes the table but spares foreign siblings", () => {
@@ -111,6 +110,5 @@ describe("media-list substitute view dispose", () => {
     handle.dispose();
     expect(container.querySelector(".roost-media-list-root")).toBeNull(); // own DOM gone
     expect(container.contains(foreignCard)).toBe(true);                   // foreign DOM spared
-    expect(container.classList.contains("roost-media-list-host")).toBe(false);
   });
 });
