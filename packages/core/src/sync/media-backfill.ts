@@ -17,7 +17,7 @@
  */
 import * as fs from "fs";
 import * as path from "path";
-import { Notice, TFolder, TAbstractFile } from "obsidian";
+import { Notice } from "obsidian";
 import type { NormalizedRecord } from "@/lib/normalize";
 import { vaultBasePath } from "@/lib/vault-utils";
 import { cacheDir } from "@/lib/roost-paths";
@@ -29,10 +29,16 @@ interface MediaCacheEntry {
   ok: boolean;
   reason?: string;
   fetchedAt: number;   // unix seconds
+  attempts?: number;   // consecutive failed backfill attempts (for dead-skip)
 }
 type MediaCache = Record<string, MediaCacheEntry>;
 
 let backfillRunning = false;
+
+/** After this many consecutive failed backfill attempts, an item is treated as
+ *  permanently dead (expired CDN URLs) and skipped — until a re-sync rewrites
+ *  its raw.json (newer mtime than the last attempt), which clears the skip. */
+const MAX_BACKFILL_ATTEMPTS = 3;
 
 export async function runMediaBackfill(plugin: IRoostPlugin): Promise<void> {
   if (backfillRunning) {
@@ -65,7 +71,7 @@ export async function runMediaBackfill(plugin: IRoostPlugin): Promise<void> {
     raw: Record<string, unknown>;
   }
   const queue: QueueItem[] = [];
-  let cacheHits = 0, alreadyComplete = 0;
+  let cacheHits = 0, alreadyComplete = 0, deadSkipped = 0;
 
   const tiktokWcAvailable = !!plugin.getWebviewManager().getWebContents("tiktok");
 
@@ -102,6 +108,17 @@ export async function runMediaBackfill(plugin: IRoostPlugin): Promise<void> {
       }
       if (!needs) { alreadyComplete++; return; }
 
+      // Dead-URL skip: this item has failed MAX_BACKFILL_ATTEMPTS times and its
+      // raw.json has NOT been rewritten since the last attempt — retrying the
+      // same (expired) URLs would just grind. A later re-sync that refreshes
+      // raw.json makes its mtime newer than fetchedAt, which auto-clears the skip.
+      const prev = cache[cacheKey];
+      if (prev && !prev.ok && (prev.attempts ?? 0) >= MAX_BACKFILL_ATTEMPTS) {
+        let rawMtime = 0;
+        try { rawMtime = Math.floor(fs.statSync(filePath).mtimeMs / 1000); } catch { /* */ }
+        if (isDeadSkip(prev, rawMtime)) { deadSkipped++; return; }
+      }
+
       let raw: Record<string, unknown>;
       try { raw = JSON.parse(fs.readFileSync(filePath, "utf8")); } catch { return; }
       queue.push({ rawPath: filePath, attachFolder, platform: platformId, outerItemId, raw });
@@ -109,11 +126,11 @@ export async function runMediaBackfill(plugin: IRoostPlugin): Promise<void> {
   }
 
   if (queue.length === 0) {
-    new Notice(`No media to backfill (${alreadyComplete} already complete, ${cacheHits} cache hits)`);
+    new Notice(`No media to backfill (${alreadyComplete} already complete, ${cacheHits} cache hits, ${deadSkipped} dead-skipped)`);
     return;
   }
 
-  log(`Queue: ${queue.length} items (skipped ${alreadyComplete} complete, ${cacheHits} cache hits)`);
+  log(`Queue: ${queue.length} items (skipped ${alreadyComplete} complete, ${cacheHits} cache hits, ${deadSkipped} dead)`);
   new Notice(`Backfilling ${queue.length} items with missing media…`);
 
   // 3. Set up VaultWriter with TikTok webview (needed for video downloads).
@@ -135,6 +152,7 @@ export async function runMediaBackfill(plugin: IRoostPlugin): Promise<void> {
   //    pipeline; downloadAndSave skips files that already exist on disk so
   //    items whose problem was just a missing poster don't re-fetch the video.
   let succeeded = 0, failed = 0;
+  const failReasons: Record<string, number> = {};
   for (let i = 0; i < queue.length; i++) {
     const q = queue[i];
     const cacheKey = `${q.platform}:${q.outerItemId}`;
@@ -149,21 +167,24 @@ export async function runMediaBackfill(plugin: IRoostPlugin): Promise<void> {
     };
     try {
       await writer.resyncRecord(record);
-      // Verify the resync actually filled the gap. Re-read the folder and
-      // check the predicate; if still incomplete, mark as failed so the next
-      // run retries.
-      const folder = plugin.app.vault.getAbstractFileByPath(`${plugin.settings.syncFolder}/${q.platform === "twitter" ? "X" : "TikTok"}/${q.platform}-${q.outerItemId}`);
-      const stillNeeds = folder instanceof TFolder ? checkStillIncomplete(folder, q.platform) : true;
-      if (stillNeeds) {
-        cache[cacheKey] = { ok: false, reason: "incomplete_after_resync", fetchedAt: now };
+      // Verify against the FILESYSTEM — the same source the queue scan uses.
+      const reason = fsIncompleteReason(q.attachFolder, q.platform);
+      if (reason) {
+        const prevAttempts = cache[cacheKey]?.attempts ?? 0;
+        cache[cacheKey] = { ok: false, reason, fetchedAt: now, attempts: prevAttempts + 1 };
+        failReasons[reason] = (failReasons[reason] ?? 0) + 1;
         failed++;
+        if (failed <= 5) log(`still incomplete after resync: ${cacheKey} — ${reason}`);
       } else {
         cache[cacheKey] = { ok: true, fetchedAt: now };
         await writer.stampEnrichmentVersion(record.id, "mediaFiles", MEDIA_ENRICHMENT.schemaVersion);
         succeeded++;
       }
     } catch (e: unknown) {
-      cache[cacheKey] = { ok: false, reason: e instanceof Error ? e.message.slice(0, 80) : "error", fetchedAt: now };
+      const reason = e instanceof Error ? e.message.slice(0, 80) : "error";
+      const prevAttempts = cache[cacheKey]?.attempts ?? 0;
+      cache[cacheKey] = { ok: false, reason, fetchedAt: now, attempts: prevAttempts + 1 };
+      failReasons["exception"] = (failReasons["exception"] ?? 0) + 1;
       failed++;
       log(`resyncRecord failed for ${cacheKey}: ${e instanceof Error ? e.message : String(e)}`);
     }
@@ -177,7 +198,11 @@ export async function runMediaBackfill(plugin: IRoostPlugin): Promise<void> {
   }
   fs.writeFileSync(cachePath, JSON.stringify(cache, null, 2));
 
-  const summary = `Media backfill: ${succeeded} succeeded, ${failed} failed`;
+  const breakdown = Object.entries(failReasons)
+    .sort((a, b) => b[1] - a[1])
+    .map(([reason, n]) => `${n} ${reason}`)
+    .join(", ");
+  const summary = `Media backfill: ${succeeded} succeeded, ${failed} failed${breakdown ? ` — ${breakdown}` : ""}`;
   log(summary);
   new Notice(summary);
   } finally {
@@ -198,16 +223,38 @@ export const MEDIA_ENRICHMENT: EnrichmentDef = {
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
-/** True if the folder still trips the scanIncompleteIds media predicate. */
-function checkStillIncomplete(folder: TFolder, platform: "twitter" | "tiktok"): boolean {
-  const children: TAbstractFile[] = folder.children;
-  const names = new Set(children.map(c => c.name));
-  const hasMedia = children.some(c =>
-    c.name.endsWith(".jpg") || c.name.endsWith(".mp4") || c.name.endsWith(".png"),
-  );
-  if (!hasMedia) return true;
-  if (platform === "twitter" && !names.has("1.jpg") && (names.has("media.jpg") || names.has("thumb.png"))) return true;
-  if (platform === "twitter" && names.has("video.mp4") && !names.has("video-poster.jpg")) return true;
-  return false;
+/** Re-read the attach folder from the FILESYSTEM (same source as the queue
+ *  scan) and return a short reason if it still trips the media predicate, or
+ *  null if it now looks complete. Using fs avoids the lag in Obsidian's
+ *  in-memory folder index right after a createBinary write. */
+export function fsIncompleteReason(attachFolder: string, platform: "twitter" | "tiktok"): string | null {
+  let names: Set<string>;
+  try {
+    names = new Set(
+      fs.readdirSync(attachFolder, { withFileTypes: true })
+        .filter(e => e.isFile())
+        .map(e => e.name),
+    );
+  } catch {
+    return "folder-missing";
+  }
+  const hasMedia = [...names].some(n => n.endsWith(".jpg") || n.endsWith(".mp4") || n.endsWith(".png"));
+  if (!hasMedia) return "no-media";
+  if (platform === "twitter" && !names.has("1.jpg") && (names.has("media.jpg") || names.has("thumb.png"))) return "legacy-no-1jpg";
+  if (platform === "twitter" && names.has("video.mp4") && !names.has("video-poster.jpg")) return "video-no-poster";
+  return null;
+}
+
+/** Pure decision for the dead-URL skip — shared by the queue scan and tests.
+ *  An item is dead-skipped when it has failed at least `maxAttempts` times and
+ *  its raw.json mtime is not newer than the last attempt (no fresh URLs). */
+export function isDeadSkip(
+  entry: { ok: boolean; attempts?: number; fetchedAt: number } | undefined,
+  rawMtimeSec: number,
+  maxAttempts = MAX_BACKFILL_ATTEMPTS,
+): boolean {
+  if (!entry || entry.ok) return false;
+  if ((entry.attempts ?? 0) < maxAttempts) return false;
+  return rawMtimeSec <= entry.fetchedAt;
 }
 
