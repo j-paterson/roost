@@ -53,4 +53,24 @@ for (const name of ["setup-integrations.sh", "sidecar-launcher.sh", "install-sid
   try { fs.chmodSync(path.join(pluginScriptsDir, name), 0o755); } catch { /* best-effort */ }
 }
 
+// Bundle the vendored vault-search source (source only — no node_modules or dist)
+// so `setup-integrations.sh --with-search` can build it from the deployed scripts dir.
+const vaultSearchSrc = path.join(repoRoot, "tools", "vault-search");
+const vaultSearchDest = path.join(pluginScriptsDir, "vault-search");
+if (fs.existsSync(vaultSearchSrc)) {
+  fs.cpSync(vaultSearchSrc, vaultSearchDest, {
+    recursive: true,
+    filter: (src) => {
+      const rel = path.relative(vaultSearchSrc, src);
+      // Exclude build artifacts and installed deps — source-only bundle.
+      if (rel === "node_modules" || rel.startsWith("node_modules" + path.sep)) return false;
+      if (rel === "dist" || rel.startsWith("dist" + path.sep)) return false;
+      return true;
+    },
+  });
+  console.log(`  copied  tools/vault-search/  →  ${vaultSearchDest}  (source only)`);
+} else {
+  console.warn(`  warning: tools/vault-search/ not found — skipping vault-search bundle`);
+}
+
 console.log(`\nRoost deployed to ${pluginDir}`);
