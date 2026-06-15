@@ -103,6 +103,14 @@ export function computeCohesion(vectors: number[][], centroid: number[]): number
 
 const VEC_DIM = 768;
 
+/** Write to a temp sibling then rename into place — an interrupted or truncated
+ *  write leaves the previous good file intact instead of a corrupt one. */
+function writeFileAtomic(filePath: string, data: string | Buffer): void {
+  const tmp = `${filePath}.tmp`;
+  fs.writeFileSync(tmp, data);
+  fs.renameSync(tmp, filePath);
+}
+
 let cachedEmbeddings: Record<string, EmbeddingCacheEntry> | null = null;
 
 /** Test-only hook — clears the in-memory embedding cache so the next loadEmbeddingCache reads from disk. */
@@ -117,15 +125,17 @@ function loadVectorsBin(binPath: string): Map<string, number[]> | null {
     const nlIdx = buf.indexOf(10); // first newline
     if (nlIdx < 0) return null;
     const keys: string[] = JSON.parse(buf.slice(0, nlIdx).toString("utf8"));
-    const expectedBytes = keys.length * VEC_DIM * 4;
     const dataStart = nlIdx + 1;
-    if (buf.length - dataStart < expectedBytes) return null;
-    // Create a properly aligned Float32Array
-    const aligned = Buffer.alloc(expectedBytes);
-    buf.copy(aligned, 0, dataStart, dataStart + expectedBytes);
-    const floats = new Float32Array(aligned.buffer, aligned.byteOffset, keys.length * VEC_DIM);
+    const availBytes = buf.length - dataStart;
+    const completeVecs = Math.floor(availBytes / (VEC_DIM * 4));
+    const n = Math.min(keys.length, completeVecs);   // salvage the complete prefix
+    if (n <= 0) return null;
+    const usableBytes = n * VEC_DIM * 4;
+    const aligned = Buffer.alloc(usableBytes);
+    buf.copy(aligned, 0, dataStart, dataStart + usableBytes);
+    const floats = new Float32Array(aligned.buffer, aligned.byteOffset, n * VEC_DIM);
     const result = new Map<string, number[]>();
-    for (let i = 0; i < keys.length; i++) {
+    for (let i = 0; i < n; i++) {
       result.set(keys[i], Array.from(floats.subarray(i * VEC_DIM, (i + 1) * VEC_DIM)));
     }
     return result;
@@ -143,14 +153,17 @@ function loadClipVectorsBin(binPath: string): Map<string, number[]> | null {
     const nlIdx = buf.indexOf(10);
     if (nlIdx < 0) return null;
     const keys: string[] = JSON.parse(buf.slice(0, nlIdx).toString("utf8"));
-    const expectedBytes = keys.length * VEC_DIM * 4;
     const dataStart = nlIdx + 1;
-    if (buf.length - dataStart < expectedBytes) return null;
-    const aligned = Buffer.alloc(expectedBytes);
-    buf.copy(aligned, 0, dataStart, dataStart + expectedBytes);
-    const floats = new Float32Array(aligned.buffer, aligned.byteOffset, keys.length * VEC_DIM);
+    const availBytes = buf.length - dataStart;
+    const completeVecs = Math.floor(availBytes / (VEC_DIM * 4));
+    const n = Math.min(keys.length, completeVecs);   // salvage the complete prefix
+    if (n <= 0) return null;
+    const usableBytes = n * VEC_DIM * 4;
+    const aligned = Buffer.alloc(usableBytes);
+    buf.copy(aligned, 0, dataStart, dataStart + usableBytes);
+    const floats = new Float32Array(aligned.buffer, aligned.byteOffset, n * VEC_DIM);
     const result = new Map<string, number[]>();
-    for (let i = 0; i < keys.length; i++) {
+    for (let i = 0; i < n; i++) {
       result.set(keys[i], Array.from(floats.subarray(i * VEC_DIM, (i + 1) * VEC_DIM)));
     }
     return result;
@@ -171,7 +184,7 @@ function saveVectorsBin(binPath: string, cache: Record<string, EmbeddingCacheEnt
   for (let i = 0; i < keys.length; i++) {
     view.set(cache[keys[i]].vec!, i * VEC_DIM);
   }
-  fs.writeFileSync(binPath, Buffer.concat([headerBuf, floatBuf]));
+  writeFileAtomic(binPath, Buffer.concat([headerBuf, floatBuf]));
 }
 
 /** Write JSON with vec stripped to null (text fields only — backward compatible with scripts). */
@@ -180,7 +193,7 @@ function saveTextJson(jsonPath: string, cache: Record<string, EmbeddingCacheEntr
   for (const [k, v] of Object.entries(cache)) {
     stripped[k] = { vision: v.vision, summary: v.summary, category: v.category, vec: null };
   }
-  fs.writeFileSync(jsonPath, JSON.stringify(stripped));
+  writeFileAtomic(jsonPath, JSON.stringify(stripped));
 }
 
 export function loadEmbeddingCache(vault: Vault): Record<string, EmbeddingCacheEntry> {
@@ -190,39 +203,36 @@ export function loadEmbeddingCache(vault: Vault): Record<string, EmbeddingCacheE
   const jsonPath = cachePath(vaultPath, "embedding-cache.json");
   const binPath = cachePath(vaultPath, "embedding-vectors.bin");
 
+  // Text fields (vision/summary/category) are the expensive LLM work — load them
+  // even if the vectors are missing/corrupt, so a bad .bin only costs re-embedding
+  // (cheap) and never re-running vision/topic analysis.
+  let textCache: Record<string, EmbeddingCacheEntry> = {};
+  try { textCache = JSON.parse(fs.readFileSync(jsonPath, "utf8")) || {}; } catch { textCache = {}; }
+
+  // Merge in whatever vectors load. A truncated bin yields its complete prefix
+  // (Fix 3); a missing/empty bin leaves vecs null → those items re-embed.
   const vecMap = loadVectorsBin(binPath);
   if (vecMap && vecMap.size > 0) {
-    try {
-      const t0 = Date.now();
-      const textCache: Record<string, EmbeddingCacheEntry> = JSON.parse(fs.readFileSync(jsonPath, "utf8"));
-      for (const [key, vec] of vecMap) {
-        if (textCache[key]) {
-          textCache[key].vec = vec;
-        } else {
-          textCache[key] = { vision: null, summary: null, category: null, vec };
-        }
-      }
-      // Optionally enrich with CLIP vectors. Missing clip-vectors.bin → text-only.
-      const clipPath = cachePath(vaultPath, "clip-vectors.bin");
-      const clipMap = loadClipVectorsBin(clipPath);
-      if (clipMap && clipMap.size > 0) {
-        for (const [key, clipVec] of clipMap) {
-          if (textCache[key]) {
-            textCache[key].clipVec = clipVec;
-          }
-          // CLIP-only items (not in text cache) are skipped — text cache is
-          // authoritative for items.
-        }
-        console.log(`[roost] Loaded ${clipMap.size} CLIP vectors`);
-      }
-
-      cachedEmbeddings = textCache;
-      console.log(`[roost] Loaded cache: ${Object.keys(textCache).length} entries, ${vecMap.size} vectors in ${Date.now() - t0}ms`);
-      return cachedEmbeddings;
-    } catch { /* fall through */ }
+    for (const [key, vec] of vecMap) {
+      if (textCache[key]) textCache[key].vec = vec;
+      else textCache[key] = { vision: null, summary: null, category: null, vec };
+    }
+    const clipMap = loadClipVectorsBin(cachePath(vaultPath, "clip-vectors.bin"));
+    if (clipMap && clipMap.size > 0) {
+      for (const [key, clipVec] of clipMap) { if (textCache[key]) textCache[key].clipVec = clipVec; }
+    }
   }
 
-  cachedEmbeddings = {};
+  // Dim guard (Fix 4): warn loudly on a model/dim change instead of silently
+  // serving mismatched vectors.
+  try {
+    const meta = JSON.parse(fs.readFileSync(cachePath(vaultPath, "embedding-meta.json"), "utf8"));
+    if (typeof meta?.dim === "number" && meta.dim !== VEC_DIM) {
+      console.warn(`[roost] embedding cache dim ${meta.dim} != expected ${VEC_DIM} — vectors of the wrong dim are ignored`);
+    }
+  } catch { /* no meta file — fine */ }
+
+  cachedEmbeddings = textCache;
   return cachedEmbeddings;
 }
 
@@ -234,6 +244,7 @@ export function saveEmbeddingCache(vault: Vault, cache: Record<string, Embedding
     fs.mkdirSync(dir, { recursive: true });
     saveVectorsBin(cachePath(vaultPath, "embedding-vectors.bin"), cache);
     saveTextJson(cachePath(vaultPath, "embedding-cache.json"), cache);
+    writeFileAtomic(cachePath(vaultPath, "embedding-meta.json"), JSON.stringify({ dim: VEC_DIM }));
   } catch (e: unknown) {
     console.warn("[roost] Failed to save embedding cache:", e instanceof Error ? e.message : String(e));
   }
