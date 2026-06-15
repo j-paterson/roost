@@ -11,19 +11,23 @@
 #
 #   --vault-root <path>   Vault root (or set ROOST_VAULT). Needed for the sidecar.
 #   --skip-sidecar        Set up Ollama only (enough for most users).
+#   --skip-autostart      Set up the sidecar but don't install the auto-start
+#                         service (run it only for this session).
 #   -h, --help            Show this help.
 #
 set -euo pipefail
 
 VAULT_ROOT="${ROOST_VAULT:-}"
 SKIP_SIDECAR=0
+SKIP_AUTOSTART=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --vault-root)
       if [ $# -lt 2 ]; then echo "Error: --vault-root needs a path (try --help)"; exit 1; fi
       VAULT_ROOT="$2"; shift 2 ;;
     --skip-sidecar) SKIP_SIDECAR=1; shift ;;
-    -h|--help) sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    --skip-autostart) SKIP_AUTOSTART=1; shift ;;
+    -h|--help) sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "Unknown argument: $1 (try --help)"; exit 1 ;;
   esac
 done
@@ -36,6 +40,22 @@ warn() { printf "  \033[1;33m! %s\033[0m\n" "$*"; }
 
 ollama_up()  { curl -fsS --max-time 3 http://localhost:11434/api/tags >/dev/null 2>&1; }
 sidecar_up() { curl -fsS --max-time 3 http://localhost:11435/api/tags >/dev/null 2>&1; }
+
+# Resolve a usable `uv` into $UV. uv lets us build the sidecar venv against a
+# STANDALONE Python (not Homebrew's), so it survives `brew upgrade`. Installs uv
+# via the official script if it's missing. Leaves $UV empty if uv is still not
+# runnable (the sidecar phase then falls back to `python3 -m venv`).
+UV=""
+ensure_uv() {
+  if ! command -v uv >/dev/null 2>&1 && [ ! -x "$HOME/.local/bin/uv" ]; then
+    say "Installing uv (fast Python venv/package manager)…"
+    curl -LsSf https://astral.sh/uv/install.sh | sh || warn "uv install script failed — falling back to python3 -m venv."
+  fi
+  UV="$(command -v uv 2>/dev/null || echo "$HOME/.local/bin/uv")"
+  if [ ! -x "$UV" ] && ! command -v "$UV" >/dev/null 2>&1; then
+    UV=""
+  fi
+}
 
 # Log files — each concurrent phase gets its OWN file so output never
 # interleaves. The sidecar has two: one for the (foreground-to-the-job) setup
@@ -182,27 +202,66 @@ if [ "$SIDECAR_REQUESTED" = "1" ]; then
       exit 0
     fi
 
-    if [ ! -d "$VENV" ]; then
-      echo "Creating Python venv…"
-      python3 -m venv "$VENV" || { echo "Failed to create venv at $VENV"; exit 1; }
+    # Prefer uv + a standalone Python 3.12: that venv is durable against
+    # `brew upgrade` (it doesn't depend on Homebrew's interpreter). Fall back to
+    # python3 -m venv when uv can't be made available.
+    ensure_uv
+    if [ -n "$UV" ]; then
+      if [ ! -d "$VENV" ]; then
+        echo "Creating Python venv with uv (standalone Python 3.12)…"
+        "$UV" venv --python 3.12 "$VENV" || { echo "Failed to create venv at $VENV"; exit 1; }
+      else
+        echo "Reusing existing venv at $VENV"
+      fi
+      echo "Installing sidecar dependencies (downloads PyTorch — a few minutes the first time)…"
+      "$UV" pip install --python "$VENV/bin/python" -r "$SCRIPT_DIR/requirements.txt" || { echo "Failed to install sidecar dependencies"; exit 1; }
+      # uv venvs omit pip; setup (and any tooling that shells out to pip) needs it.
+      "$UV" pip install --python "$VENV/bin/python" pip || echo "Note: installing pip into the venv failed (continuing)."
+      echo "Sidecar dependencies installed"
     else
-      echo "Reusing existing venv at $VENV"
+      if [ ! -d "$VENV" ]; then
+        echo "Creating Python venv…"
+        python3 -m venv "$VENV" || { echo "Failed to create venv at $VENV"; exit 1; }
+      else
+        echo "Reusing existing venv at $VENV"
+      fi
+      warn "Built the venv with python3 -m venv (uv unavailable) — it's interpreter-managed and less durable than a uv/standalone venv (a Python upgrade can break it)."
+      echo "Installing sidecar dependencies (downloads PyTorch — a few minutes the first time)…"
+      # A failed pip self-upgrade is non-fatal: it must not fail the whole setup
+      # when the real dependency install below still succeeds.
+      "$VENV/bin/pip" install -q --upgrade pip || echo "Note: pip self-upgrade failed (continuing)."
+      "$VENV/bin/pip" install -q -r "$SCRIPT_DIR/requirements.txt" || { echo "Failed to install sidecar dependencies"; exit 1; }
+      echo "Sidecar dependencies installed"
     fi
 
-    echo "Installing sidecar dependencies (downloads PyTorch — a few minutes the first time)…"
-    # A failed pip self-upgrade is non-fatal: it must not fail the whole setup
-    # when the real dependency install below still succeeds.
-    "$VENV/bin/pip" install -q --upgrade pip || echo "Note: pip self-upgrade failed (continuing)."
-    "$VENV/bin/pip" install -q -r "$SCRIPT_DIR/requirements.txt" || { echo "Failed to install sidecar dependencies"; exit 1; }
-    echo "Sidecar dependencies installed"
+    # Decide how to start the sidecar. With autostart enabled on a supported OS
+    # we install a durable service (LaunchAgent / systemd) that ALSO starts it.
+    # Otherwise (or on an unsupported OS) we just launch it detached for now.
+    AUTOSTART_OK=0
+    if [ "$SKIP_AUTOSTART" != "1" ]; then
+      if [ "$OS" = "Darwin" ]; then
+        AUTOSTART_OK=1
+      elif [ "$OS" = "Linux" ] && command -v systemctl >/dev/null 2>&1; then
+        AUTOSTART_OK=1
+      fi
+    fi
 
-    echo "Starting the sidecar…"
-    # serve_forever() never returns; launch it detached (its runtime output goes
-    # to its OWN log, separate from this setup log) and poll for readiness so
-    # this job returns once :11435 answers (or after the timeout) — it does NOT
-    # block on the long-lived server.
-    nohup "$VENV/bin/python" "$SCRIPT_DIR/embed-sidecar.py" --vault-root "$VAULT_ROOT" >"$SIDECAR_LOG" 2>&1 &
-    for _ in $(seq 1 90); do sidecar_up && break; sleep 1; done
+    if [ "$AUTOSTART_OK" = "1" ]; then
+      echo "Installing the auto-start service (it will also start the sidecar)…"
+      bash "$SCRIPT_DIR/install-sidecar-service.sh" --vault-root "$VAULT_ROOT" --scripts-dir "$SCRIPT_DIR" \
+        || { echo "Auto-start install failed — falling back to a session-only launch."; AUTOSTART_OK=0; }
+    fi
+
+    if [ "$AUTOSTART_OK" != "1" ]; then
+      echo "Starting the sidecar for this session…"
+      # serve_forever() never returns; launch it detached (its runtime output
+      # goes to its OWN log, separate from this setup log) and poll for
+      # readiness so this job returns once :11435 answers (or after the
+      # timeout) — it does NOT block on the long-lived server.
+      nohup "$VENV/bin/python" "$SCRIPT_DIR/embed-sidecar.py" --vault-root "$VAULT_ROOT" >"$SIDECAR_LOG" 2>&1 &
+      for _ in $(seq 1 90); do sidecar_up && break; sleep 1; done
+    fi
+
     if sidecar_up; then
       echo "Sidecar is serving on :11435"
       exit 0
@@ -282,4 +341,8 @@ fi
 
 say "Done. Reopen Roost's settings — Integrations should show Ollama (and the sidecar) as detected."
 echo "  • Logs:  $OLLAMA_LOG   $CHAT_LOG   $SIDECAR_SETUP_LOG   $SIDECAR_LOG"
-echo "  • To keep the sidecar running after a reboot, add a launchd/systemd unit (see scripts/README or docs)."
+if [ "$SIDECAR_REQUESTED" = "1" ] && [ "$SKIP_AUTOSTART" != "1" ]; then
+  echo "  • The sidecar auto-starts at login (LaunchAgent/systemd). Remove it with scripts/uninstall-sidecar-service.sh, or re-run with --skip-autostart to set it up session-only."
+else
+  echo "  • Auto-start NOT installed. Run scripts/install-sidecar-service.sh --vault-root <path> to keep the sidecar running after a reboot (uninstall with scripts/uninstall-sidecar-service.sh)."
+fi

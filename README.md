@@ -74,6 +74,21 @@ Download `main.js`, `manifest.json`, and `styles.css` from the latest
 [release](https://github.com/j-paterson/roost-obsidian/releases) into
 `<vault>/.obsidian/plugins/roost/`.
 
+### Local AI sidecar (optional)
+
+Deploying with `npm run install:vault` copies a self-contained setup system into
+the plugin's `scripts/` dir, so the venv + sidecar live alongside the plugin and
+survive without a repo clone. To set up the embedding sidecar (and Ollama/ffmpeg
+detection), run setup **from the plugin scripts dir**:
+
+```bash
+cd <your-vault>/.obsidian/plugins/roost/scripts
+./setup-integrations.sh --vault-root <your-vault>
+```
+
+On macOS this also installs a login-item LaunchAgent that auto-starts the sidecar
+(remove it with `./uninstall-sidecar-service.sh`, or skip it with `--skip-autostart`).
+
 ## Trademarks
 
 "TikTok" and "X" and their logos are trademarks of their respective owners.
