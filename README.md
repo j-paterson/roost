@@ -13,6 +13,9 @@ markdown notes, then auto-organize them with a local AI categorizer.
   Roost only reads your own bookmarks.
 - **Smart Assign** — categorizes notes by embedding similarity plus an optional
   LLM rerank, writing a `roost_category` field.
+- **Local video transcripts** — caption-less TikTok videos can be transcribed
+  locally (faster-whisper via the sidecar's `/transcribe`) so the recipe and
+  other pipelines can read the speech; music/silent videos are skipped.
 - **Gallery & library views** — browse and filter your synced bookmarks.
 
 ## Network use
@@ -88,6 +91,15 @@ cd <your-vault>/.obsidian/plugins/roost/scripts
 
 On macOS this also installs a login-item LaunchAgent that auto-starts the sidecar
 (remove it with `./uninstall-sidecar-service.sh`, or skip it with `--skip-autostart`).
+
+## Running backfills and pipelines
+
+The Roost Hub has two one-click buttons:
+
+- **Backfill all** — runs the content backfills (media, transcripts, tweet
+  bodies, threads, article bodies, playback) one at a time.
+- **Run pipelines** — runs the enabled category pipelines (recipe, place, media,
+  …) over your notes.
 
 ## Trademarks
 

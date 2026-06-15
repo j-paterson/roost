@@ -112,6 +112,8 @@ Each entry in `INTEGRATIONS` (`registry.ts`) carries a `detect(ctx)` method that
 
 The plugin **never installs or spawns** these tools. It detects availability and, when a tool is unavailable, surfaces setup instructions to the user. A tool is used only when its flag is enabled in `settings.integrations` **and** `detect()` succeeds.
 
+The **embedding sidecar** now serves `POST /transcribe` (faster-whisper, lazily loaded so embedding-only installs are unaffected; Silero VAD reports `no_speech` on music/silence) alongside its `/api/embed` endpoint; `/api/tags` reports `asr_available`. The plugin still doesn't spawn it — but it can be installed as a **durable auto-start service** (per-user macOS LaunchAgent / Linux systemd `--user` unit, running on a standalone uv-managed Python venv) via `scripts/install-sidecar-service.sh`, which `setup-integrations.sh` runs.
+
 Three capabilities are explicitly gated by these flags:
 
 - **ffmpeg video-frame vision** (`describe-items.ts`): runs only when `settings.integrations.ffmpeg` is on and `findBinary` resolves both `ffmpeg` and `ffprobe` (PATH + common dirs; no hardcoded paths). When unavailable, the embed step falls through to cover-image vision unchanged.
@@ -160,7 +162,7 @@ Flow:
 1. Click **Smart Assign** → Topic editor with pre-detected collections
 2. Two-column scrollable checkbox grid — toggle off unwanted topics, add custom ones
 3. Click **Run** → Pipeline step indicator appears: `Embed → Score Known → Discover → Describe → Score New → Review`
-4. **Embed step** — describe-items.ts. For items missing vectors: keyframe vision (gemma4 over ffmpeg frames) → one-sentence summary + category via llama3.2:3b → 768-d embedding via the v2 sidecar. Results cached in `.roost/embedding-cache.json`.
+4. **Embed step** — describe-items.ts. For items missing vectors: keyframe vision (gemma4 over ffmpeg frames) → one-sentence summary + category via llama3.2:3b → 768-d embedding via the v2 sidecar. Results cached in `.roost/cache/`: 768-dim Float32 vectors in `embedding-vectors.bin`, text fields (vision/summary/category) in `embedding-cache.json`, a dim stamp in `embedding-meta.json` (see [On-disk caches](#on-disk-caches-obsidianbookmarksroost)).
 5. **Score Known** — evaluate.ts `scoreAgainstCategories`. For every item with a cached vector, compute cosine similarity to all category centroids (built from existing `roost_category` labels), take the top-K, and run the score-first ensemble (see pipeline section below). Items that pass the conditional disagree-reject are assigned; the rest flow to discovery.
 6. **Discover** — evaluate.ts `discoverCategories`. Unmatched items are grouped by their cached Ollama category (resolved through the taxonomy); any group with ≥5 items and cohesion ≥ `MIN_DISCOVERY_COHESION` becomes a proposed new category.
 7. **Describe** — evaluate.ts `generateClusterDescriptions`. One contrastive LLM call per proposed category produces both a short description and a NOT clause (what it isn't), grounded in nearest neighbors + counter-examples. Cached in `.roost/collection-descriptions-contrastive.json` and `.roost/collection-not-descriptions.json`.
@@ -323,13 +325,15 @@ All per-bookmark backfills — data fetches AND pipeline extractions — are reg
 - `runBackfill` — driver function that walks the vault and enriches matching items
 - `categoryMatches` — optional predicate routing pipeline enrichments to the correct roost_category items
 
-The 11 registered enrichments:
+The 13 registered enrichments:
 
 | id | Type | What it writes |
 |----|------|---------------|
 | `articleBody` | data fetch | Full X Article body via TweetResultByRestId replay |
 | `thread` | data fetch | Thread context pages via TweetDetail probe |
+| `tweetBody` | data fetch | X tweet text rendered as a formatted markdown note body (links, quotes, thread structure) |
 | `mediaFiles` | data fetch | Downloaded cover images + video files |
+| `transcript` | data fetch | `subtitle.vtt` + `subtitle` frontmatter for caption-less TikTok videos — local faster-whisper transcription via the sidecar `/transcribe` (Silero VAD skips music/silence) |
 | `playback` | data fetch | Video playback metadata |
 | `recipe` | pipeline extraction | `recipe_*` frontmatter fields (ingredients, prep time, cuisine, difficulty) |
 | `place` | pipeline extraction | `place_*` frontmatter fields (name, location, lat/lng, category) |
@@ -442,6 +446,12 @@ Top to bottom:
 
 The **Pipelines** subsection under Integrations lists all `PIPELINE_ENRICHMENT_IDS` with On/Off buttons (disabled when `llmAvailable()` is false). See [Category extraction pipelines](#category-extraction-pipelines) for active/inactive behavior. Implementation: `pipelines-panel.tsx`, `pipeline-rows.ts`, `gateCtxFromPlugin()`.
 
+### Hub actions & the serial job queue
+
+The hub exposes two one-click actions: **Backfill all** enqueues the data backfills (media, transcripts, tweet bodies, threads, article bodies, playback) and **Run pipelines** enqueues the enabled category pipelines (gated by `isCategoryPipelineActive`). Category-pipeline progress (`[recipe]`, `[place]`, …) is routed through `plugin.fireLog`, so it surfaces in the **hub log panel** alongside the data backfills.
+
+All manually-triggered heavy jobs (sync, backfills, pipeline runs) route through `plugin.runJob` → a serial `RoostJobQueue` (`lib/job-queue.ts`), so they run **one at a time** in FIFO order rather than concurrently thrashing the vault. A throwing job is reported to its caller but never wedges the queue; the one-time tweet-body auto catch-up is deliberately **not** enqueued and instead yields to the queue via `onIdle()`.
+
 ## Weekly Digest & Agent Memory
 
 - **Digest** — `pipeline/digest-pipeline.ts` aggregates weekly bookmarks into `Pipelines/Digest/Weekly/*.md`; cache at `.roost/cache/digest-cache.json`. A synthesis pipeline, deliberately not on `runCategoryPipeline` — see [Category extraction pipelines](#category-extraction-pipelines).
@@ -464,7 +474,7 @@ Deployed in `packages/core/src/pipeline/evaluate.ts` and coordinated from `packa
 
 ### Item embedding (`describe-items.ts`)
 
-Three stages per item, results cached in `.roost/embedding-cache.json` and processed incrementally:
+Three stages per item, results cached in `.roost/cache/` (vectors in `embedding-vectors.bin`, text fields in `embedding-cache.json`, dim stamp in `embedding-meta.json`) and processed incrementally:
 
 1. **Vision** via `VISION_MODEL` (`minicpm-v`) — describe cover image → one-sentence description
 2. **Topic + category** via `TOPIC_MODEL` (`llama3.2:3b`) — vision + post text + tags → topic and category guess
@@ -646,7 +656,7 @@ Score-first rerank constants live in `pipeline/evaluate.ts` rather than `config.
 
 | File | Written by | Invalidation |
 |------|-----------|--------------|
-| `embedding-cache.json` | `describe-items.ts` / `shared.ts` | Per-field (vision/summary/category/vec) — entries are incrementally filled, old schemas auto-migrate |
+| `embedding-vectors.bin` + `embedding-cache.json` + `embedding-meta.json` | `describe-items.ts` / `shared.ts` | Vectors (768-dim Float32) live in `.bin`, text fields (vision/summary/category) in `.json`, a dim/model stamp in `-meta.json`. Per-field, incrementally filled; old schemas auto-migrate. Writes are atomic (temp+rename) and the load path is partial-tolerant — a truncated/missing `.bin` salvages its complete-vector prefix and keeps the text cache, so a bad `.bin` only costs cheap re-embedding (never re-running vision/topic) |
 | `score-cache.json` | `evaluate.ts` | `{itemId}|{catHash}` — catHash hashes EVAL_MODEL + PROMPT_VERSION + every category's name and description |
 | `category-embeddings.json` | `taxonomy.ts` | md5 of the sorted category-string list; cheap to re-cluster across epsilon changes |
 | `collection-descriptions-contrastive.json` | `evaluate.ts` `generateClusterDescriptions` | Keyed by category name; regenerated when description is missing or explicitly cleared |
