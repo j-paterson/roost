@@ -4,6 +4,7 @@ import { App, Notice, TFile, Menu, Modal } from "obsidian";
 import { CATEGORY_FIELD, SUBCATEGORY_FIELD } from "@/config";
 import type { RoostFilter, SmartAssignInput } from "@/types/roost";
 import { getSyncFiles } from "@/lib/vault-utils";
+import { loadCollectionAliases, saveCollectionAliases, makeAliasKey } from "@/lib/collection-aliases";
 import { traceEvent } from "@/lib/render-trace";
 import { ConfirmScopeModal } from "@/ui/components/confirm-scope-modal";
 import { ConfirmDeleteCategoryModal } from "@/ui/components/confirm-delete-category-modal";
@@ -266,6 +267,25 @@ export function useRoostCategoryTree(deps: RoostCategoryTreeDeps) {
         traceEvent("rename:beforeScanLibrary");
         await scanLibrary();
         traceEvent("rename:afterScanLibrary");
+        // Alias capture: record source-collection → newName so future imports
+        // from those TikTok collections resolve to the curated name at read
+        // time (prevents the renamed category from reappearing on reimport).
+        const renamedFiles = getSyncFiles(app.vault, plugin.settings.syncFolder);
+        const aliasMap = loadCollectionAliases(app.vault);
+        let aliasChanged = false;
+        for (const file of renamedFiles) {
+          const fm = app.metadataCache.getFileCache(file)?.frontmatter;
+          if (fm?.[CATEGORY_FIELD] !== newName) continue;
+          const col = fm.collection as string | undefined;
+          const plat = (fm.platform as string | undefined) ?? "tiktok";
+          if (!col || col === "undefined" || col === "null") continue;
+          const key = makeAliasKey(plat, col);
+          if (aliasMap[key] !== newName) {
+            aliasMap[key] = newName;
+            aliasChanged = true;
+          }
+        }
+        if (aliasChanged) saveCollectionAliases(app.vault, aliasMap);
         const activeFilter = activeFilterRef.current;
         if (activeFilter?.category === oldName) {
           traceEvent("rename:filterFollow", { newCategory: newName });
