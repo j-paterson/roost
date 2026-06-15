@@ -73,7 +73,14 @@ export function registerRoostCommands(plugin: RoostCommandHost): void {
         if (isPipelineEnrichmentId(def.id) && !guardPipelineActive(def.id, plugin, (msg) => new Notice(msg, 6000))) {
           return;
         }
-        await plugin.runJob(def.commandName, () => def.runBackfill(plugin));
+        await plugin.runJob(def.commandName, () =>
+          def.runBackfill(
+            plugin,
+            isPipelineEnrichmentId(def.id)
+              ? { onLog: (m) => plugin.fireLog(`[${def.id}] ${m}`) }
+              : undefined,
+          ),
+        );
       },
     });
   }
