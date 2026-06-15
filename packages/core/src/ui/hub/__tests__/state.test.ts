@@ -177,3 +177,37 @@ describe("deriveHubState — global", () => {
     expect(s.global.anythingNeedsAttention).toBe(false);
   });
 });
+
+describe("deriveHubState — embedding", () => {
+  it("ollama backend with sidecar-down mismatch → warn label", () => {
+    const s = deriveHubState({
+      ...baseInputs(),
+      embedding: { backend: "ollama", mismatch: "sidecar-down" },
+    });
+    expect(s.embedding).toEqual({ label: "Ollama base", warn: true });
+  });
+
+  it("sidecar backend with match mismatch → no warn", () => {
+    const s = deriveHubState({
+      ...baseInputs(),
+      embedding: { backend: "sidecar", mismatch: "match" },
+    });
+    expect(s.embedding).toEqual({ label: "fine-tuned (sidecar)", warn: false });
+  });
+
+  it("explicit sidecar configured but down → warn (sidecar-down mismatch injected by probeEmbedding)", () => {
+    // Simulates Fix 1: probeEmbedding overrides mismatchKind to "sidecar-down" when
+    // reason === "configured-sidecar" && sidecarConfiguredButDown. deriveHubState
+    // must surface warn:true for this backend+mismatch combination.
+    const s = deriveHubState({
+      ...baseInputs(),
+      embedding: { backend: "sidecar", mismatch: "sidecar-down" },
+    });
+    expect(s.embedding).toEqual({ label: "fine-tuned (sidecar)", warn: true });
+  });
+
+  it("no embedding input → null", () => {
+    const s = deriveHubState(baseInputs());
+    expect(s.embedding).toBeNull();
+  });
+});
