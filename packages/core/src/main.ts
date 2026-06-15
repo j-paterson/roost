@@ -11,6 +11,7 @@ import { regenerateCardForActiveNote } from "@/plugin/regenerate-card-command";
 import { fetchCoversCommand } from "@/plugin/fetch-covers-command";
 import { maybeAutoRunTweetBodyBackfill } from "@/sync/tweet-body-backfill";
 import { RoostJobQueue } from "@/lib/job-queue";
+import { runJobWithBulkWriteFlag } from "@/lib/run-job-bulk-write";
 // Side-effect import: each pipeline-view module registers itself with the
 // pipeline-view registry on load. Adding a new pipeline visualization is
 // one entry in src/views/pipeline-views/index.ts.
@@ -129,7 +130,11 @@ export default class RoostPlugin extends Plugin {
   }
 
   runJob<T>(label: string, fn: () => Promise<T>): Promise<T> {
-    return this.jobQueue.enqueue(label, fn);
+    // Suppress per-write gallery rebuilds for the duration of the job (the Bases
+    // view guards onDataUpdated on bulkWriteInProgress and shows an "Updating
+    // items…" overlay), then settle the view exactly once when it finishes. The
+    // wrapper is nesting-safe — see runJobWithBulkWriteFlag.
+    return this.jobQueue.enqueue(label, () => runJobWithBulkWriteFlag(this, fn));
   }
 
   onFilterChange(fn: (filter: RoostFilter) => void): () => void {
