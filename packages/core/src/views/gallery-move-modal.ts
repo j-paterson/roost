@@ -12,6 +12,7 @@ import {
   encodeMoveTarget,
   decodeMoveTarget,
 } from "@/lib/vault-utils";
+import { loadCollectionAliases } from "@/lib/collection-aliases";
 import { bulkWriteAssignments } from "@/ui/lib/bulk-write-assignments";
 import { ItemModal } from "@/ui/components/item-modal";
 import { SuggestionModal } from "@/ui/components/suggestion-modal";
@@ -168,7 +169,8 @@ export function openGalleryMoveModal(ctx: GalleryMoveModalContext, entry: BasesE
   const roostId = safeGetValue(entry, "note.roost_id")?.toString() ?? "";
   const itemVec = cache[roostId]?.vec ?? null;
   const syncFolder = plugin2.settings?.syncFolder ?? "Bookmarks";
-  const { collections } = gatherVaultCollections(ctx.app, syncFolder);
+  const aliases = loadCollectionAliases(ctx.app.vault);
+  const { collections } = gatherVaultCollections(ctx.app, syncFolder, undefined, aliases);
   const centroids: Record<string, number[]> = {};
   for (const [name, ids] of Object.entries(collections)) {
     const vecs = ids.map(id => cache[id]?.vec).filter(Boolean) as number[][];
@@ -221,7 +223,8 @@ export function openGalleryMoveModal(ctx: GalleryMoveModalContext, entry: BasesE
       plugin2.saveSettings();
 
       if (itemVec && itemCategory) {
-        const postCollections = gatherVaultCollections(ctx.app, syncFolder).collections;
+        const postAliases = loadCollectionAliases(ctx.app.vault);
+        const postCollections = gatherVaultCollections(ctx.app, syncFolder, undefined, postAliases).collections;
         const sourceIds = postCollections[itemCategory] ?? [];
         const targetIds = postCollections[to] ?? [];
         const neighbors = suggestNeighbors({

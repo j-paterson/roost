@@ -1,6 +1,7 @@
 import type { App } from "obsidian";
 import type { RoostFilter, SmartAssignInput, EmbeddingCacheEntry } from "@/types/roost";
 import { gatherVaultCollections, gatherCategoryAndSubcategories, matchesFilter } from "@/lib/vault-utils";
+import { loadCollectionAliases } from "@/lib/collection-aliases";
 import { loadEmbeddingCache } from "@/pipeline/shared";
 import { aggregateSuggestedTopics } from "@/ui/lib/suggested-topics";
 
@@ -17,6 +18,7 @@ export function buildFilterInput(
   syncFolder: string,
   filter: RoostFilter,
 ): SmartAssignInput {
+  const aliases = loadCollectionAliases(app.vault);
   const files = app.vault.getMarkdownFiles().filter(f => f.path.startsWith(syncFolder + "/"));
   const itemIds: string[] = [];
   const itemProvenance = new Map<string, "human" | "auto">();
@@ -27,7 +29,7 @@ export function buildFilterInput(
     itemIds.push(fm.roost_id as string);
     itemProvenance.set(fm.roost_id as string, fm.roost_assigned_by === "human" ? "human" : "auto");
   }
-  const vault = gatherVaultCollections(app, syncFolder);
+  const vault = gatherVaultCollections(app, syncFolder, undefined, aliases);
   return {
     itemIds,
     collections: vault.collections,
@@ -51,8 +53,9 @@ export function buildResortInput(
   syncFolder: string,
   categoryName: string,
 ): SmartAssignInput {
-  const scoped = gatherCategoryAndSubcategories(app, syncFolder, categoryName);
-  const vault = gatherVaultCollections(app, syncFolder);
+  const aliases = loadCollectionAliases(app.vault);
+  const scoped = gatherCategoryAndSubcategories(app, syncFolder, categoryName, aliases);
+  const vault = gatherVaultCollections(app, syncFolder, undefined, aliases);
   const targetIdSet = new Set(scoped.itemIds);
   // Remove target items from collections so they're treated as unsorted
   // (scored against all categories) rather than as labeled anchor members.
@@ -99,7 +102,8 @@ export function buildSubcategorizeInput(
   emptySubcats: string[] = [],
   opts: BuildSubcategorizeOpts = {},
 ): SmartAssignInput {
-  const scoped = gatherCategoryAndSubcategories(app, syncFolder, categoryName);
+  const aliases = loadCollectionAliases(app.vault);
+  const scoped = gatherCategoryAndSubcategories(app, syncFolder, categoryName, aliases);
   const collections: Record<string, string[]> = { ...scoped.collections };
   for (const name of emptySubcats) {
     if (!collections[name]) collections[name] = [];
