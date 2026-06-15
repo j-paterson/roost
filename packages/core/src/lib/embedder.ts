@@ -122,3 +122,29 @@ export async function selectEmbedder(opts: SelectEmbedderOpts): Promise<Embedder
     }
   }
 }
+
+export interface ActiveEmbedding {
+  backend: "sidecar" | "ollama";
+  model: string;
+  reason: "configured-ollama" | "configured-sidecar" | "auto-sidecar" | "auto-fallback-ollama";
+  sidecarConfiguredButDown: boolean;
+}
+
+/** Describe which embedding backend WOULD be used (mirrors selectEmbedder's
+ *  branching) without constructing an Embedder. For UI/diagnostics. */
+export async function describeActiveEmbedding(
+  opts: Pick<SelectEmbedderOpts, "settings" | "probeSidecar">,
+): Promise<ActiveEmbedding> {
+  const { settings, probeSidecar } = opts;
+  if (settings.embeddingBackend === "ollama") {
+    return { backend: "ollama", model: EMBED_MODEL, reason: "configured-ollama", sidecarConfiguredButDown: false };
+  }
+  if (settings.embeddingBackend === "sidecar") {
+    const up = await probeSidecar();
+    return { backend: "sidecar", model: "fine-tuned", reason: "configured-sidecar", sidecarConfiguredButDown: !up };
+  }
+  const up = await probeSidecar();
+  return up
+    ? { backend: "sidecar", model: "fine-tuned", reason: "auto-sidecar", sidecarConfiguredButDown: false }
+    : { backend: "ollama", model: EMBED_MODEL, reason: "auto-fallback-ollama", sidecarConfiguredButDown: true };
+}
