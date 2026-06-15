@@ -1,13 +1,12 @@
 import { useEffect, useState, useCallback } from "react";
 import type { App } from "obsidian";
-import { requestUrl } from "obsidian";
 import { useTickEvery } from "@/ui/hooks/use-tick-every";
 import { deriveHubState, type HubState, type HubInputs } from "@/ui/hub/state";
 import { llmAvailable } from "@/lib/pipeline-gate";
 import { describeActiveEmbedding } from "@/lib/embedder";
 import { loadProvenance, classifyMismatch } from "@/lib/embedding-provenance";
 import { vaultBasePath } from "@/lib/vault-utils";
-import { EMBED_URL } from "@/config";
+import { probeSidecarUp } from "@/lib/sidecar-probe";
 import type { IRoostPlugin } from "@/types/plugin";
 
 function ollamaStateFromDetect(status: "available" | "unavailable" | "unknown"): HubInputs["ollamaState"] {
@@ -55,17 +54,17 @@ async function probeEmbedding(
   try {
     const active = await describeActiveEmbedding({
       settings: { embeddingBackend: plugin.settings.embeddingBackend ?? "auto" },
-      probeSidecar: async () => {
-        try {
-          const res = await requestUrl({ url: `${EMBED_URL}/api/tags`, method: "GET" });
-          return res.status === 200;
-        } catch { return false; }
-      },
+      probeSidecar: probeSidecarUp,
     });
     const vaultPath = vaultBasePath(app.vault);
     const prov = loadProvenance(app.vault);
-    const mismatch = classifyMismatch(prov, active.backend, vaultPath);
-    return { backend: active.backend, mismatch: mismatch.kind };
+    let mismatchKind = classifyMismatch(prov, active.backend, vaultPath).kind;
+    // Explicit sidecar config that's unreachable is itself a degradation, even if
+    // provenance "matches". (Do NOT trigger for auto+ollama — that's the honest default.)
+    if (active.reason === "configured-sidecar" && active.sidecarConfiguredButDown) {
+      mismatchKind = "sidecar-down";
+    }
+    return { backend: active.backend, mismatch: mismatchKind };
   } catch {
     return undefined;
   }

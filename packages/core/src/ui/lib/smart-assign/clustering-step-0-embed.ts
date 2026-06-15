@@ -1,9 +1,8 @@
-import { EMBED_URL } from "@/config";
 import type { StopSignal } from "@/types/sync";
 import { describeItems, resolveFfmpeg } from "@/pipeline/describe-items";
 import { findBinary } from "@/integrations/detect";
 import { loadEmbeddingCache, stripPreamble } from "@/pipeline/shared";
-import { requestUrl } from "obsidian";
+import { probeSidecarUp } from "@/lib/sidecar-probe";
 
 import { loadProvenance, saveProvenance, classifyMismatch } from "@/lib/embedding-provenance";
 import { vaultBasePath } from "@/lib/vault-utils";
@@ -24,12 +23,7 @@ export async function runClusteringStep0Embed(
   }
 
   const embedder = await host.plugin.createEmbedder({
-    probeSidecar: async () => {
-      try {
-        const res = await requestUrl({ url: `${EMBED_URL}/api/tags`, method: "GET" });
-        return res.status >= 200 && res.status < 300;
-      } catch { return false; }
-    },
+    probeSidecar: probeSidecarUp,
     settings: { embeddingBackend: host.plugin.settings.embeddingBackend ?? "auto" },
   });
   // Dispose any previously active embedder and stash the new one so the
@@ -40,15 +34,15 @@ export async function runClusteringStep0Embed(
   // Surface silent backend mismatches (fine-tuned sidecar down → running raw,
   // or vault moved). Active backend = embedder.name. Guarded: test vaults may
   // not have a real base path.
-  let _vaultPath = "";
-  try { _vaultPath = vaultBasePath(host.app.vault); } catch { /* test stub */ }
-  if (_vaultPath) {
-    const _mismatch = classifyMismatch(loadProvenance(host.app.vault), embedder.name as "sidecar" | "ollama", _vaultPath);
-    if (_mismatch.kind === "sidecar-down") {
+  let vaultPath = "";
+  try { vaultPath = vaultBasePath(host.app.vault); } catch { /* test stub */ }
+  if (vaultPath) {
+    const mismatch = classifyMismatch(loadProvenance(host.app.vault), embedder.name as "sidecar" | "ollama", vaultPath);
+    if (mismatch.kind === "sidecar-down") {
       host.log("⚠️ Embeddings: running RAW (Ollama base) — fine-tuned sidecar is configured but unreachable. Run 'Roost: Re-embed all' once the sidecar is back, or these vectors stay degraded.");
-    } else if (_mismatch.kind === "vault-moved") {
-      host.log(`⚠️ Embeddings: vault path changed (${_mismatch.was} → ${_mismatch.now}). Vectors may be stale; consider 'Roost: Re-embed all'.`);
-    } else if (_mismatch.kind === "upgrade-available") {
+    } else if (mismatch.kind === "vault-moved") {
+      host.log(`⚠️ Embeddings: vault path changed (${mismatch.was} → ${mismatch.now}). Vectors may be stale; consider 'Roost: Re-embed all'.`);
+    } else if (mismatch.kind === "upgrade-available") {
       host.log("ℹ️ Embeddings: fine-tuned sidecar now available — 'Roost: Re-embed all' to upgrade from the base model.");
     }
   }
@@ -71,12 +65,12 @@ export async function runClusteringStep0Embed(
   if (signal.stopped) { host.log("Smart Assign cancelled during embedding"); host.setMode("sync"); return null; }
   if (embedResult.processed > 0) {
     host.log(`Embedded ${embedResult.processed} items (${embedResult.errors} errors)`);
-    if (_vaultPath) {
+    if (vaultPath) {
       saveProvenance(host.app.vault, {
         source: embedder.name as "sidecar" | "ollama",
         model: embedder.name === "sidecar" ? "fine-tuned" : "nomic-embed-text",
         embeddedAt: new Date().toISOString(),
-        vaultPath: _vaultPath,
+        vaultPath,
       });
     }
   }
