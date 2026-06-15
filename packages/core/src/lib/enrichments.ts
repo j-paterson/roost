@@ -22,7 +22,7 @@ import type { IncompleteByCategory } from "@/sync/vault-writer";
 /** Subset of byCategory keys that have backfill commands. raw-json items
  *  need full re-sync — handled by the sync flow, not the registry. */
 export type EnrichmentId =
-  | "articleBody" | "thread" | "mediaFiles" | "playback" | "tweetBody"  // data backfills
+  | "articleBody" | "thread" | "mediaFiles" | "playback" | "tweetBody" | "transcript"  // data backfills
   | "recipe" | "place" | "mediaExtraction" | "product"        // pipelines
   | "workout" | "tutorial" | "home";
 
@@ -78,6 +78,7 @@ import { ARTICLE_BODY_ENRICHMENT } from "@/sync/article-backfill";
 import { THREAD_ENRICHMENT } from "@/sync/thread-backfill";
 import { RENDERED_TWEET_ENRICHMENT } from "@/sync/tweet-body-backfill";
 import { MEDIA_ENRICHMENT } from "@/sync/media-backfill";
+import { TRANSCRIPT_ENRICHMENT } from "@/sync/transcript-backfill";
 import { PLAYBACK_ENRICHMENT } from "@/pipeline/playback-enrichment";
 import { RECIPE_ENRICHMENT } from "@/pipeline/recipe-pipeline";
 import { PLACE_ENRICHMENT } from "@/pipeline/places-pipeline";
@@ -94,6 +95,7 @@ export const ENRICHMENTS: readonly EnrichmentDef[] = [
   THREAD_ENRICHMENT,
   RENDERED_TWEET_ENRICHMENT,
   MEDIA_ENRICHMENT,
+  TRANSCRIPT_ENRICHMENT,
   PLAYBACK_ENRICHMENT,
   RECIPE_ENRICHMENT,
   PLACE_ENRICHMENT,
