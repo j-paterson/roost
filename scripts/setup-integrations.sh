@@ -9,10 +9,13 @@
 # setting up + starting the embedding sidecar. Safe to re-run — every step is
 # skipped if it's already done.
 #
-#   --vault-root <path>   Vault root (or set ROOST_VAULT). Needed for the sidecar.
+#   --vault-root <path>   Vault root (or set ROOST_VAULT). Needed for the sidecar
+#                         and for writing the vault-search config.
 #   --skip-sidecar        Set up Ollama only (enough for most users).
 #   --skip-autostart      Set up the sidecar but don't install the auto-start
 #                         service (run it only for this session).
+#   --with-search         Build the bundled vault-search CLI and put it on your PATH.
+#                         Opt-in only; skipped by default.
 #   -h, --help            Show this help.
 #
 set -euo pipefail
@@ -20,6 +23,7 @@ set -euo pipefail
 VAULT_ROOT="${ROOST_VAULT:-}"
 SKIP_SIDECAR=0
 SKIP_AUTOSTART=0
+WITH_SEARCH=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --vault-root)
@@ -27,7 +31,8 @@ while [ $# -gt 0 ]; do
       VAULT_ROOT="$2"; shift 2 ;;
     --skip-sidecar) SKIP_SIDECAR=1; shift ;;
     --skip-autostart) SKIP_AUTOSTART=1; shift ;;
-    -h|--help) sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    --with-search) WITH_SEARCH=1; shift ;;
+    -h|--help) sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "Unknown argument: $1 (try --help)"; exit 1 ;;
   esac
 done
@@ -65,6 +70,7 @@ OLLAMA_LOG=/tmp/roost-ollama.log
 CHAT_LOG=/tmp/roost-chat-models.log
 SIDECAR_SETUP_LOG=/tmp/roost-sidecar-setup.log
 SIDECAR_LOG=/tmp/roost-sidecar.log
+SEARCH_LOG=/tmp/roost-vault-search.log
 
 # True if model "$1" is already present in `ollama list`. The NAME column shows
 # the full tag (e.g. "nomic-embed-text:latest", "llama3.2:3b"), so we match the
@@ -300,7 +306,90 @@ if [ -n "$SIDECAR_PID" ]; then
   if [ "$SIDECAR_RC" = "0" ]; then SIDECAR_STATUS="ok"; else SIDECAR_STATUS="failed"; fi
 fi
 
-# ─────────────────────────── 4. Status summary ───────────────────────────
+# ─────────────── 4. Semantic Search (vault-search) — opt-in ─────────────────
+# Builds the bundled vault-search CLI and puts it on PATH.
+# Triggered only when --with-search is passed. Idempotent: skips build if dist/
+# already exists and is newer than the source entry-point.
+SEARCH_STATUS=""
+if [ "$WITH_SEARCH" = "1" ]; then
+  say "Setting up vault-search (Semantic Search lego) → $SEARCH_LOG"
+  (
+    set +e
+    SEARCH_DIR="$SCRIPT_DIR/vault-search"
+    CLI_JS="$SEARCH_DIR/dist/src/cli.js"
+
+    if [ ! -d "$SEARCH_DIR" ]; then
+      echo "vault-search source not found at $SEARCH_DIR — deploy was not bundled correctly."
+      exit 1
+    fi
+
+    # Idempotent: skip build if dist/ exists AND is newer than src/cli.ts
+    if [ -f "$CLI_JS" ] && [ "$CLI_JS" -nt "$SEARCH_DIR/src/cli.ts" ]; then
+      echo "vault-search already built (dist is newer than source); skipping build."
+    else
+      echo "Installing vault-search dependencies…"
+      ( cd "$SEARCH_DIR" && npm install ) || { echo "npm install failed"; exit 1; }
+      echo "Building vault-search…"
+      ( cd "$SEARCH_DIR" && npm run build ) || { echo "npm run build failed"; exit 1; }
+      echo "vault-search built successfully."
+    fi
+
+    # Make the cli entry-point executable
+    chmod +x "$CLI_JS"
+
+    # Symlink the CLI onto a PATH location that Roost's findBinary detects.
+    # Try /usr/local/bin first, fall back to /opt/homebrew/bin.
+    LINK_TARGET=""
+    for bindir in /usr/local/bin /opt/homebrew/bin; do
+      if [ -w "$bindir" ]; then
+        LINK_TARGET="$bindir"
+        break
+      fi
+    done
+
+    if [ -z "$LINK_TARGET" ]; then
+      echo "Warning: neither /usr/local/bin nor /opt/homebrew/bin is writable — could not symlink vault-search."
+      echo "You can manually add it to your PATH: node $CLI_JS"
+      exit 0
+    fi
+
+    ln -sf "$CLI_JS" "$LINK_TARGET/vault-search"
+    echo "Symlinked vault-search → $LINK_TARGET/vault-search"
+
+    # Write a default .env config so vault-search runs out of the box.
+    # Config vars come from tools/vault-search/src/config.ts:
+    #   VAULT_PATH  — root of the Obsidian vault to index
+    #   DB_PATH     — where the SQLite database lives (default: <vault>/.vault-search/search.db)
+    #   OLLAMA_URL  — Ollama endpoint
+    #   EMBED_MODEL — embedding model name
+    ENV_FILE="$SEARCH_DIR/.env"
+    if [ ! -f "$ENV_FILE" ]; then
+      VAULT_PATH_VAL="${VAULT_ROOT:-$HOME/ObsidianVault}"
+      DATA_DIR="$VAULT_PATH_VAL/.roost/vault-search-data"
+      cat > "$ENV_FILE" << ENVEOF
+# vault-search runtime config — written by setup-integrations.sh --with-search
+# Edit to override defaults; re-run setup to regenerate.
+VAULT_PATH=$VAULT_PATH_VAL
+DB_PATH=$DATA_DIR/search.db
+OLLAMA_URL=http://localhost:11434
+EMBED_MODEL=nomic-embed-text
+ENVEOF
+      mkdir -p "$DATA_DIR"
+      echo "Wrote default config: $ENV_FILE"
+      echo "  VAULT_PATH=$VAULT_PATH_VAL"
+      echo "  DB_PATH=$DATA_DIR/search.db"
+    else
+      echo "Config already exists: $ENV_FILE (skipped)"
+    fi
+
+    echo "vault-search is ready. Run 'vault-search --help' to verify."
+    exit 0
+  ) >"$SEARCH_LOG" 2>&1
+  SEARCH_RC=$?
+  if [ "$SEARCH_RC" = "0" ]; then SEARCH_STATUS="ok"; else SEARCH_STATUS="failed"; fi
+fi
+
+# ─────────────────────────── 5. Status summary ───────────────────────────
 say "Setup summary"
 
 # Ollama / embeddings
@@ -339,10 +428,25 @@ else
   warn "Sidecar not set up — $SIDECAR_SKIP_REASON"
 fi
 
+# Semantic Search
+if [ "$WITH_SEARCH" = "1" ]; then
+  if [ "$SEARCH_STATUS" = "ok" ]; then
+    ok "vault-search CLI built and linked (see $SEARCH_LOG)"
+  else
+    warn "vault-search setup failed (see $SEARCH_LOG)"
+  fi
+fi
+
 say "Done. Reopen Roost's settings — Integrations should show Ollama (and the sidecar) as detected."
 echo "  • Logs:  $OLLAMA_LOG   $CHAT_LOG   $SIDECAR_SETUP_LOG   $SIDECAR_LOG"
+if [ "$WITH_SEARCH" = "1" ]; then
+  echo "  • vault-search log: $SEARCH_LOG"
+fi
 if [ "$SIDECAR_REQUESTED" = "1" ] && [ "$SKIP_AUTOSTART" != "1" ]; then
   echo "  • The sidecar auto-starts at login (LaunchAgent/systemd). Remove it with scripts/uninstall-sidecar-service.sh, or re-run with --skip-autostart to set it up session-only."
 else
   echo "  • Auto-start NOT installed. Run scripts/install-sidecar-service.sh --vault-root <path> to keep the sidecar running after a reboot (uninstall with scripts/uninstall-sidecar-service.sh)."
+fi
+if [ "$WITH_SEARCH" = "0" ]; then
+  echo "  • Semantic Search (vault-search) not set up. Re-run with --with-search to build and link it."
 fi

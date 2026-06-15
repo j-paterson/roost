@@ -1,0 +1,36 @@
+services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: vault-search-ollama
+    restart: unless-stopped
+    volumes:
+      - ollama-data:/root/.ollama
+    # No ports exposed — only accessed by vault-search internally
+
+  vault-search:
+    build: .
+    container_name: vault-search-mcp
+    restart: unless-stopped
+    ports:
+      - "${MCP_HOST_PORT:-3099}:3000"
+    volumes:
+      - ${VAULT_HOST_PATH}:/vault:ro
+      - ${DATA_HOST_PATH}:/data
+    environment:
+      - MCP_TRANSPORT=http
+      - MCP_PORT=3000
+      - VAULT_PATH=/vault
+      - DB_PATH=/data/search.db
+      - OLLAMA_URL=http://ollama:11434
+      - EMBED_MODEL=nomic-embed-text
+      - MCP_AUTH_TOKEN=${MCP_AUTH_TOKEN}
+      - MCP_ALLOWED_HOSTS=${MCP_ALLOWED_HOSTS:-}
+      - MCP_OAUTH_ISSUER=${MCP_OAUTH_ISSUER:-}
+      # OAuth token store persists to the /data volume so tokens survive
+      # container restarts (otherwise Claude has to re-authorize every restart).
+      - OAUTH_STORE_PATH=/data/oauth-store.json
+    depends_on:
+      - ollama
+
+volumes:
+  ollama-data:
