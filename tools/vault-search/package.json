@@ -1,0 +1,36 @@
+{
+  "name": "vault-search",
+  "version": "1.0.0",
+  "main": "dist/src/cli.js",
+  "bin": {
+    "vault-search": "dist/src/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "search": "node dist/src/cli.js search",
+    "index": "node dist/src/cli.js index",
+    "stats": "node dist/src/cli.js stats",
+    "mcp": "node dist/mcp/server.js",
+    "eval": "node dist/src/eval-cli.js",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "description": "Hybrid semantic + keyword search over Obsidian vaults",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.85.0",
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "better-sqlite3": "^12.8.0",
+    "sqlite-vec": "^0.1.9",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/express": "^5.0.6",
+    "@types/node": "^25.5.2",
+    "@types/supertest": "^7.2.0",
+    "@vitest/coverage-v8": "^4.1.5",
+    "supertest": "^7.2.2",
+    "typescript": "^6.0.2",
+    "vitest": "^4.1.5"
+  }
+}
