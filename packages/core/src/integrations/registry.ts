@@ -70,7 +70,7 @@ export const INTEGRATIONS: Integration[] = [
     detect: async (ctx) =>
       ctx.resolveBinary("vault-search") ? "available" : "unavailable",
     setup: {
-      instructions: "Install the vault-search CLI and ensure `vault-search` is on your PATH.",
+      instructions: "Bundled with Roost. Run `scripts/setup-integrations.sh --with-search` (from the plugin's scripts dir) to build it and put `vault-search` on your PATH.",
     },
   },
 ];

@@ -49,7 +49,7 @@ not:
 | **Ollama** (`localhost:11434`) | Embeddings + LLM rerank for Smart Assign | Run Ollama yourself; `ollama pull nomic-embed-text` + a chat model |
 | **Embedding sidecar** (`localhost:11435`) | Fine-tuned embeddings | Run the bundled `scripts/embed-sidecar.py` |
 | **ffmpeg** | Video-frame vision in embeddings | `ffmpeg`/`ffprobe` on your PATH |
-| **vault-search** | Semantic vault-search command | The `vault-search` CLI on your PATH |
+| **vault-search** (Semantic Search) | Semantic vault-search command | Bundled — build with `setup-integrations.sh --with-search` |
 
 With no integrations enabled, sync and the gallery/library views work fully;
 Smart Assign is disabled until an embedding backend (Ollama or the sidecar) is
@@ -91,6 +91,18 @@ cd <your-vault>/.obsidian/plugins/roost/scripts
 
 On macOS this also installs a login-item LaunchAgent that auto-starts the sidecar
 (remove it with `./uninstall-sidecar-service.sh`, or skip it with `--skip-autostart`).
+
+### Semantic Search — vault-search (optional)
+
+The **Semantic Search** lego (`vault-search`) is bundled with Roost. To build it
+and put the `vault-search` CLI on your PATH, pass `--with-search`:
+
+```bash
+./setup-integrations.sh --vault-root <your-vault> --with-search
+```
+
+This compiles the TypeScript source and symlinks `vault-search` onto your PATH
+so Roost's Integrations panel detects it automatically.
 
 ## Running backfills and pipelines
 
