@@ -15,6 +15,7 @@ import { getIntegration } from "@/integrations/registry";
 import { DEV_COMMANDS_ENABLED } from "@/config";
 import { isPipelineEnrichmentId } from "@/lib/enrichments";
 import { guardPipelineActive } from "@/lib/pipeline-gate-plugin";
+import { loadEmbeddingCache, saveEmbeddingCache } from "@/pipeline/shared";
 // @ts-ignore — raw probe loaded as string by esbuild plugin
 import twitterProbeSource from "@/probes/twitter-probe.probe";
 
@@ -63,6 +64,19 @@ export function registerRoostCommands(plugin: RoostCommandHost): void {
     id: "open-hub",
     name: "Open Roost Hub",
     callback: () => { void plugin.activateHubLeaf(); },
+  });
+  plugin.addCommand({
+    id: "reembed-all",
+    name: "Re-embed all bookmarks (refresh vectors)",
+    callback: () => {
+      const cache = loadEmbeddingCache(plugin.app.vault);
+      let cleared = 0;
+      for (const k of Object.keys(cache)) {
+        if (cache[k].vec) { cache[k].vec = null; cleared++; }
+      }
+      saveEmbeddingCache(plugin.app.vault, cache);
+      new Notice(`Cleared ${cleared} cached vectors. Run Smart Assign to re-embed with the current backend.`);
+    },
   });
 
   for (const def of ENRICHMENTS) {
