@@ -95,8 +95,10 @@ Note: at planning time the working tree had uncommitted changes to
 | 047  | Single "Backfill all" + "Run pipelines" hub buttons | P2 | S | 040 | MERGED → main @ 17b369e |
 | 048  | Stop over-flagging twitter media + migrate legacy singles (media.jpg→1.jpg) | P1 | M | — | MERGED → main @ d26cbc0 |
 | 049  | Surface category-pipeline logs in the hub log panel | P2 | XS | 047 | MERGED → main @ 718d7ef |
+| 050  | Refresh plans index, README, ARCHITECTURE for plans 033–049 | P3 | S | — | MERGED → main @ 30a5f78 |
+| 051  | Keep the gallery interactive during bulk writes + heavy jobs (drop `pointer-events:none`) | P2 | XS | 041 | MERGED → main @ 8959d97 |
 
-> **041–049 were shipped as inline-spec dispatches** (no standalone `plans/0NN-*.md`
+> **041–051 were shipped as inline-spec dispatches** (no standalone `plans/0NN-*.md`
 > files — the spec lived in the dispatch, not the archive). The refs above are the
 > merge commits on `main`; the descriptions are the one-liners from those commits.
 
