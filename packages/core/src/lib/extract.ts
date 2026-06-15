@@ -226,6 +226,7 @@ export function extractTwitterMedia(record: BookmarkRecord): {
   cardMeta: { title: string | null; description: string | null; thumbnail: string | null } | null;
   quotedTweet: { author: string; text: string; photoUrl: string | null } | null;
   replyTo: string | null;
+  folder: string | null;
 } {
   const raw = getBookmarkRawData(record);
   const tweet = roostUnwrapTweet(raw) || raw;
@@ -299,7 +300,10 @@ export function extractTwitterMedia(record: BookmarkRecord): {
   // Reply
   const replyTo = tweet?.legacy?.in_reply_to_screen_name || null;
 
-  return { photos, videoUrl, videoPosterUrl, cardMeta, quotedTweet, replyTo };
+  // Bookmark folder (set by Twitter probe when bookmark belongs to a folder)
+  const folder = (typeof raw?._bookmark_folder === "string" && raw._bookmark_folder) ? raw._bookmark_folder : null;
+
+  return { photos, videoUrl, videoPosterUrl, cardMeta, quotedTweet, replyTo, folder };
 }
 
 // TikTok-specific: extract images, video, sound, stats
