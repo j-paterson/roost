@@ -29,6 +29,8 @@
     xhrCalls: 0,
     recentFetchUrls: [],
     lastError: null,
+    bookmarkFolders: {},   // folder id → name map, populated when folder list op fires
+    bookmarkFolderOrder: [], // ordered list of folder names seen
   };
 
   if (store.installed) return;
@@ -41,6 +43,13 @@
   const TWEET_DETAIL_RE = /\/i\/api\/graphql\/.+\/TweetDetail(?:\?|$)/;
   const TWEET_RESULT_BY_REST_ID_RE = /\/i\/api\/graphql\/.+\/TweetResultByRestId(?:\?|$)/;
   const REPLAY_TTL_MS = 30 * 60 * 1000;
+
+  // ── Bookmark folder interception ─────────────────────────────────────────────
+  // NEEDS LIVE VERIFICATION: these regex patterns assume the op names
+  // "BookmarkFolders" and "BookmarkFolderTimeline". Verify via
+  // store.observedOperations in a live session with bookmark folders enabled.
+  const BOOKMARK_FOLDERS_LIST_RE = /\/i\/api\/graphql\/.+\/BookmarkFolders(?:\?|$)/;
+  const BOOKMARK_FOLDER_TIMELINE_RE = /\/i\/api\/graphql\/.+\/BookmarkFolderTimeline(?:\?|$)/;
 
   function operationName(url) {
     // Try absolute parse first — safe even when location.origin is "null"
@@ -221,33 +230,98 @@
 
     walkAndCache(data);
 
-    if (!BOOKMARK_TIMELINE_RE.test(url)) return;
+    if (BOOKMARK_TIMELINE_RE.test(url)) {
+      const instructions = data?.data?.bookmark_timeline_v2?.timeline?.instructions || [];
+      const tweets = tweetsFromInstructions(instructions);
 
-    const instructions = data?.data?.bookmark_timeline_v2?.timeline?.instructions || [];
-    const tweets = tweetsFromInstructions(instructions);
+      store.ready = true;
+      store.matchedUrls++;
+      const newTweets = [];
+      for (const tw of tweets) {
+        store.tweetCache[tw.rest_id] = tw;
+        if (!store.seenTweetIds[tw.rest_id]) {
+          store.seenTweetIds[tw.rest_id] = true;
+          store.bookmarkOrder.push(tw.rest_id);
+          newTweets.push(tw);
+        }
+      }
+      // Stream new tweets to panel
+      if (newTweets.length > 0) {
+        window.postMessage({
+          type: "ROOST_TWITTER_ITEMS",
+          items: newTweets,
+          total: store.bookmarkOrder.length,
+        }, "*");
+      }
+      store.events.unshift({ timestamp: new Date().toISOString(), method, status, tweets: tweets.length });
+      if (store.events.length > 20) store.events.length = 20;
+      store.lastError = null;
+    }
 
-    store.ready = true;
-    store.matchedUrls++;
-    const newTweets = [];
-    for (const tw of tweets) {
-      store.tweetCache[tw.rest_id] = tw;
-      if (!store.seenTweetIds[tw.rest_id]) {
-        store.seenTweetIds[tw.rest_id] = true;
-        store.bookmarkOrder.push(tw.rest_id);
-        newTweets.push(tw);
+    // ── Handle folder list response ───────────────────────────────────────────
+    // NEEDS LIVE VERIFICATION: response shape assumed from Twitter GraphQL patterns.
+    // The actual path to folder data in the JSON may differ.
+    // To verify: window.__TWITTER_BOOKMARK_SPIKE__.observedOperations in live session.
+    if (BOOKMARK_FOLDERS_LIST_RE.test(url)) {
+      try {
+        // Inferred path — VERIFY AGAINST LIVE RESPONSE.
+        // Twitter may return folder list as timeline instructions or as a flat array.
+        const folders =
+          data?.data?.bookmark_folder_timeline?.timeline?.instructions?.[0]?.entries ||
+          data?.data?.bookmark_folders || [];
+        for (const entry of folders) {
+          // VERIFY: actual field names for folder id and name in the live response
+          const folderId = entry?.content?.itemContent?.bookmark_collection_results?.result?.rest_id
+            || entry?.rest_id || entry?.id;
+          const folderName = entry?.content?.itemContent?.bookmark_collection_results?.result?.name
+            || entry?.name || entry?.title;
+          if (folderId && folderName) {
+            store.bookmarkFolders[folderId] = folderName;
+            if (!store.bookmarkFolderOrder.includes(folderName)) {
+              store.bookmarkFolderOrder.push(folderName);
+            }
+          }
+        }
+      } catch (e) {
+        console.warn("[Roost Twitter] Folder list parse error:", e);
       }
     }
-    // Stream new tweets to panel
-    if (newTweets.length > 0) {
-      window.postMessage({
-        type: "ROOST_TWITTER_ITEMS",
-        items: newTweets,
-        total: store.bookmarkOrder.length,
-      }, "*");
+
+    // ── Handle per-folder timeline response ──────────────────────────────────
+    // When the user navigates to a specific folder, Twitter fires a separate
+    // timeline GraphQL request with the folder id in variables.
+    // NEEDS LIVE VERIFICATION: variable name may differ from assumed "bookmark_collection_id".
+    if (BOOKMARK_FOLDER_TIMELINE_RE.test(url)) {
+      try {
+        let folderName = null;
+        try {
+          const urlObj = new URL(url, location.origin);
+          const vars = JSON.parse(urlObj.searchParams.get("variables") || "{}");
+          // NEEDS LIVE VERIFICATION: actual variable name for folder id
+          const folderId = vars?.bookmark_collection_id || vars?.bookmarkCollectionId || vars?.folder_id;
+          if (folderId && store.bookmarkFolders[folderId]) {
+            folderName = store.bookmarkFolders[folderId];
+          }
+        } catch {}
+
+        if (folderName) {
+          // Tag all tweets from this folder's timeline response
+          const instructions = data?.data?.bookmark_folder_timeline?.timeline?.instructions
+            || data?.data?.bookmark_timeline_v2?.timeline?.instructions || [];
+          const folderTweets = tweetsFromInstructions(instructions);
+          for (const tw of folderTweets) {
+            if (tw?.rest_id) {
+              tw._bookmark_folder = folderName;
+              if (store.tweetCache[tw.rest_id]) {
+                store.tweetCache[tw.rest_id]._bookmark_folder = folderName;
+              }
+            }
+          }
+        }
+      } catch (e) {
+        console.warn("[Roost Twitter] Folder timeline parse error:", e);
+      }
     }
-    store.events.unshift({ timestamp: new Date().toISOString(), method, status, tweets: tweets.length });
-    if (store.events.length > 20) store.events.length = 20;
-    store.lastError = null;
   }
 
   // ── Bookmark mutation handling ────────────────────────────
