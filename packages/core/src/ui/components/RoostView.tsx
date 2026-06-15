@@ -22,6 +22,7 @@ import { buildFilterInput } from "@/ui/lib/smart-assign-inputs";
 import { getPipelineCategoryNames } from "@/lib/enrichments";
 import { isCategoryPipelineActive } from "@/lib/pipeline-gate-plugin";
 import { embeddingBackendAvailable } from "@/ui/lib/smart-assign/embedding-available";
+import { showLibraryNav } from "@/ui/lib/show-library-nav";
 import { getIntegration } from "@/integrations/registry";
 import type { IRoostPlugin } from "@/types/plugin";
 import type { ItemClickData } from "@/types/roost";
@@ -185,6 +186,8 @@ export function RoostView({ app, plugin }: RoostViewProps) {
     ],
   );
 
+  const showNav = showLibraryNav(smartAssign.mode, smartAssign.proposal != null);
+
   return (
     <div className="h-full flex flex-col bg-background text-foreground text-sm">
       <div className="shrink-0 border-b border-border">
@@ -249,13 +252,13 @@ export function RoostView({ app, plugin }: RoostViewProps) {
         );
       })()}
 
-      {smartAssign.mode === "sync" && pluginMode === "explorer" && explorerPaths.length > 0 ? (
+      {showNav && pluginMode === "explorer" && explorerPaths.length > 0 ? (
         <ExplorerTree
           folders={buildFolderTreeSimple(explorerPaths)}
           activeFolder={activeFilter?.folder ?? null}
           onFilter={applyFilter}
         />
-      ) : smartAssign.mode === "sync" ? (
+      ) : showNav ? (
         <LibraryTree
           total={libraryTree.total}
           unsorted={libraryTree.unsorted}
