@@ -63,6 +63,91 @@ _stats = {"requests": 0, "items": 0, "total_ms": 0.0, "errors": 0}
 
 log = logging.getLogger("embed-sidecar")
 
+# --- ASR (speech-to-text) ---------------------------------------------------
+# Lazy faster-whisper integration. The imports below MUST stay inside the
+# functions so embedding-only users who haven't installed faster-whisper can
+# still import and run this sidecar.
+_asr_model = None
+_asr_available_cache = None
+
+
+def asr_available():
+    global _asr_available_cache
+    if _asr_available_cache is None:
+        try:
+            import faster_whisper  # noqa: F401
+            _asr_available_cache = True
+        except Exception:
+            _asr_available_cache = False
+    return _asr_available_cache
+
+
+def get_asr_model():
+    global _asr_model
+    if _asr_model is None:
+        from faster_whisper import WhisperModel
+        _asr_model = WhisperModel("base", device="cpu", compute_type="int8")
+        log.info("ASR model loaded (faster-whisper base int8)")
+    return _asr_model
+
+
+def _decode_audio_16k_mono(path):
+    import av
+    import numpy as np
+    container = av.open(path)
+    stream = next(s for s in container.streams if s.type == "audio")
+    resampler = av.AudioResampler(format="s16", layout="mono", rate=16000)
+    chunks = []
+
+    def emit(frames):
+        if frames is None:
+            return
+        if not isinstance(frames, list):
+            frames = [frames]
+        for fr in frames:
+            if fr is not None:
+                chunks.append(fr.to_ndarray().reshape(-1))
+
+    for frame in container.decode(stream):
+        emit(resampler.resample(frame))
+    emit(resampler.resample(None))
+    container.close()
+    if not chunks:
+        return np.zeros(0, dtype=np.float32)
+    return np.concatenate(chunks).astype(np.float32) / 32768.0
+
+
+def _fmt_ts(seconds):
+    h = int(seconds // 3600)
+    m = int((seconds % 3600) // 60)
+    s = seconds % 60
+    return f"{h:02d}:{m:02d}:{s:06.3f}"
+
+
+def transcribe_file(path):
+    """Transcribe a local media file. Returns the /transcribe response dict."""
+    audio = _decode_audio_16k_mono(path)
+    duration = len(audio) / 16000.0
+    model = get_asr_model()
+    segments, info = model.transcribe(audio, beam_size=1, vad_filter=True)
+    cues = []
+    parts = []
+    for seg in segments:  # generator — iterating does the work
+        txt = seg.text.strip()
+        if not txt:
+            continue
+        cues.append(f"{_fmt_ts(seg.start)} --> {_fmt_ts(seg.end)}\n{txt}")
+        parts.append(txt)
+    text = " ".join(parts).strip()
+    vtt = "WEBVTT\n\n" + "\n\n".join(cues) + ("\n" if cues else "")
+    return {
+        "text": text,
+        "vtt": vtt,
+        "no_speech": len(text) == 0,
+        "language": getattr(info, "language", "") or "",
+        "duration": duration,
+    }
+
 
 def load_model(model_path: Path, max_seq: int):
     """Load sentence-transformer. Trusts remote code (nomic has a custom class)."""
@@ -119,12 +204,42 @@ class EmbedHandler(BaseHTTPRequestHandler):
             self._json(200, {
                 "status": "ok",
                 "model_loaded": _model is not None,
+                "asr_available": asr_available(),
                 "stats": _stats,
             })
             return
         self._json(404, {"error": "not found"})
 
+    def _handle_transcribe(self):
+        if not asr_available():
+            self._json(503, {"error": "faster-whisper not installed in the sidecar venv"})
+            return
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+            raw = self.rfile.read(length) if length else b""
+            req = json.loads(raw) if raw else {}
+        except Exception as e:
+            self._json(400, {"error": f"bad json: {e}"})
+            return
+        path = req.get("path")
+        if not path or not isinstance(path, str):
+            self._json(400, {"error": "missing 'path'"})
+            return
+        if not os.path.isfile(path):
+            self._json(400, {"error": f"file not found: {path}"})
+            return
+        try:
+            result = transcribe_file(path)
+        except Exception as e:
+            log.exception("transcribe failed")
+            self._json(500, {"error": f"transcribe: {e}"})
+            return
+        self._json(200, result)
+
     def do_POST(self):
+        if self.path == "/transcribe":
+            self._handle_transcribe()
+            return
         if self.path not in ("/api/embed", "/api/embeddings"):
             self._json(404, {"error": f"unknown path {self.path}"})
             return
@@ -217,6 +332,7 @@ def main():
     server = HTTPServer((args.host, args.port), EmbedHandler)
     log.info(f"Serving on http://{args.host}:{args.port}")
     log.info(f"  POST /api/embed        Ollama-compatible batched embed")
+    log.info(f"  POST /transcribe       Speech-to-text (faster-whisper, if installed)")
     log.info(f"  GET  /health           Health + request stats")
     log.info(f"  Ctrl-C to stop")
     try:
