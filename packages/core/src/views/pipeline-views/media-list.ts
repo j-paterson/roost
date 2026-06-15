@@ -156,7 +156,6 @@ const mediaListView: PipelineGalleryView = {
   mode: "substitute",
   render(container, ctx: GalleryRenderContext) {
     container.empty();
-    container.addClass("roost-media-list-host");
 
     // The table takes the full pipeline-view container width. The right-side
     // detail preview is handled by the gallery's feed pane (ctx.setFeedActive).
@@ -174,13 +173,9 @@ const mediaListView: PipelineGalleryView = {
       return {
         dispose: () => {
           stopAllInlinePlayers();
-          // Remove ONLY our own root: dispatch() disposes after the standard
-          // grid has reconciled cards into this container, so a
-          // container.empty() here would delete them. (The old "next render
-          // empties the container" contract died when grid renders became
-          // reconciling — gallery-grid-render.ts.)
+          // Host owns the wrapper (PipelineGalleryHost.substituteContainer) and
+          // removes it on teardown; wrap.remove() is belt-and-suspenders.
           wrap.remove();
-          container.removeClass("roost-media-list-host");
         },
       };
     }
@@ -284,13 +279,9 @@ const mediaListView: PipelineGalleryView = {
     return {
       dispose: () => {
         stopAllInlinePlayers();
-        // Remove ONLY our own root: dispatch() disposes after the standard
-        // grid has reconciled cards into this container, so a
-        // container.empty() here would delete them. (The old "next render
-        // empties the container" contract died when grid renders became
-        // reconciling — gallery-grid-render.ts.)
+        // Host owns the wrapper (PipelineGalleryHost.substituteContainer) and
+        // removes it on teardown; wrap.remove() is belt-and-suspenders.
         wrap.remove();
-        container.removeClass("roost-media-list-host");
       },
     };
   },
