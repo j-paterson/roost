@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { gatherCategoryAndSubcategories } from "../vault-utils";
+import { gatherVaultCollections, gatherCategoryAndSubcategories } from "../vault-utils";
+import type { CollectionAliasMap } from "../collection-aliases";
 import type { App, TFile } from "obsidian";
 
 type Fm = { roost_id?: string; roost_category?: string; roost_subcategory?: string; platform?: string; collection?: string; roost_assigned_by?: string };
@@ -90,5 +91,39 @@ describe("gatherCategoryAndSubcategories", () => {
     expect(result.itemProvenance.get("a")).toBe("auto");
     expect(result.itemProvenance.get("b")).toBe("human");
     expect(result.itemProvenance.get("c")).toBe("auto");
+  });
+});
+
+describe("gatherVaultCollections with alias map", () => {
+  it("resolves collection → local category via alias when roost_category absent", () => {
+    const app = mkApp([
+      { path: "roost/a.md", fm: { roost_id: "a", platform: "tiktok", collection: "Finance Tips" } },
+      { path: "roost/b.md", fm: { roost_id: "b", roost_category: "Finances" } },
+    ]);
+    const aliases: CollectionAliasMap = { "tiktok:Finance Tips": "Finances" };
+    const result = gatherVaultCollections(app, "roost", undefined, aliases);
+    expect(result.itemCollections.get("a")).toBe("Finances");
+    expect(result.collections["Finances"]).toContain("a");
+    expect(result.collections["Finances"]).toContain("b");
+    expect(result.collections["Finance Tips"]).toBeUndefined();
+  });
+  it("falls back to raw collection name when no alias and no roost_category", () => {
+    const app = mkApp([
+      { path: "roost/a.md", fm: { roost_id: "a", platform: "tiktok", collection: "Recipes" } },
+    ]);
+    const result = gatherVaultCollections(app, "roost", undefined, {});
+    expect(result.itemCollections.get("a")).toBe("Recipes");
+  });
+});
+
+describe("gatherCategoryAndSubcategories with alias map", () => {
+  it("includes alias-resolved items in the target category", () => {
+    const app = mkApp([
+      { path: "roost/a.md", fm: { roost_id: "a", collection: "Finance Tips" } },
+      { path: "roost/b.md", fm: { roost_id: "b", roost_category: "Finances" } },
+    ]);
+    const aliases: CollectionAliasMap = { "tiktok:Finance Tips": "Finances" };
+    const result = gatherCategoryAndSubcategories(app, "roost", "Finances", aliases);
+    expect(result.itemIds.sort()).toEqual(["a", "b"]);
   });
 });
