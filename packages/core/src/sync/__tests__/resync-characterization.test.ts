@@ -386,3 +386,39 @@ describe("VaultWriter.resyncRecord — threaded Twitter record (via writeBatch t
     expect(note).toContain('cover: "[[Bookmarks/X/twitter-888/1.jpg]]"');
   });
 });
+
+// ── Suite D — roost_category / roost_assigned_by preservation on TikTok resync ─
+
+describe("VaultWriter.resyncRecord — TikTok user-assigned category preserved", () => {
+  it("CHARACTERIZATION: resync does not clobber roost_category or roost_assigned_by", async () => {
+    const { vault, files } = makeBinaryVault();
+
+    // First write seeds the note.
+    const w1 = new VaultWriter({ vault: vault as any, syncFolder: "Bookmarks", onLog: () => {} });
+    await w1.writeBatch([makeTikTokResyncRecord()]);
+
+    const notePath = [...files.keys()].find(
+      p => p.startsWith("Bookmarks/TikTok/") && p.endsWith(".md"),
+    );
+    expect(notePath).toBeDefined();
+
+    // Simulate post-rename curation: inject the user-assigned fields into the
+    // seeded note's frontmatter (just after the opening fence).
+    const original = files.get(notePath!)!;
+    const patched = original.replace(
+      /^---\n/,
+      "---\nroost_category: Finances\nroost_assigned_by: human\n",
+    );
+    expect(patched).not.toBe(original); // sanity: the fence was found + replaced
+    files.set(notePath!, patched);
+
+    // Resync.
+    const w2 = new VaultWriter({ vault: vault as any, syncFolder: "Bookmarks", onLog: () => {} });
+    await w2.writeBatch([makeTikTokResyncRecord()]);
+
+    const note = files.get(notePath!)!;
+    // Resync refreshes title/url/cover/stats only — the curated fields survive.
+    expect(note).toContain("roost_category: Finances");
+    expect(note).toContain("roost_assigned_by: human");
+  });
+});
