@@ -32,6 +32,11 @@ const copies = [
   [path.join(repoRoot, "manifest.json"),                path.join(pluginDir, "manifest.json")],
   [path.join(repoRoot, "scripts", "embed-sidecar.py"),  path.join(pluginScriptsDir, "embed-sidecar.py")],
   [path.join(repoRoot, "scripts", "requirements.txt"),  path.join(pluginScriptsDir, "requirements.txt")],
+  [path.join(repoRoot, "scripts", "setup-integrations.sh"),          path.join(pluginScriptsDir, "setup-integrations.sh")],
+  [path.join(repoRoot, "scripts", "sidecar-launcher.sh"),            path.join(pluginScriptsDir, "sidecar-launcher.sh")],
+  [path.join(repoRoot, "scripts", "RoostSidecar.Info.plist"),        path.join(pluginScriptsDir, "RoostSidecar.Info.plist")],
+  [path.join(repoRoot, "scripts", "install-sidecar-service.sh"),     path.join(pluginScriptsDir, "install-sidecar-service.sh")],
+  [path.join(repoRoot, "scripts", "uninstall-sidecar-service.sh"),   path.join(pluginScriptsDir, "uninstall-sidecar-service.sh")],
 ];
 
 for (const [src, dest] of copies) {
@@ -41,6 +46,11 @@ for (const [src, dest] of copies) {
   }
   fs.copyFileSync(src, dest);
   console.log(`  copied  ${path.relative(repoRoot, src)}  →  ${dest}`);
+}
+
+// Ensure the shell scripts are executable in the plugin dir.
+for (const name of ["setup-integrations.sh", "sidecar-launcher.sh", "install-sidecar-service.sh", "uninstall-sidecar-service.sh"]) {
+  try { fs.chmodSync(path.join(pluginScriptsDir, name), 0o755); } catch { /* best-effort */ }
 }
 
 console.log(`\nRoost deployed to ${pluginDir}`);
