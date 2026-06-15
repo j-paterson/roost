@@ -48,3 +48,12 @@ scripts/__pycache__/
 tests/eval/*-results.json
 tests/eval/*-results-highfloor.json
 tests/eval/results-after-blended.json
+
+# Vendored vault-search tool — built artifacts and deps never committed
+tools/vault-search/node_modules/
+tools/vault-search/dist/
+# Exceptions for the vendored vault-search tool — .env.example is a template (not secret);
+# tools/vault-search/docs/ is the vendor's own documentation, not internal planning docs.
+!tools/vault-search/.env.example
+!tools/vault-search/docs/
+!tools/vault-search/docs/**
