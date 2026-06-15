@@ -5,11 +5,12 @@ import { PipelinesPanel } from "@/ui/hub/pipelines-panel";
 import { buildPipelineRows } from "@/ui/hub/pipeline-rows";
 
 // PipelineFlags is Record<PipelineId, boolean>, which also includes the
-// enrichment ids (playback/articleBody/thread/mediaFiles) — present here only
-// to satisfy the type; the panel renders just the 7 pipeline rows.
+// enrichment ids (playback/articleBody/thread/mediaFiles/tweetBody/transcript)
+// — present here only to satisfy the type; the panel renders just the 7
+// pipeline rows.
 const allOn = {
   recipe: true, place: true, mediaExtraction: true, product: true, workout: true, tutorial: true, home: true,
-  playback: true, articleBody: true, thread: true, mediaFiles: true, tweetBody: true,
+  playback: true, articleBody: true, thread: true, mediaFiles: true, tweetBody: true, transcript: true,
 };
 afterEach(cleanup);
 
