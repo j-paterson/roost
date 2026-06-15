@@ -95,3 +95,13 @@ export function getPipelineGalleryView(filter: RoostFilter | null | undefined): 
 export function isPipelineSubstituteView(filter: RoostFilter | null | undefined): boolean {
   return getPipelineGalleryView(filter)?.mode === "substitute";
 }
+
+/**
+ * TEST ONLY — clears the pipeline gallery view registry between test cases.
+ * Never call from production code.
+ */
+export function _testOnlyResetRegistry(): void {
+  for (const key of Object.keys(REGISTRY)) {
+    delete REGISTRY[key];
+  }
+}
