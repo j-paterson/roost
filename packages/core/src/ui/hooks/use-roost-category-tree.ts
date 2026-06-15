@@ -270,14 +270,17 @@ export function useRoostCategoryTree(deps: RoostCategoryTreeDeps) {
         // Alias capture: record source-collection → newName so future imports
         // from those TikTok collections resolve to the curated name at read
         // time (prevents the renamed category from reappearing on reimport).
-        const renamedFiles = getSyncFiles(app.vault, plugin.settings.syncFolder);
+        // Iterate the files we just reassigned (fileByKey) rather than
+        // re-scanning on roost_category — that field is the one the rename
+        // just wrote, and metadataCache updates async, so a fresh scan could
+        // race. collection/platform are untouched by the rename, so reading
+        // them from cache here is freshness-safe.
         const aliasMap = loadCollectionAliases(app.vault);
         let aliasChanged = false;
-        for (const file of renamedFiles) {
+        for (const file of fileByKey.values()) {
           const fm = app.metadataCache.getFileCache(file)?.frontmatter;
-          if (fm?.[CATEGORY_FIELD] !== newName) continue;
-          const col = fm.collection as string | undefined;
-          const plat = (fm.platform as string | undefined) ?? "tiktok";
+          const col = fm?.collection as string | undefined;
+          const plat = (fm?.platform as string | undefined) ?? "tiktok";
           if (!col || col === "undefined" || col === "null") continue;
           const key = makeAliasKey(plat, col);
           if (aliasMap[key] !== newName) {
