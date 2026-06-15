@@ -9,6 +9,8 @@ function noteDirPath(filePath: string): string {
   return filePath.replace(/\/[^/]+\.md$/, "");
 }
 
+export interface QuarantinedFile { original: string; quarantined: string; }
+
 interface MediaDownloaderOpts {
   vault: Vault;
   log: (msg: string) => void;
@@ -37,14 +39,55 @@ export class MediaDownloader {
     this.stopSignal = signal;
   }
 
-  async clearLegacyCarousel(attachFolder: string): Promise<void> {
+  /** Rename (NOT delete) the legacy numbered carousel + card.png to `.roostbak`
+   *  siblings so the new thread carousel can own the N.jpg/N.png names without
+   *  destroying the old copies. Returns the renamed files so the caller can
+   *  drop them (on a confirmed successful render) or restore them (on failure).
+   *  The `.roostbak` suffix dodges the media globs and the `^\d+\.(jpg|png)$`
+   *  carousel predicate, so quarantined files are inert. */
+  async quarantineLegacyCarousel(attachFolder: string): Promise<QuarantinedFile[]> {
     const folder = this.vault.getAbstractFileByPath(attachFolder);
-    if (!(folder instanceof TFolder)) return;
+    if (!(folder instanceof TFolder)) return [];
     const victims = folder.children.filter(c =>
       c instanceof TFile && (/^\d+\.(jpg|png)$/.test(c.name) || c.name === "card.png")
-    );
+    ) as TFile[];
+    const out: QuarantinedFile[] = [];
     for (const v of victims) {
-      try { await this.vault.delete(v); } catch { /* ignore */ }
+      const original = v.path;
+      const quarantined = `${original}.roostbak`;
+      try {
+        // If a stale .roostbak exists from a prior interrupted run, remove it first.
+        const stale = this.vault.getAbstractFileByPath(quarantined);
+        if (stale) { try { await this.vault.delete(stale); } catch { /* ignore */ } }
+        await this.vault.rename(v, quarantined);
+        out.push({ original, quarantined });
+      } catch { /* best-effort; skip this file */ }
+    }
+    return out;
+  }
+
+  /** Restore quarantined files to their original names (render failed — keep the
+   *  old copy). */
+  async restoreQuarantine(items: QuarantinedFile[]): Promise<void> {
+    for (const it of items) {
+      const f = this.vault.getAbstractFileByPath(it.quarantined);
+      if (!(f instanceof TFile)) continue;
+      try {
+        // Only restore if nothing already occupies the original name.
+        if (!this.vault.getAbstractFileByPath(it.original)) {
+          await this.vault.rename(f, it.original);
+        } else {
+          await this.vault.delete(f); // a new file already owns the name
+        }
+      } catch { /* best-effort */ }
+    }
+  }
+
+  /** Permanently drop quarantined files (render succeeded — replacements exist). */
+  async dropQuarantine(items: QuarantinedFile[]): Promise<void> {
+    for (const it of items) {
+      const f = this.vault.getAbstractFileByPath(it.quarantined);
+      if (f instanceof TFile) { try { await this.vault.delete(f); } catch { /* ignore */ } }
     }
   }
 
