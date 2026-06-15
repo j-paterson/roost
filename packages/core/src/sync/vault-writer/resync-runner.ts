@@ -202,7 +202,7 @@ export class ResyncRunner {
         // broken-image icon in the gallery. Prefer real images by checking
         // what exists on disk rather than what the API promised.
         const hasFile = (name: string) => this.vault.getAbstractFileByPath(`${attachFolder}/${name}`) !== null;
-        coverFile = twitterMedia.photos.length > 0 ? `${attachFolder}/1.jpg`
+        coverFile = hasFile("1.jpg") ? `${attachFolder}/1.jpg`
           : hasFile("video-poster.jpg") ? `${attachFolder}/video-poster.jpg`
           : hasFile("card-thumb.jpg") ? `${attachFolder}/card-thumb.jpg`
           : hasFile("card.png") ? `${attachFolder}/card.png`

@@ -11,7 +11,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
-import { fsIncompleteReason, isDeadSkip } from "../media-backfill";
+import { fsIncompleteReason, isDeadSkip, migrateLegacyTwitterMedia } from "../media-backfill";
 
 describe("fsIncompleteReason", () => {
   let dir: string;
@@ -43,8 +43,73 @@ describe("fsIncompleteReason", () => {
     expect(fsIncompleteReason(dir, "twitter")).toBe("video-no-poster");
   });
 
+  it("returns null for a PNG carousel that also has a stray media.jpg (not legacy)", () => {
+    fs.writeFileSync(path.join(dir, "1.png"), "x");
+    fs.writeFileSync(path.join(dir, "2.png"), "x");
+    fs.writeFileSync(path.join(dir, "media.jpg"), "x");
+    expect(fsIncompleteReason(dir, "twitter")).toBeNull();
+  });
+
+  it("returns null for a video note (video.mp4 + poster + thumb), not legacy-no-1jpg", () => {
+    fs.writeFileSync(path.join(dir, "video.mp4"), "x");
+    fs.writeFileSync(path.join(dir, "video-poster.jpg"), "x");
+    fs.writeFileSync(path.join(dir, "thumb.png"), "x");
+    expect(fsIncompleteReason(dir, "twitter")).toBeNull();
+  });
+
+  it("returns null for a thumb-only folder (thumb cover, not incomplete)", () => {
+    fs.writeFileSync(path.join(dir, "thumb.png"), "x");
+    expect(fsIncompleteReason(dir, "twitter")).toBeNull();
+  });
+
   it("returns 'folder-missing' for a path that does not exist", () => {
     expect(fsIncompleteReason(path.join(dir, "nope"), "twitter")).toBe("folder-missing");
+  });
+});
+
+describe("migrateLegacyTwitterMedia", () => {
+  let dir: string;
+
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), "roost-mediabf-"));
+  });
+
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("copies media.jpg -> 1.jpg for a genuine legacy single (returns true)", () => {
+    fs.writeFileSync(path.join(dir, "media.jpg"), "hello");
+    expect(migrateLegacyTwitterMedia(dir)).toBe(true);
+    expect(fs.existsSync(path.join(dir, "1.jpg"))).toBe(true);
+    expect(fs.readFileSync(path.join(dir, "1.jpg"), "utf8")).toBe("hello");
+  });
+
+  it("is a no-op when 1.jpg already exists (returns false)", () => {
+    fs.writeFileSync(path.join(dir, "media.jpg"), "x");
+    fs.writeFileSync(path.join(dir, "1.jpg"), "existing");
+    expect(migrateLegacyTwitterMedia(dir)).toBe(false);
+    expect(fs.readFileSync(path.join(dir, "1.jpg"), "utf8")).toBe("existing");
+  });
+
+  it("is a no-op when 1.png (carousel) is present (returns false)", () => {
+    fs.writeFileSync(path.join(dir, "media.jpg"), "x");
+    fs.writeFileSync(path.join(dir, "1.png"), "x");
+    expect(migrateLegacyTwitterMedia(dir)).toBe(false);
+    expect(fs.existsSync(path.join(dir, "1.jpg"))).toBe(false);
+  });
+
+  it("is a no-op when video.mp4 is present (returns false)", () => {
+    fs.writeFileSync(path.join(dir, "media.jpg"), "x");
+    fs.writeFileSync(path.join(dir, "video.mp4"), "x");
+    expect(migrateLegacyTwitterMedia(dir)).toBe(false);
+    expect(fs.existsSync(path.join(dir, "1.jpg"))).toBe(false);
+  });
+
+  it("is a no-op when no media.jpg is present (returns false)", () => {
+    fs.writeFileSync(path.join(dir, "thumb.png"), "x");
+    expect(migrateLegacyTwitterMedia(dir)).toBe(false);
+    expect(fs.existsSync(path.join(dir, "1.jpg"))).toBe(false);
   });
 });
 

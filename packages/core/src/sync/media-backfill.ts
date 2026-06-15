@@ -101,7 +101,7 @@ export async function runMediaBackfill(plugin: IRoostPlugin): Promise<void> {
         // TikTok video items only flag when the live webview is available;
         // otherwise the video re-download would just fail.
         if (platformId === "twitter" || tiktokWcAvailable) needs = true;
-      } else if (platformId === "twitter" && !childNames.has("1.jpg") && (childNames.has("media.jpg") || childNames.has("thumb.png"))) {
+      } else if (platformId === "twitter" && !childNames.has("1.jpg") && !childNames.has("1.png") && !childNames.has("video.mp4") && childNames.has("media.jpg")) {
         needs = true;
       } else if (platformId === "twitter" && childNames.has("video.mp4") && !childNames.has("video-poster.jpg")) {
         needs = true;
@@ -166,6 +166,7 @@ export async function runMediaBackfill(plugin: IRoostPlugin): Promise<void> {
       captured_via: "backfill",
     };
     try {
+      if (q.platform === "twitter") migrateLegacyTwitterMedia(q.attachFolder);
       await writer.resyncRecord(record);
       // Verify against the FILESYSTEM — the same source the queue scan uses.
       const reason = fsIncompleteReason(q.attachFolder, q.platform);
@@ -240,9 +241,24 @@ export function fsIncompleteReason(attachFolder: string, platform: "twitter" | "
   }
   const hasMedia = [...names].some(n => n.endsWith(".jpg") || n.endsWith(".mp4") || n.endsWith(".png"));
   if (!hasMedia) return "no-media";
-  if (platform === "twitter" && !names.has("1.jpg") && (names.has("media.jpg") || names.has("thumb.png"))) return "legacy-no-1jpg";
+  if (platform === "twitter" && !names.has("1.jpg") && !names.has("1.png") && !names.has("video.mp4") && names.has("media.jpg")) return "legacy-no-1jpg";
   if (platform === "twitter" && names.has("video.mp4") && !names.has("video-poster.jpg")) return "video-no-poster";
   return null;
+}
+
+/** Genuine legacy single: a twitter item whose image exists only as the old
+ *  media.jpg (no canonical 1.jpg, no carousel, no video, and — per raw.json —
+ *  no re-fetchable URL). Copy media.jpg -> 1.jpg locally so the cover logic and
+ *  the incomplete predicate recognize it. No network. Returns true if it copied. */
+export function migrateLegacyTwitterMedia(attachFolder: string): boolean {
+  let names: Set<string>;
+  try { names = new Set(fs.readdirSync(attachFolder, { withFileTypes: true }).filter(e => e.isFile()).map(e => e.name)); }
+  catch { return false; }
+  if (names.has("1.jpg") || names.has("1.png") || names.has("video.mp4") || !names.has("media.jpg")) return false;
+  try {
+    fs.copyFileSync(path.join(attachFolder, "media.jpg"), path.join(attachFolder, "1.jpg"));
+    return true;
+  } catch { return false; }
 }
 
 /** Pure decision for the dead-URL skip — shared by the queue scan and tests.
