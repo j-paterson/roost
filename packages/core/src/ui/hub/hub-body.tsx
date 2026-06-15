@@ -10,6 +10,7 @@ import { buildIntegrationRows } from "@/ui/hub/integration-rows";
 import { clearDetectCache, type IntegrationId } from "@/integrations/registry";
 import { PipelinesPanel } from "@/ui/hub/pipelines-panel";
 import { buildPipelineRows } from "@/ui/hub/pipeline-rows";
+import { OnboardingPanel } from "@/ui/hub/onboarding-panel";
 import { gateCtxFromPlugin, isCategoryPipelineActive } from "@/lib/pipeline-gate-plugin";
 import { Button } from "@/ui/components/ui/button";
 import type { PipelineId } from "@/lib/enrichments";
@@ -319,6 +320,13 @@ export function HubBody({ app, plugin }: { app: App; plugin: IRoostPlugin }) {
         <h1 className="text-base font-semibold tracking-tight">Roost Hub</h1>
         <p className="text-xs text-muted-foreground mt-0.5">Connect, sync, and manage your platforms — all in one place.</p>
       </header>
+
+      {/* First-run onboarding runs inline at the top of the Hub (not a modal).
+          Gated on setupComplete; finishing/skipping flips the flag and a hub
+          state change re-renders this away. */}
+      {!plugin.settings.setupComplete && (
+        <OnboardingPanel plugin={plugin} onComplete={() => plugin.triggerHubStateChange()} />
+      )}
 
       {/* Platforms + sync are the primary surface, so they lead. The global
           Fast/Deep sync controls sit at the top of this section. */}

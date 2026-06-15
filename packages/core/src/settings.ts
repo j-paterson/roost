@@ -96,6 +96,10 @@ export interface RoostSettings {
   /** Per-pipeline on/off. All default on; a pipeline is active only when its
    *  flag is true AND an LLM backend is available (see lib/pipeline-gate.ts). */
   pipelines: PipelineFlags;
+  /** True after the first-run onboarding completes. Default false — the inline
+   *  onboarding panel shows at the top of the Hub on first launch and can be
+   *  re-shown via the "Re-run first-time setup" command. */
+  setupComplete: boolean;
 }
 
 export const DEFAULT_SETTINGS: RoostSettings = {
@@ -128,6 +132,7 @@ export const DEFAULT_SETTINGS: RoostSettings = {
   omdbApiKey: "",
   integrations: { ollama: false, sidecar: false, ffmpeg: false, vaultSearch: false },
   pipelines: allPipelinesOn(),
+  setupComplete: false,
 };
 
 /** Minimal plugin interface needed by RoostSettingTab. */
