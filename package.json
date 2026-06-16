@@ -25,6 +25,7 @@
     "test:e2e:smoke": "npm run build && npm run e2e:stage && wdio run tests/e2e/wdio.conf.mts --spec tests/e2e/00-boot.spec.ts --spec tests/e2e/10-gallery.spec.ts",
     "test:e2e:gallery": "npm run build && npm run e2e:stage && wdio run tests/e2e/wdio.conf.mts --spec tests/e2e/00-boot.spec.ts --spec tests/e2e/10-gallery.spec.ts --spec tests/e2e/11-places-map.spec.ts --spec tests/e2e/19-media-list-view.spec.ts --spec tests/e2e/21-places-feed-mode.spec.ts",
     "test:e2e:explorer": "npm run build && npm run e2e:stage && wdio run tests/e2e/wdio.conf.mts --spec tests/e2e/00-boot.spec.ts --spec tests/e2e/12-explorer.spec.ts",
+    "test:e2e:x-folders": "npm run build && npm run e2e:stage && E2E_RUN_LIVE=1 wdio run tests/e2e/wdio.conf.mts --spec tests/e2e/87-x-bookmark-folders.live.spec.ts",
     "capture:promo": "npm run build && npm run e2e:stage && PROMO_CAPTURE=1 wdio run tests/e2e/wdio.conf.mts --spec tests/e2e/99-promo-capture.spec.ts",
     "capture:promo:slow": "PROMO_SLOW=1 npm run capture:promo",
     "capture:promo:burst": "npm run build && npm run e2e:stage && PROMO_CAPTURE=1 PROMO_BURST=1 wdio run tests/e2e/wdio.conf.mts --spec tests/e2e/99b-promo-video-burst.spec.ts",

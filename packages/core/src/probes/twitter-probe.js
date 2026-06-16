@@ -31,6 +31,15 @@
     lastError: null,
     bookmarkFolders: {},   // folder id → name map, populated when folder list op fires
     bookmarkFolderOrder: [], // ordered list of folder names seen
+    // Diagnostic ring-buffer (bounded to 10) capturing the RAW shape of any
+    // graphql op whose name looks folder/collection related — REGARDLESS of
+    // whether the guessed BOOKMARK_FOLDERS_LIST_RE / BOOKMARK_FOLDER_TIMELINE_RE
+    // patterns matched or the guessed parse succeeded. This is what lets a
+    // single live e2e run VERIFY-OR-CORRECT all the "NEEDS LIVE VERIFICATION"
+    // guesses below: real op name, response JSON shape, folder id/name field
+    // paths, and the URL `variables` key for the folder id. See
+    // tests/e2e/87-x-bookmark-folders.live.spec.ts.
+    bookmarkFolderDebug: [],
   };
 
   if (store.installed) return;
@@ -229,6 +238,33 @@
     try { data = JSON.parse(text); } catch { return; }
 
     walkAndCache(data);
+
+    // ── Folder/collection diagnostic capture ─────────────────────────────────
+    // Record the RAW shape of any op that looks folder/collection related, so a
+    // live e2e run can confirm or correct the guessed op-name regexes, response
+    // paths, field names, and the URL `variables` folder-id key. Independent of
+    // the guessed-pattern branches below — those may silently no-op if a guess
+    // is wrong; this always fires on a name match.
+    if (op && /bookmark|folder|collection/i.test(op) && op !== "Bookmarks") {
+      let variablesRaw = null, variablesParsed = null;
+      try {
+        const u = new URL(url, location.origin);
+        variablesRaw = u.searchParams.get("variables");
+        if (variablesRaw) { try { variablesParsed = JSON.parse(variablesRaw); } catch {} }
+      } catch {}
+      const sample = (() => {
+        try { const s = JSON.stringify(data); return s.length > 6000 ? s.slice(0, 6000) + "…[truncated]" : s; }
+        catch { return null; }
+      })();
+      store.bookmarkFolderDebug.push({
+        op, method, status,
+        dataKeys: data && data.data ? Object.keys(data.data) : [],
+        variablesRaw, variablesParsed,
+        rawSample: sample,
+        at: Date.now(),
+      });
+      if (store.bookmarkFolderDebug.length > 10) store.bookmarkFolderDebug.shift();
+    }
 
     if (BOOKMARK_TIMELINE_RE.test(url)) {
       const instructions = data?.data?.bookmark_timeline_v2?.timeline?.instructions || [];
