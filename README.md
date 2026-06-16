@@ -12,7 +12,9 @@ markdown notes, then auto-organize them with a local AI categorizer.
   your action) and writes each into the vault as a note. You log in as yourself;
   Roost only reads your own bookmarks.
 - **Smart Assign** — categorizes notes by embedding similarity plus an optional
-  LLM rerank, writing a `roost_category` field.
+  LLM rerank, writing a `roost_category` field. Within a category, a second
+  scoring pass can auto-assign a `roost_subcategory` (e.g. "Italian" inside
+  "Cooking"), producing a two-level library tree.
 - **Local video transcripts** — caption-less TikTok videos can be transcribed
   locally (faster-whisper via the sidecar's `/transcribe`) so the recipe and
   other pipelines can read the speech; music/silent videos are skipped.
