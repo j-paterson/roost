@@ -1,8 +1,8 @@
 /**
  * Pipeline extraction overlays and expanded detail sections for the gallery.
  *
- * Loads all pipeline caches once, provides:
- *   - getPipelineData(roostId) → type + extraction or null
+ * Provides:
+ *   - pipelineHitFromEntry(app, file) → PipelineHit | null (reads note frontmatter)
  *   - renderPipelineOverlay(coverEl, type) → small themed icon on compact card
  *   - renderPipelineDetail(infoEl, type, extraction) → rich section in expanded card
  */
@@ -19,16 +19,8 @@ import {
   homeFromFrontmatter,
 } from "@/pipeline/extraction-from-frontmatter";
 import { watchableUrl } from "@/views/pipeline-views/watchable-url";
-import { loadPipelineCache, savePipelineCache } from "@/pipeline/shared";
-import { reconstructRecipeCache } from "@/pipeline/recipe-pipeline";
-import { reconstructPlacesCache } from "@/pipeline/places-pipeline";
-import { reconstructMediaCache } from "@/pipeline/media-pipeline";
-import { reconstructProductsCache } from "@/pipeline/products-pipeline";
-import { reconstructWorkoutsCache } from "@/pipeline/workouts-pipeline";
-import { reconstructTutorialsCache } from "@/pipeline/tutorials-pipeline";
-import { reconstructHomeCache } from "@/pipeline/home-pipeline";
 import type {
-  PipelineCacheEntry, AnyExtractionData,
+  AnyExtractionData,
   RecipeExtraction, PlaceExtraction, MediaExtraction,
   ProductExtraction, WorkoutExtraction, TutorialExtraction, HomeExtraction,
 } from "@/types/roost";
@@ -60,77 +52,6 @@ const PIPELINE_META: Record<PipelineType, { icon: string; label: string; color: 
   tutorial: { icon: "🎓", label: "Tutorial", color: "#f39c12" },
   home:     { icon: "🏠", label: "Home",     color: "#16a085" },
 };
-
-// [type, cacheFile, triage-match, reconstruct-from-frontmatter]. The reconstruct
-// fn rebuilds the cache from each note's durable <cat>_* frontmatter — the
-// source of truth — so the detail survives a cache wipe.
-const CACHE_FILES: [PipelineType, string, string, (app: App) => Record<string, PipelineCacheEntry>][] = [
-  ["recipe",   "recipe-cache.json",    "recipe",   reconstructRecipeCache],
-  ["place",    "places-cache.json",    "place",    reconstructPlacesCache],
-  ["media",    "media-cache.json",     "media",    reconstructMediaCache],
-  ["product",  "products-cache.json",  "product",  reconstructProductsCache],
-  ["workout",  "workouts-cache.json",  "workout",  reconstructWorkoutsCache],
-  ["tutorial", "tutorials-cache.json", "tutorial", reconstructTutorialsCache],
-  ["home",     "home-cache.json",      "home",     reconstructHomeCache],
-];
-
-// ── Cache loading ──
-
-/** The media cache file's entries carry resolved deep-link ids on sibling
- *  sub-objects (mirrors media-pipeline.ts PlaybackResolution/DeepLinkResolution).
- *  The generic PipelineCacheEntry doesn't type them, so loadPipelineData reads
- *  them behind this narrow structural shape and merges them onto the stored
- *  MediaExtraction — otherwise the ids on disk are dropped and the card can only
- *  build search links. */
-interface MediaCacheExtras {
-  playback?: { spotifyId: string | null };
-  deepLink?: { tmdbId: string | null; tmdbType: "movie" | "tv" | null; anilistId: string | null };
-}
-
-let pipelineLookup: Map<string, PipelineHit> | null = null;
-
-export function loadPipelineData(app: App): void {
-  pipelineLookup = new Map();
-  for (const [type, file, triageMatch, reconstruct] of CACHE_FILES) {
-    let cache = loadPipelineCache<PipelineCacheEntry>(app.vault, file);
-    // Self-heal: the expanded-card detail reads from these pipeline caches, but
-    // the durable source of truth is each note's <cat>_* frontmatter. If the
-    // cache file is missing or has been wiped, rebuild it from frontmatter so
-    // the detail never disappears — and persist it so the scan only runs once.
-    if (Object.keys(cache).length === 0) {
-      const rebuilt = reconstruct(app);
-      if (Object.keys(rebuilt).length > 0) {
-        cache = rebuilt;
-        savePipelineCache(app.vault, file, cache);
-      }
-    }
-    for (const [id, entry] of Object.entries(cache)) {
-      // Only include items that were triaged as relevant AND have extraction data
-      if (entry.triage === triageMatch && entry.extraction) {
-        let extraction = entry.extraction;
-        // For the media cache, lift the resolved deep-link ids off the entry's
-        // playback/deepLink sub-objects onto the MediaExtraction so the card can
-        // build canonical links (not just search). Only the media cache has these.
-        if (type === "media") {
-          const ex = entry as PipelineCacheEntry & MediaCacheExtras;
-          const m = extraction as MediaExtraction;
-          extraction = {
-            ...m,
-            spotifyId: ex.playback?.spotifyId ?? m.spotifyId ?? null,
-            tmdbId: ex.deepLink?.tmdbId ?? m.tmdbId ?? null,
-            tmdbType: ex.deepLink?.tmdbType ?? m.tmdbType ?? null,
-            anilistId: ex.deepLink?.anilistId ?? m.anilistId ?? null,
-          } as MediaExtraction;
-        }
-        pipelineLookup.set(id, { type, extraction });
-      }
-    }
-  }
-}
-
-export function getPipelineData(roostId: string): PipelineHit | null {
-  return pipelineLookup?.get(roostId) ?? null;
-}
 
 export function pipelineHitFromEntry(app: App, file: TFile): PipelineHit | null {
   const fm = app.metadataCache.getFileCache(file)?.frontmatter;
