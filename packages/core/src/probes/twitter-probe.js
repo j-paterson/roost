@@ -54,10 +54,15 @@
   const REPLAY_TTL_MS = 30 * 60 * 1000;
 
   // ── Bookmark folder interception ─────────────────────────────────────────────
-  // NEEDS LIVE VERIFICATION: these regex patterns assume the op names
-  // "BookmarkFolders" and "BookmarkFolderTimeline". Verify via
-  // store.observedOperations in a live session with bookmark folders enabled.
-  const BOOKMARK_FOLDERS_LIST_RE = /\/i\/api\/graphql\/.+\/BookmarkFolders(?:\?|$)/;
+  // Op names corrected to the real X web-client GraphQL contract, sourced from a
+  // working implementation (destefanis/twitter-bookmarks-grid sync-folders.js):
+  //   - folder LIST op is "BookmarkFoldersSlice" (NOT "BookmarkFolders")
+  //   - per-folder timeline op is "BookmarkFolderTimeline"
+  // We match on op NAME (last path segment), not the rotating queryId, so the
+  // documented "query IDs change every few weeks" caveat does not affect us.
+  // The live spec tests/e2e/87-x-bookmark-folders.live.spec.ts is the backstop
+  // that confirms these against real x.com and captures the truth if X drifts.
+  const BOOKMARK_FOLDERS_LIST_RE = /\/i\/api\/graphql\/.+\/BookmarkFoldersSlice(?:\?|$)/;
   const BOOKMARK_FOLDER_TIMELINE_RE = /\/i\/api\/graphql\/.+\/BookmarkFolderTimeline(?:\?|$)/;
 
   function operationName(url) {
@@ -294,23 +299,19 @@
       store.lastError = null;
     }
 
-    // ── Handle folder list response ───────────────────────────────────────────
-    // NEEDS LIVE VERIFICATION: response shape assumed from Twitter GraphQL patterns.
-    // The actual path to folder data in the JSON may differ.
-    // To verify: window.__TWITTER_BOOKMARK_SPIKE__.observedOperations in live session.
+    // ── Handle folder list response (BookmarkFoldersSlice) ─────────────────────
+    // Response shape from the working reference impl: the folder array lives at
+    //   data.viewer.user_results.result.bookmark_collections_slice.items
+    // and each item carries a flat { id, name }. (rest_id kept as a defensive
+    // fallback since most X graphql objects expose it.) The live spec captures
+    // the raw response to .x-bookmark-folders-capture.json if this ever drifts.
     if (BOOKMARK_FOLDERS_LIST_RE.test(url)) {
       try {
-        // Inferred path — VERIFY AGAINST LIVE RESPONSE.
-        // Twitter may return folder list as timeline instructions or as a flat array.
-        const folders =
-          data?.data?.bookmark_folder_timeline?.timeline?.instructions?.[0]?.entries ||
-          data?.data?.bookmark_folders || [];
-        for (const entry of folders) {
-          // VERIFY: actual field names for folder id and name in the live response
-          const folderId = entry?.content?.itemContent?.bookmark_collection_results?.result?.rest_id
-            || entry?.rest_id || entry?.id;
-          const folderName = entry?.content?.itemContent?.bookmark_collection_results?.result?.name
-            || entry?.name || entry?.title;
+        const items =
+          data?.data?.viewer?.user_results?.result?.bookmark_collections_slice?.items || [];
+        for (const item of items) {
+          const folderId = item?.id || item?.rest_id;
+          const folderName = item?.name;
           if (folderId && folderName) {
             store.bookmarkFolders[folderId] = folderName;
             if (!store.bookmarkFolderOrder.includes(folderName)) {
@@ -323,17 +324,17 @@
       }
     }
 
-    // ── Handle per-folder timeline response ──────────────────────────────────
-    // When the user navigates to a specific folder, Twitter fires a separate
-    // timeline GraphQL request with the folder id in variables.
-    // NEEDS LIVE VERIFICATION: variable name may differ from assumed "bookmark_collection_id".
+    // ── Handle per-folder timeline response (BookmarkFolderTimeline) ───────────
+    // When the user navigates to a folder, X fires a BookmarkFolderTimeline op
+    // with the folder id under the `bookmark_collection_id` variable (confirmed
+    // against the reference impl). The tweet instructions live at
+    //   data.bookmark_collection_timeline.timeline.instructions
     if (BOOKMARK_FOLDER_TIMELINE_RE.test(url)) {
       try {
         let folderName = null;
         try {
           const urlObj = new URL(url, location.origin);
           const vars = JSON.parse(urlObj.searchParams.get("variables") || "{}");
-          // NEEDS LIVE VERIFICATION: actual variable name for folder id
           const folderId = vars?.bookmark_collection_id || vars?.bookmarkCollectionId || vars?.folder_id;
           if (folderId && store.bookmarkFolders[folderId]) {
             folderName = store.bookmarkFolders[folderId];
@@ -342,8 +343,8 @@
 
         if (folderName) {
           // Tag all tweets from this folder's timeline response
-          const instructions = data?.data?.bookmark_folder_timeline?.timeline?.instructions
-            || data?.data?.bookmark_timeline_v2?.timeline?.instructions || [];
+          const instructions = data?.data?.bookmark_collection_timeline?.timeline?.instructions
+            || data?.data?.bookmark_folder_timeline?.timeline?.instructions || [];
           const folderTweets = tweetsFromInstructions(instructions);
           for (const tw of folderTweets) {
             if (tw?.rest_id) {

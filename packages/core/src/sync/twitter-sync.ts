@@ -194,10 +194,13 @@ export async function syncTwitter(
   }
 
   // Step 4.5: Navigate bookmark folders — tag tweets with _bookmark_folder
-  // NEEDS LIVE VERIFICATION:
-  //   - URL pattern for folder navigation (assumed: x.com/i/bookmarks/<folder_id>)
-  //   - Whether BookmarkFolderTimeline interception fires reliably on navigation
-  //   - Whether tweets-in-folders also appear in the main Bookmarks timeline
+  // The probe's folder GraphQL parsing (op names, response shapes, folder-id
+  // variable key) is now matched to X's real contract — see twitter-probe.js.
+  // The remaining unconfirmed-from-docs detail is BEHAVIOURAL and verified by
+  // tests/e2e/87-x-bookmark-folders.live.spec.ts against real x.com:
+  //   - the folder navigation URL (assumed x.com/i/bookmarks/<folder_id>)
+  //   - whether BookmarkFolderTimeline fires reliably on that navigation
+  //   - whether tweets-in-folders also appear in the main Bookmarks timeline
   const folderResults: { name: string; itemCount: number }[] = [];
   if (!isStopped() && !opts.fastSyncMode) {
     onLog?.("Scanning bookmark folders...");
@@ -219,8 +222,9 @@ export async function syncTwitter(
       if (isStopped()) break;
       onLog?.(`Loading folder: ${folder.name}...`);
 
-      // NEEDS LIVE VERIFICATION: URL pattern when clicking a bookmark folder.
-      // May be /i/bookmarks/<folder_id>, /i/bookmarks?folder=<id>, or different.
+      // Folder page URL (verified end-to-end by the live spec). If a future X
+      // change moves this, spec 87 fails on guess #5 and the capture file shows
+      // where navigation actually landed.
       const folderUrl = `https://x.com/i/bookmarks/${folder.id}`;
 
       const folderLoaded = await new Promise<boolean>((resolve) => {
