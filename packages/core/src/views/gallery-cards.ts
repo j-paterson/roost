@@ -7,7 +7,8 @@ import type { MatchDetail } from "@/types/roost";
 import { safeGetValue } from "@/lib/bases-entry";
 import { cleanCaption } from "@/lib/caption";
 import { ENRICHMENTS } from "@/lib/enrichments";
-import { getPipelineData, renderPipelineOverlay } from "@/views/pipeline-details";
+import { renderPipelineOverlay } from "@/views/pipeline-details";
+import type { PipelineType } from "@/views/pipeline-details";
 import { renderChip } from "@/views/pipeline-views/shared/chip";
 import { setupGalleryVideoScrub } from "@/views/gallery-video-scrub";
 import type { GalleryExpandState } from "@/views/gallery-expanded";
@@ -35,6 +36,7 @@ export interface GalleryCardHandlers {
   resolveImageUrl: (entry: BasesEntry, propId: string) => string | null;
   resolveVideoUrl: (entry: BasesEntry) => string | null;
   hasMultipleImages: (entry: BasesEntry) => boolean;
+  pipelineTypeForEntry: (entry: BasesEntry) => PipelineType | null;
 }
 
 /** Estimated card height from Bases view config sliders. */
@@ -152,11 +154,9 @@ export function hydrateGalleryCard(
     setIcon(iconEl, platform === "tiktok" ? "music" : platform === "twitter" ? "message-square" : "bookmark");
   }
 
-  if (roostIdVal) {
-    const pipelineHit = getPipelineData(roostIdVal);
-    if (pipelineHit) {
-      renderPipelineOverlay(coverEl, pipelineHit.type);
-    }
+  const pipelineType = handlers.pipelineTypeForEntry(entry);
+  if (pipelineType) {
+    renderPipelineOverlay(coverEl, pipelineType);
   }
 
   const body = el.createDiv({ cls: "roost-card-body" });
