@@ -867,19 +867,19 @@
    posters create in a tall 45%-wide media panel.
    Cap card height at 70vh so very long threads don't push later digest
    content off-screen — the info panel scrolls internally. */
-.roost-expanded.roost-expanded-has-bodytext {
+.roost-expanded.roost-expanded-text-only.roost-expanded-has-bodytext {
   flex-direction: column;
   height: auto;
   min-height: 0;
   max-height: 70vh;
   position: relative;
 }
-.roost-expanded.roost-expanded-has-bodytext .roost-expanded-media {
+.roost-expanded.roost-expanded-text-only.roost-expanded-has-bodytext .roost-expanded-media {
   width: 100%;
   max-height: 320px;
   flex-shrink: 0;
 }
-.roost-expanded.roost-expanded-has-bodytext .roost-expanded-info {
+.roost-expanded.roost-expanded-text-only.roost-expanded-has-bodytext .roost-expanded-info {
   width: 100%;
   flex: 1;
   min-height: 0;
@@ -888,7 +888,7 @@
 /* Visual hint that content extends past the card edge. The bottom 56px of
    the card fades to the surrounding background — only when JS detects the
    info panel is actually scrollable AND not scrolled to the bottom. */
-.roost-expanded.roost-expanded-has-bodytext::after {
+.roost-expanded.roost-expanded-text-only.roost-expanded-has-bodytext::after {
   content: "";
   position: absolute;
   left: 0;
@@ -904,7 +904,7 @@
   opacity: 0;
   transition: opacity 120ms ease;
 }
-.roost-expanded.roost-expanded-has-bodytext.roost-expanded-overflow::after {
+.roost-expanded.roost-expanded-text-only.roost-expanded-has-bodytext.roost-expanded-overflow::after {
   opacity: 1;
 }
 
