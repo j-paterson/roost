@@ -32,7 +32,7 @@ Roost is an Obsidian plugin that downloads your bookmarks, stores them as markdo
 1. **Sync Layer** — Fetch bookmarks via webview injection (TikTok probe, Twitter auto-scroll)
 2. **Storage Layer** — Markdown notes with YAML frontmatter, downloaded media, author backlinks
 3. **Intelligence Layer** — Phase F v2 fine-tuned embeddings:
-   - **Smart Assign** — score-first ensemble classifier that assigns `roost_category` to unsorted items
+   - **Smart Assign** — score-first ensemble classifier that assigns `roost_category` (and optionally `roost_subcategory`) to unsorted items
 
 ### Plugin Structure
 
@@ -133,7 +133,7 @@ Several cross-cutting concerns are centralized to avoid duplication:
 
 | Module | Provides | Used by |
 |--------|----------|---------|
-| `config.ts` | All tuning constants (clustering thresholds, batch sizes, Ollama URLs/models, card dimensions) | cluster, describe-items, tiktok-sync, twitter-sync, group-store, card-renderer |
+| `config.ts` | All tuning constants (clustering thresholds, batch sizes, Ollama URLs/models, card dimensions, frontmatter field names: `CATEGORY_FIELD`, `SUBCATEGORY_FIELD`, `ASSIGNED_BY_FIELD`) | cluster, describe-items, tiktok-sync, twitter-sync, group-store, card-renderer |
 | `lib/vault-helpers.ts` | `buildFrontmatter()`, `ensureFolder()`, `ensureAuthorNote()` | vault-writer, eagle-import |
 | `lib/roost-id.ts` | `roostIdFromUrl()`, re-exports `roostBookmarkId()` | eagle-import, shared.ts (cache rekeying) |
 | `lib/vault-utils.ts` | `getSyncFiles()`, `parseRoostId()`, `matchesCategoryFilter()`, `matchesFilter()` | vault-writer, eagle-import, describe-items, RoostView, bookmarks-bases-view |
@@ -179,37 +179,48 @@ Flow:
    - Sidebar tree shows the proposal with a Broad ↔ Specific slider (epsilon slider driving the taxonomy clustering from Step 7 / recluster)
    - Click tree node name → filter Bases grid to that cluster
    - Click chevron → expand/collapse tree
-10. Click **Confirm Categories** → Sets `roost_category` field in frontmatter for unsorted items only (never overwrites existing labels).
+10. Click **Confirm Categories** → Sets `roost_category` (and `roost_subcategory` if a subcategory was scored) in frontmatter for unsorted items only (never overwrites existing labels). `roost_assigned_by` is written as `"auto"`.
+
+**Sort into subcategories** (right-click a category in the library tree → "Sort into subcategories…"):
+
+A targeted second pass within one category. Smart Assign runs with `write.into = "subcategoryOf"` — it scores items only against the parent category's existing subcategories (built from vault frontmatter) and any user-defined empty subcategories from settings. Items that don't confidently match any subcategory stay at the parent level (`roost_subcategory` is `null`). No discovery phase runs; unmatched items are not proposed as new buckets. On confirm, `roost_category` is set to the parent name and `roost_subcategory` to the chosen subcategory name (or left absent).
 
 **Cancel** (✕ next to step indicator) is non-destructive — clears all in-memory state, returns to sync mode. Embeddings, score cache, and description caches are kept (additive, useful for next run). Zero vault changes until Confirm.
 
 **Score cache** at `.roost/score-cache.json`, keyed by `{itemId}|{catHash}`. `catHash` is an md5 of `EVAL_MODEL | PROMPT_VERSION || (name|description for every category)`, so any change to the collection set (add, rename, edit description) or to the prompt template automatically invalidates stale entries.
 
-Categories use a dedicated `roost_category` frontmatter field:
-- Non-destructive (original file location preserved, field can be cleared)
-- Doesn't pollute Obsidian's tag namespace (no `category/*` tags)
-- Queryable by Bases filters and Dataview via `roost_category` property
-- Visible in the sidebar library tree under each platform
+Categories use dedicated frontmatter fields:
+- `roost_category` — top-level category (e.g. `"Cooking & Food"`)
+- `roost_subcategory` — optional second-level label within the category (e.g. `"Italian"`); absent when no subcategory is assigned
+- `roost_assigned_by` — `"auto"` after Smart Assign confirm; `"human"` for manually-assigned labels
+- Non-destructive (original file location preserved, fields can be cleared)
+- Don't pollute Obsidian's tag namespace (no `category/*` tags)
+- Queryable by Bases filters and Dataview via `roost_category` / `roost_subcategory` properties
+- Visible in the sidebar library tree: categories at the top level, subcategories as indented children
 - Reset with `node scripts/reset-categories.mjs --run`
 
 ### Library Tree + Filtering
 
-The sidebar shows a flat category list with a sync strip at the top:
+The sidebar shows a two-level tree with a sync strip at the top:
 ```
 TikTok ↗ ↻  |  X ↗ ↻        ← sync controls
 ─────────────────────────
 Unsorted              3,215
 Cooking                 252
+  ├ Italian               89
+  └ Japanese              63
 Fitness                 163
 ```
 
-Categories are cross-platform — counts aggregate items from all platforms. The gallery has a platform filter bar (All / TikTok / X pills) for narrowing by platform independently.
+Categories are cross-platform — counts aggregate items from all platforms. Subcategories appear as indented children under their parent category when at least one item has a `roost_subcategory` value. The chevron next to the parent row expands / collapses its subcategory children. The gallery has a platform filter bar (All / TikTok / X pills) for narrowing by platform independently.
 
 - Click any category → Bases grid filters to that category (all platforms)
+- Click a subcategory row → Bases grid filters to items matching both `roost_category` and `roost_subcategory`
 - Click again → clears filter, shows all
 - Gallery platform pills are local gallery state — they layer on top of the sidebar's category filter
-- Filtering uses `matchesFilter()` from vault-utils — shared predicate across sidebar and Bases view
+- Filtering uses `matchesFilter()` from vault-utils — shared predicate across sidebar and Bases view; the filter's optional `subcategory` field gates the subcategory match
 - Tree rescans vault after sync and Smart Assign confirm
+- `scanLibraryTree()` (`ui/lib/library-tree.ts`) builds counts from vault frontmatter; empty subcategories can be seeded via `settings.emptySubcategories` so manually-created buckets appear before they have items
 
 ### Eagle Import
 
@@ -289,6 +300,7 @@ sound: "Original Sound — @creator"
 published: 2024-03-15
 saved: 2024-03-27
 roost_category: "Cooking & Food"
+roost_subcategory: "Italian"
 stats_plays: 1200000
 stats_likes: 45000
 tags:
@@ -299,7 +311,7 @@ tags:
 ---
 ```
 
-Note body is empty — all metadata in frontmatter. Title is the full post description (no truncation). `roost_category` is set by Smart Assign (dedicated field, doesn't pollute tag namespace).
+Note body is empty — all metadata in frontmatter. Title is the full post description (no truncation). `roost_category` is set by Smart Assign (dedicated field, doesn't pollute tag namespace). `roost_subcategory` is an optional second-level label within a category (e.g. `"Italian"` inside `"Cooking & Food"`), written by the same confirm step. `roost_assigned_by` records the source of the label (`"auto"` after Smart Assign, `"human"` for manually-set values).
 
 Frontmatter is built by `buildFrontmatter()` in `lib/vault-helpers.ts` — single implementation used by both vault-writer and eagle-import. YAML quoting applied for strings containing `:`, `"`, `#`, `[`, or starting with `@`.
 
@@ -531,6 +543,29 @@ Each proposed category gets a single contrastive LLM call that sees both the clu
 
 After describing, Score New re-runs `scoreAgainstCategories` with the expanded catalog. Items that still don't match any centroid stay unsorted and surface under "Unsorted" in the library tree, where the user can re-run or assign manually.
 
+### Subcategory auto-assignment (`score-with-subcategories.ts`)
+
+When Smart Assign runs in **category mode** (the default unsorted pass), the scoring step automatically runs a second pass to assign subcategories to items that matched a top-level category. This is a two-pass wrapper around `scoreAgainstCategories`:
+
+1. **Pass 1 — top-level scoring**: identical to the standard ensemble (T1+T2 against top-level category centroids). Items that don't match any category go directly to unmatched.
+2. **Pass 2 — subcategory scoring** (per parent): for each parent category that has existing subcategory anchors in vault frontmatter, the matched items are re-scored against those subcategory centroids via `scoreAgainstCategories` with `noneRefusal: true`. A "NONE" response (or no match above threshold 0.55) means the item stays at the parent level with `roost_subcategory = null`; a match writes the subcategory name. Parents with no subcategory anchors skip pass 2.
+
+`buildSubcatsByParent()` (`ui/lib/smart-assign/helpers.ts`) constructs the subcategory `CategoryDef` list by reading `roost_category` + `roost_subcategory` pairs from vault frontmatter. This means subcategory scoring is grounded in the user's own previously-confirmed labels, not in LLM suggestions.
+
+**Staging panel** (`staging-panel.tsx`): during review, each proposed category folder shows its predicted subcategory breakdown. `groupBySubcategory()` (`ui/lib/group-by-subcategory.ts`) buckets items by their predicted subcategory (alphabetical; items with no subcategory go last). The staging tree renders a 3-level tree (top-level → subcategory → items) via `subcategoriesForFolder()`.
+
+**Confirm path** (`ui/lib/smart-assign/confirm.ts`): the `patchFor` closure encodes category + subcategory into a single `\x00`-separated key (`"Recipes\x00Italian"`), then decodes it when writing frontmatter: `CATEGORY_FIELD = category`, `SUBCATEGORY_FIELD = subcategory || null`, `ASSIGNED_BY_FIELD = "auto"`. Items with no subcategory write `roost_subcategory: null` (removes the field if present).
+
+**"Sort into subcategories" mode** (`write.into = "subcategoryOf"`): triggered by right-clicking a category in the library tree and choosing "Sort into subcategories…". Smart Assign runs on all items in that category, scoring only against its subcategory anchors. The confirm path writes `roost_category = parent` and `roost_subcategory = matched subcategory`. Discovery is disabled (`allowDiscovery: false`) — unmatched items remain in the parent without a subcategory rather than generating new proposed buckets.
+
+**Fields written to frontmatter:**
+
+| Field | Value | Notes |
+|-------|-------|-------|
+| `roost_category` | Category name (string) | Always written on confirm |
+| `roost_subcategory` | Subcategory name or `null` | Written alongside `roost_category`; `null` removes the field |
+| `roost_assigned_by` | `"auto"` | Always `"auto"` on Smart Assign confirm |
+
 ### Measured performance (119 positive + 50 negative test set)
 
 | Stage | Top-1 | F1 |
@@ -574,12 +609,12 @@ RoostView.tsx
 ├── useRoostSidebarLog, useLibraryTree, useRoostPlatformSync, …
 └── useSmartAssign() hook  (~340 lines)
     ├── Pipeline state (mode, pipelineStep, confirming)
-    ├── Cluster state (proposal, sliderValue, forceToggle, userRenames)
+    ├── Cluster state (proposal, sliderValue, forceToggle, userRenames, assignedSubcategories)
     ├── GroupStore (via useGroupStore hook)
     ├── handleSmartAssign()  → topic editor
     ├── runClustering_()     → runSmartAssignClustering() in packages/core/src/ui/lib/smart-assign/
     │       └── clustering.ts orchestrates clustering-step-*.ts under ui/lib/smart-assign/
-    ├── handleConfirm()      → confirm.ts → write roost_category to vault
+    ├── handleConfirm()      → confirm.ts → write roost_category + roost_subcategory to vault
     └── handleCancel()       → reset-state.ts
 ```
 
@@ -632,7 +667,7 @@ Both library tree and staging tree use Obsidian-native CSS:
 | `safeGetValue()` wrapper | Obsidian's `getValue()` throws on null frontmatter values |
 | Incremental loading (60/batch) | 14K+ placeholders in CSS grid caused multi-second lag |
 | Data-level filtering (not CSS) | `display: none` on grid items caused reflow flash |
-| `roost_category` field (not tags or folders) | Non-destructive, doesn't pollute tag namespace, queryable by Bases |
+| `roost_category` / `roost_subcategory` fields (not tags or folders) | Non-destructive, doesn't pollute tag namespace, queryable by Bases; subcategory is a sibling field rather than a nested tag so the two levels can be queried independently |
 | Inactivity timeout (not wall-clock) | Twitter sync: large collections scroll to completion |
 | Metadata cache for reads | `metadataCache.getFileCache()` instead of `vault.cachedRead()` + regex |
 | Single vault lookup for multi-photo badge | `hasMultipleImages` checks `2.jpg` exists, defers full resolution to expanded view |
@@ -679,7 +714,16 @@ Both library tree and staging tree use Obsidian-native CSS:
 | `CARD_PADDING` | 32 | Tweet card padding |
 | `CARD_MAX_LINES` | 15 | Max text lines on tweet card |
 
-Score-first rerank constants live in `pipeline/evaluate.ts` rather than `config.ts` because they're coupled to the `PROMPT_VERSION` string and the catHash invariant: `K_RERANK_SMALL=5`, `K_RERANK_LARGE=7`, `CONDITIONAL_REJECT_THRESHOLD=0.87`.
+Frontmatter field-name constants also live in `config.ts` to ensure every reader and writer uses the same string:
+
+| Constant | Value | Purpose |
+|----------|-------|---------|
+| `CATEGORY_FIELD` | `"roost_category"` | Top-level category frontmatter field |
+| `SUBCATEGORY_FIELD` | `"roost_subcategory"` | Second-level label within a category |
+| `ASSIGNED_BY_FIELD` | `"roost_assigned_by"` | Tracks whether the label was set by `"auto"` or `"human"` |
+| `MUSIC_SUBCATEGORIES` | `Set{"music","song",…}` | Subcategory names treated as music by the Media pipeline and media-where-cell display; includes common user variants so `roost_subcategory: "song"` correctly routes to the music resolver |
+
+Score-first rerank constants live in `pipeline/evaluate.ts` rather than `config.ts` because they're coupled to the `PROMPT_VERSION` string and the catHash invariant: `K_RERANK_SMALL=5`, `K_RERANK_LARGE=7`, `CONDITIONAL_REJECT_THRESHOLD=0.87`. The subcategory-scoring threshold (`subcatThreshold=0.55`) is a default argument in `scoreWithSubcategories` and is not exported from `config.ts`.
 
 ### On-disk caches (`<vault>/.roost/`)
 
