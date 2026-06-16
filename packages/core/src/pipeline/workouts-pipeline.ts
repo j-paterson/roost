@@ -415,8 +415,9 @@ export async function runWorkoutsPipeline(
   app: App,
   syncFolder: string,
   onLog?: (msg: string) => void,
+  signal?: AbortSignal,
 ): Promise<WorkoutsPipelineResult> {
-  return runCategoryPipeline(app, syncFolder, WORKOUTS_CONFIG, onLog);
+  return runCategoryPipeline(app, syncFolder, WORKOUTS_CONFIG, onLog, signal);
 }
 
 // ─── Cache reconstruction ─────────────────────────────────────────────────────
@@ -457,7 +458,7 @@ export const WORKOUT_ENRICHMENT: EnrichmentDef = {
         savePipelineCache(vault, CACHE_FILE, reconstructed);
       }
     }
-    await runWorkoutsPipeline(plugin.app, plugin.settings.syncFolder, opts?.onLog);
+    await runWorkoutsPipeline(plugin.app, plugin.settings.syncFolder, opts?.onLog, opts?.signal);
   },
   panelDetail: "Extract exercises, reps, and target areas from fitness bookmarks. Writes workout_* fields onto each source bookmark.",
   categoryMatches: ["Fitness", "Workouts", "Workout", "Exercise"],

@@ -613,6 +613,7 @@ export async function runMediaPipeline(
   // render-time search-URL fallback still works. AniList (anime) always works
   // because it needs no key.
   tmdbApiKey: string = "",
+  signal?: AbortSignal,
 ): Promise<MediaPipelineResult> {
   // Post-stage counters: mutated by afterCore, read by buildResult (closures).
   let playbackResolved = 0;
@@ -767,7 +768,7 @@ export async function runMediaPipeline(
     },
   };
 
-  return runCategoryPipeline(app, syncFolder, config, onLog);
+  return runCategoryPipeline(app, syncFolder, config, onLog, signal);
 }
 
 // ─── Cache reconstruction ─────────────────────────────────────────────────────
@@ -840,7 +841,7 @@ export const MEDIA_EXTRACTION_ENRICHMENT: EnrichmentDef = {
         savePipelineCache(vault, CACHE_FILE, reconstructed);
       }
     }
-    await runMediaPipeline(plugin.app, plugin.settings.syncFolder, opts?.onLog, opts?.filter);
+    await runMediaPipeline(plugin.app, plugin.settings.syncFolder, opts?.onLog, opts?.filter, "", opts?.signal);
   },
   panelDetail: "Extract titles, creators, ratings, and where-to-watch links. Writes media_* fields onto each source bookmark.",
   categoryMatches: ["Media", "Media List", "Books", "Book", "Film", "TV"],

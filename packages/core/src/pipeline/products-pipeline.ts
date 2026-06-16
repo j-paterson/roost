@@ -414,8 +414,9 @@ export async function runProductsPipeline(
   app: App,
   syncFolder: string,
   onLog?: (msg: string) => void,
+  signal?: AbortSignal,
 ): Promise<ProductsPipelineResult> {
-  return runCategoryPipeline(app, syncFolder, PRODUCTS_CONFIG, onLog);
+  return runCategoryPipeline(app, syncFolder, PRODUCTS_CONFIG, onLog, signal);
 }
 
 // ─── Cache reconstruction ─────────────────────────────────────────────────────
@@ -456,7 +457,7 @@ export const PRODUCT_ENRICHMENT: EnrichmentDef = {
         savePipelineCache(vault, CACHE_FILE, reconstructed);
       }
     }
-    await runProductsPipeline(plugin.app, plugin.settings.syncFolder, opts?.onLog);
+    await runProductsPipeline(plugin.app, plugin.settings.syncFolder, opts?.onLog, opts?.signal);
   },
   panelDetail: "Extract product names, brands, prices, and where-to-buy links. Writes product_* fields onto each source bookmark.",
   categoryMatches: ["Product", "Products", "Gear", "Shopping"],

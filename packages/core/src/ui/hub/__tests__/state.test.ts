@@ -12,6 +12,8 @@ function baseInputs(): HubInputs {
     syncStateByPlatform: {},
     incompleteByCategory: null,
     eagleConfigured: false,
+    jobBusy: false,
+    jobLabel: null,
   };
 }
 

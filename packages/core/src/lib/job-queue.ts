@@ -1,14 +1,17 @@
 import { Notice } from "obsidian";
 
+type JobOutcome = { ok: true; value: unknown } | { ok: false; error: unknown };
+
 interface QueuedJob {
   label: string;
+  controller: AbortController;
   /** Runs the user's fn to completion and reports its outcome to drain(), which
    *  settles the enqueuer's promise AFTER clearing the running slot (so the
    *  enqueuer never observes the queue as still-busy). Never rejects (the
    *  rejection is captured into the returned outcome). */
-  run: () => Promise<{ ok: true; value: unknown } | { ok: false; error: unknown }>;
+  run: () => Promise<JobOutcome>;
   /** Settle the enqueuer's promise. Called by drain() after running is cleared. */
-  settle: (outcome: { ok: true; value: unknown } | { ok: false; error: unknown }) => void;
+  settle: (outcome: JobOutcome) => void;
 }
 
 /**
@@ -21,11 +24,25 @@ interface QueuedJob {
  * is deliberately NOT enqueued here — it yields to this queue via onIdle()
  * (plan 040 Part 2), so onIdle resolves on queued+running jobs only and can
  * never deadlock against a non-enqueued waiter.
+ *
+ * Cancellation: each enqueued job owns an AbortController. cancelCurrent() aborts
+ * the running job's signal so the fn can stop between batches. cancelAll() also
+ * drains the pending queue, settling each queued enqueuer with an AbortError so
+ * no promises are left dangling.
  */
 export class RoostJobQueue {
   private queue: QueuedJob[] = [];
   private running: QueuedJob | null = null;
   private idleWaiters: Array<() => void> = [];
+  private onChangeCb: (() => void) | null = null;
+
+  set onChange(cb: () => void) {
+    this.onChangeCb = cb;
+  }
+
+  private notify(): void {
+    this.onChangeCb?.();
+  }
 
   /** True while a job is running or any are queued. */
   isBusy(): boolean {
@@ -44,15 +61,49 @@ export class RoostJobQueue {
     return new Promise<void>((resolve) => { this.idleWaiters.push(resolve); });
   }
 
+  /** Abort the currently-running job's signal. The fn observes the signal and
+   *  should stop between batches. The queue keeps draining after this. */
+  cancelCurrent(): void {
+    this.running?.controller.abort();
+  }
+
+  /** Abort the running job AND clear all pending jobs from the queue. Each
+   *  removed queued job's enqueuer promise is settled with an AbortError so
+   *  no promises are left dangling. Then notify and wake idleWaiters. */
+  cancelAll(): void {
+    // Abort the running job.
+    this.running?.controller.abort();
+
+    // Drain the pending queue: settle each queued job as aborted so callers
+    // don't have dangling promises.
+    const pending = this.queue.splice(0);
+    for (const job of pending) {
+      job.controller.abort();
+      job.settle({ ok: false, error: new DOMException("Job cancelled", "AbortError") });
+    }
+
+    this.notify();
+
+    // If nothing is now running, wake idleWaiters.
+    if (!this.running) {
+      const waiters = this.idleWaiters;
+      this.idleWaiters = [];
+      for (const w of waiters) w();
+    }
+  }
+
   /** Enqueue a job. Runs immediately if idle, else FIFO behind current work.
-   *  The returned promise settles with fn's result (including its rejection). */
-  enqueue<T>(label: string, fn: () => Promise<T>): Promise<T> {
+   *  The returned promise settles with fn's result (including its rejection).
+   *  `fn` receives the job's AbortSignal so it can stop between batches. */
+  enqueue<T>(label: string, fn: (signal: AbortSignal) => Promise<T>): Promise<T> {
     return new Promise<T>((resolve, reject) => {
+      const controller = new AbortController();
       const job: QueuedJob = {
         label,
+        controller,
         run: async () => {
           try {
-            return { ok: true, value: await fn() };
+            return { ok: true, value: await fn(controller.signal) };
           } catch (e) {
             return { ok: false, error: e };
           }
@@ -68,6 +119,7 @@ export class RoostJobQueue {
         new Notice(`Queued: ${label} — runs after ${current}`);
       }
       this.queue.push(job);
+      this.notify();
       void this.drain();
     });
   }
@@ -77,7 +129,8 @@ export class RoostJobQueue {
     while (this.queue.length > 0) {
       const job = this.queue.shift()!;
       this.running = job;
-      let outcome: { ok: true; value: unknown } | { ok: false; error: unknown };
+      this.notify();
+      let outcome: JobOutcome;
       try {
         outcome = await job.run();       // job.run() never rejects (captures internally)
       } finally {
@@ -90,6 +143,7 @@ export class RoostJobQueue {
       job.settle(outcome);
     }
     // Drained: wake any onIdle() waiters.
+    this.notify();
     const waiters = this.idleWaiters;
     this.idleWaiters = [];
     for (const w of waiters) w();

@@ -442,8 +442,9 @@ export async function runRecipePipeline(
   app: App,
   syncFolder: string,
   onLog?: (msg: string) => void,
+  signal?: AbortSignal,
 ): Promise<RecipePipelineResult> {
-  return runCategoryPipeline(app, syncFolder, RECIPE_CONFIG, onLog);
+  return runCategoryPipeline(app, syncFolder, RECIPE_CONFIG, onLog, signal);
 }
 
 // ─── Cache reconstruction ─────────────────────────────────────────────────────
@@ -484,7 +485,7 @@ export const RECIPE_ENRICHMENT: EnrichmentDef = {
         savePipelineCache(vault, CACHE_FILE, reconstructed);
       }
     }
-    await runRecipePipeline(plugin.app, plugin.settings.syncFolder, opts?.onLog);
+    await runRecipePipeline(plugin.app, plugin.settings.syncFolder, opts?.onLog, opts?.signal);
   },
   panelDetail: "Extract ingredients and steps from food/cooking bookmarks. Writes recipe_* fields onto each source bookmark.",
   categoryMatches: [...RECIPE_FILED_CATEGORIES],

@@ -262,4 +262,47 @@ describe("runCategoryPipeline extensions", () => {
     // backfillCached should have been a no-op
     expect(writes).toHaveLength(0);
   });
+
+  // ── Abort / signal tests ──
+
+  it("signal already aborted before run: no triage or extract calls, buildResult reflects empty work", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const triaged: string[] = [];
+    const extracted: string[] = [];
+    const result = await runCategoryPipeline(app, "Sync", baseConfig({
+      gatherCandidates: () => [cand("a"), cand("b")],
+      triageItem: async c => { triaged.push(c.roostId); return "yes"; },
+      extractItem: async c => { extracted.push(c.roostId); return "data"; },
+    }), undefined, controller.signal);
+    // Nothing should have been triaged or extracted.
+    expect(triaged).toHaveLength(0);
+    expect(extracted).toHaveLength(0);
+    // buildResult should still complete (no throw).
+    expect(result).toBeDefined();
+  });
+
+  it("signal aborted after first triage batch: stops before second batch, no throw", async () => {
+    const controller = new AbortController();
+    const triaged: string[] = [];
+    // 4 items with concurrency=2: batch 1 = [a,b], batch 2 = [c,d].
+    // Abort during triage of batch 1 so batch 2 should never start.
+    const config = baseConfig({
+      concurrency: 2,
+      gatherCandidates: () => [cand("a"), cand("b"), cand("c"), cand("d")],
+      triageItem: async c => {
+        triaged.push(c.roostId);
+        // Abort after processing the first batch to simulate mid-run cancel.
+        if (triaged.length === 2) controller.abort();
+        return "yes";
+      },
+      extractItem: async () => "data",
+    });
+    // Should not throw even though the run is cancelled.
+    const result = await runCategoryPipeline(app, "Sync", config, undefined, controller.signal);
+    // Only the first batch (a, b) should have been triaged.
+    expect(triaged).toEqual(["a", "b"]);
+    // Result is defined (partial, not an error).
+    expect(result).toBeDefined();
+  });
 });

@@ -442,8 +442,9 @@ export async function runHomePipeline(
   app: App,
   syncFolder: string,
   onLog?: (msg: string) => void,
+  signal?: AbortSignal,
 ): Promise<HomePipelineResult> {
-  return runCategoryPipeline(app, syncFolder, HOME_CONFIG, onLog);
+  return runCategoryPipeline(app, syncFolder, HOME_CONFIG, onLog, signal);
 }
 
 // ─── Cache reconstruction ─────────────────────────────────────────────────────
@@ -484,7 +485,7 @@ export const HOME_ENRICHMENT: EnrichmentDef = {
         savePipelineCache(vault, CACHE_FILE, reconstructed);
       }
     }
-    await runHomePipeline(plugin.app, plugin.settings.syncFolder, opts?.onLog);
+    await runHomePipeline(plugin.app, plugin.settings.syncFolder, opts?.onLog, opts?.signal);
   },
   panelDetail: "Extract home ideas, room types, and style tips from decor bookmarks.",
   categoryMatches: ["Home", "Interiors", "Home & Interiors", "Decor"],

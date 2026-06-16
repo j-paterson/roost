@@ -655,6 +655,7 @@ export async function runPlacesPipeline(
   app: App,
   syncFolder: string,
   onLog?: (msg: string) => void,
+  signal?: AbortSignal,
 ): Promise<PlacesPipelineResult> {
   const log = onLog || (() => {});
   const vault = app.vault;
@@ -672,7 +673,7 @@ export async function runPlacesPipeline(
     log(`Backfilled ${patched}/${scanned} entries (${exact} exact POI-level, ${patched - exact} city-level)`);
   }
 
-  return runCategoryPipeline(app, syncFolder, buildPlacesConfig(app), onLog);
+  return runCategoryPipeline(app, syncFolder, buildPlacesConfig(app), onLog, signal);
 }
 
 // ─── Cache reconstruction ─────────────────────────────────────────────────────
@@ -728,7 +729,7 @@ export const PLACE_ENRICHMENT: EnrichmentDef = {
         savePipelineCache(vault, CACHE_FILE, reconstructed);
       }
     }
-    await runPlacesPipeline(plugin.app, plugin.settings.syncFolder, opts?.onLog);
+    await runPlacesPipeline(plugin.app, plugin.settings.syncFolder, opts?.onLog, opts?.signal);
   },
   panelDetail: "Extract places, cities, and coordinates from travel bookmarks. Writes place_* fields onto each source bookmark.",
   categoryMatches: ["Places", "Travel"],

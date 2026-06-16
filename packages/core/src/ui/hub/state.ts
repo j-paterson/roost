@@ -26,6 +26,10 @@ export interface HubInputs {
   eagleConfigured: boolean;
   /** Pre-computed active embedding backend + provenance mismatch (async work done at the call site). */
   embedding?: { backend: "sidecar" | "ollama"; mismatch: "none" | "match" | "sidecar-down" | "vault-moved" | "upgrade-available" };
+  /** True while a job is running or any are queued in the serial job queue. */
+  jobBusy: boolean;
+  /** Label of the currently-running job (null when idle). */
+  jobLabel: string | null;
 }
 
 export interface Backlogs {
@@ -55,6 +59,8 @@ export interface HubState {
     lastFullUpdate: SyncTimestamp | null;
     anythingToUpdate: boolean;
     anythingNeedsAttention: boolean;
+    /** Non-null while a job is running in the serial queue. */
+    runningJob: { label: string } | null;
   };
   embedding: { label: string; warn: boolean } | null;
 }
@@ -166,5 +172,7 @@ export function deriveHubState(input: HubInputs): HubState {
       }
     : null;
 
-  return { prereqs, platforms, global: { lastFullUpdate, anythingToUpdate, anythingNeedsAttention }, embedding };
+  const runningJob = input.jobBusy && input.jobLabel ? { label: input.jobLabel } : null;
+
+  return { prereqs, platforms, global: { lastFullUpdate, anythingToUpdate, anythingNeedsAttention, runningJob }, embedding };
 }

@@ -401,13 +401,21 @@ export function stripJsonFence(raw: string): string {
  * post-batch work (cache saves, progress logs) — this helper only owns the
  * chunking iteration shared by every pipeline's triage/extract/resolve loops.
  * A rejection from `fn` propagates (no batches after it run).
+ *
+ * If `signal` is provided and becomes aborted, iteration stops before the
+ * next batch starts. The current in-flight batch completes normally (so
+ * per-batch cache saves remain consistent and the run is resumable via
+ * cache-presence). Does NOT throw on abort — callers check signal.aborted
+ * after the loop if they need to log a cancellation note.
  */
 export async function forEachBatch<T>(
   items: readonly T[],
   size: number,
   fn: (batch: readonly T[], startIndex: number) => Promise<void>,
+  signal?: AbortSignal,
 ): Promise<void> {
   for (let i = 0; i < items.length; i += size) {
+    if (signal?.aborted) return;
     await fn(items.slice(i, i + size), i);
   }
 }
