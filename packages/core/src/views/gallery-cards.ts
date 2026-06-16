@@ -121,7 +121,15 @@ export function hydrateGalleryCard(
       handlers.onFeedSelect(roostIdVal);
       return;
     }
-    if (handlers.expandState.expandedEl === el) return;
+    if (handlers.expandState.expandedEl === el) {
+      // Clicking the expanded card collapses it (replaces the old ✕ button).
+      // Ignore while the user is selecting text; interactive children (links,
+      // action buttons) stopPropagation, so they never reach this handler.
+      if (window.getSelection()?.toString()) return;
+      e.stopPropagation();
+      handlers.onExpand(el, entry);
+      return;
+    }
     e.stopPropagation();
     handlers.onExpand(el, entry);
   });

@@ -275,20 +275,3 @@ export function mountExpandedCardActions(
     });
   }
 }
-
-/** Close button in the expanded card header (gallery in-place expand). */
-export function mountExpandedCloseButton(
-  cardEl: HTMLElement,
-  onClose: () => void,
-): void {
-  const header = cardEl.querySelector(".roost-expanded-header");
-  if (!header) return;
-  const el = document.createElement("div");
-  el.className = "roost-expanded-close";
-  el.textContent = "✕";
-  el.addEventListener("click", (e) => {
-    e.stopPropagation();
-    onClose();
-  });
-  header.appendChild(el);
-}

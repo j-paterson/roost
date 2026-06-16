@@ -8,7 +8,6 @@ import type { MatchDetail } from "@/types/roost";
 import {
   mountExpandedCardActions,
   mountExpandedCardHost,
-  mountExpandedCloseButton,
   type EntryMediaResolvers,
 } from "@/views/entry-to-expanded-card";
 import { buildExpandedExtraElements } from "@/views/gallery-expanded-extras";
@@ -145,7 +144,6 @@ export async function toggleGalleryExpanded(
     bodySegments,
     tweetView,
   });
-  mountExpandedCloseButton(cardEl, () => closeGalleryExpanded(state));
 
   mountExpandedCardActions(cardEl, {
     entry,
