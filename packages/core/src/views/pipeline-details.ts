@@ -6,8 +6,18 @@
  *   - renderPipelineOverlay(coverEl, type) → small themed icon on compact card
  *   - renderPipelineDetail(infoEl, type, extraction) → rich section in expanded card
  */
-import { App } from "obsidian";
+import { App, TFile } from "obsidian";
 import { detectPlatformFromUrl } from "@/lib/extract";
+import {
+  pipelineTypeFromFrontmatter,
+  recipeFromFrontmatter,
+  placeFromFrontmatter,
+  mediaFromFrontmatter,
+  productFromFrontmatter,
+  workoutFromFrontmatter,
+  tutorialFromFrontmatter,
+  homeFromFrontmatter,
+} from "@/pipeline/extraction-from-frontmatter";
 import { watchableUrl } from "@/views/pipeline-views/watchable-url";
 import { loadPipelineCache, savePipelineCache } from "@/pipeline/shared";
 import { reconstructRecipeCache } from "@/pipeline/recipe-pipeline";
@@ -120,6 +130,22 @@ export function loadPipelineData(app: App): void {
 
 export function getPipelineData(roostId: string): PipelineHit | null {
   return pipelineLookup?.get(roostId) ?? null;
+}
+
+export function pipelineHitFromEntry(app: App, file: TFile): PipelineHit | null {
+  const fm = app.metadataCache.getFileCache(file)?.frontmatter;
+  if (!fm) return null;
+  const type = pipelineTypeFromFrontmatter(fm);
+  if (!type) return null;
+  const extraction =
+    type === "recipe" ? recipeFromFrontmatter(fm) :
+    type === "place" ? placeFromFrontmatter(fm) :
+    type === "media" ? mediaFromFrontmatter(fm) :
+    type === "product" ? productFromFrontmatter(fm) :
+    type === "workout" ? workoutFromFrontmatter(fm) :
+    type === "tutorial" ? tutorialFromFrontmatter(fm) :
+    homeFromFrontmatter(fm);
+  return extraction ? { type, extraction } : null;
 }
 
 // ── Compact card overlay ──
