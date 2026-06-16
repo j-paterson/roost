@@ -145,7 +145,8 @@ describe("renderPipelineDetail — place", () => {
     renderPipelineDetail(el, { type: "place", extraction: makePlaceExtraction() } as any);
     const kvLabels = Array.from(el.querySelectorAll(".roost-pipeline-kv-label")).map(n => n.textContent);
     expect(kvLabels).toContain("Name");
-    expect(kvLabels).toContain("Type");
+    // Location type was removed from the place detail to reduce clutter.
+    expect(kvLabels).not.toContain("Type");
     expect(kvLabels).toContain("Location");
     expect(kvLabels).toContain("Best for");
     // vibes render as pills

@@ -217,7 +217,8 @@ export function hydrateGalleryCard(
     }
   }
 
-  if (cfg.showPlatform) {
+  // Place cards lead with their location; the platform pill just adds noise there.
+  if (cfg.showPlatform && pipelineType !== "place") {
     const platformValue = safeGetValue(entry, "note.platform");
     if (platformValue) {
       const platformEl = meta.createSpan({

@@ -735,6 +735,5 @@ export const PLACE_ENRICHMENT: EnrichmentDef = {
   fieldsWritten: ["place_name", "place_city", "place_country", "place_type", "place_address", "place_best_for", "place_lat", "place_lng", "place_vibes", "place_tips"],
   chips: [
     { field: "place_city", kind: "location" },
-    { field: "place_type", kind: "tag" },
   ],
 };

@@ -261,7 +261,6 @@ function renderPlace(el: HTMLElement, data: PlaceExtraction, source?: PipelineSo
   kvRow(el, "Name", data.name);
   const location = [data.city, data.country].filter(Boolean).join(", ");
   kvRow(el, "Location", location || null);
-  kvRow(el, "Type", capitalize(data.placeType ?? ""));
   kvRow(el, "Best for", data.bestFor);
   kvRow(el, "Address", data.address);
 
