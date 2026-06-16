@@ -99,6 +99,7 @@ export class TwitterRecordWriter {
   async writeTwitterRecord(record: NormalizedRecord): Promise<void> {
     const { text, url, published, itemId, handle, username } = this.noteWriter.extractCommon(record);
     const media = extractTwitterMedia(record);
+    const folder = media.folder;
     const folderPath = `${this.syncFolder}/X`;
     const attachFolder = `${folderPath}/twitter-${itemId}`;
 
@@ -215,7 +216,8 @@ export class TwitterRecordWriter {
       url,
       published: published ? published.split("T")[0] : undefined,
       saved: record.saved_at?.split("T")[0],
-      tags: ["twitter", ...hashtags.map(t => t.slice(1))],
+      collection: folder ?? undefined,
+      tags: ["twitter", ...hashtags.map(t => t.slice(1)), ...(folder ? [`collection/${sanitizeFilename(folder)}`] : [])],
       // Stamp at write time so freshly-synced tweets aren't re-flagged by the
       // first-rollout detection predicate in vault-index.
       [enrichmentVersionField("tweetBody")]: RENDERED_TWEET_ENRICHMENT.schemaVersion,

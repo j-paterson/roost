@@ -100,3 +100,26 @@ cookies have expired. Repeat the export steps above to get fresh ones.
 | File | What it tests |
 |------|--------------|
 | `86-x-article-real-backfill.live.spec.ts` | Full article backfill pipeline against real x.com, cookie injection, note body write |
+| `87-x-bookmark-folders.live.spec.ts` | Bookmark-folders probe: verifies the GraphQL op names / response shape / folder-id `variables` key / folder nav URL against real x.com, and on mismatch captures the real shapes to `.x-bookmark-folders-capture.json` to correct the probe |
+
+### Bookmark-folders spec (87) — verify-or-correct
+
+This spec unblocks the bookmark-folders feature. The probe (`twitter-probe.js`)
+and sync navigation (`twitter-sync.ts`) ship with six `NEEDS LIVE VERIFICATION`
+guesses about X's GraphQL contract. A unit test can't verify them — only a real
+response can. One run does both:
+
+- **Pass** → every guess is right; the feature is proven against live X.
+- **Fail** → the failing test's message names which guess is wrong, and the real
+  op names / response JSON / `variables` keys are written to
+  `tests/e2e/.x-bookmark-folders-capture.json` (gitignored). Correct the probe
+  to match and re-run.
+
+**Prerequisite:** the logged-in X account must have at least one bookmark folder
+containing at least one bookmark — otherwise the assertion tests skip with a
+notice (the diagnostic capture still runs).
+
+```bash
+E2E_RUN_LIVE=1 npx wdio run tests/e2e/wdio.conf.mts \
+  --spec tests/e2e/87-x-bookmark-folders.live.spec.ts
+```

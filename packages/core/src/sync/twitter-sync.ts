@@ -19,6 +19,7 @@ const pendingHandlers = new WeakMap<HTMLElement, { domReady: EventListener; fini
 
 interface SyncResult {
   totalFetched: number;
+  folders: { name: string; itemCount: number }[];
 }
 
 export async function syncTwitter(
@@ -192,6 +193,90 @@ export async function syncTwitter(
     }
   }
 
+  // Step 4.5: Navigate bookmark folders — tag tweets with _bookmark_folder
+  // The probe's folder GraphQL parsing (op names, response shapes, folder-id
+  // variable key) is now matched to X's real contract — see twitter-probe.js.
+  // The remaining unconfirmed-from-docs detail is BEHAVIOURAL and verified by
+  // tests/e2e/87-x-bookmark-folders.live.spec.ts against real x.com:
+  //   - the folder navigation URL (assumed x.com/i/bookmarks/<folder_id>)
+  //   - whether BookmarkFolderTimeline fires reliably on that navigation
+  //   - whether tweets-in-folders also appear in the main Bookmarks timeline
+  const folderResults: { name: string; itemCount: number }[] = [];
+  if (!isStopped() && !opts.fastSyncMode) {
+    onLog?.("Scanning bookmark folders...");
+    const rawFolders = await wc.executeJavaScript(`
+      (function() {
+        try {
+          var s = window.__TWITTER_BOOKMARK_SPIKE__;
+          return JSON.stringify(Object.entries(s.bookmarkFolders || {}).map(function(e) {
+            return { id: e[0], name: e[1] };
+          }));
+        } catch(e) { return '[]'; }
+      })();
+    `).catch(() => "[]");
+
+    const folders: { id: string; name: string }[] = JSON.parse(rawFolders);
+    onLog?.(`Found ${folders.length} bookmark folders`);
+
+    for (const folder of folders) {
+      if (isStopped()) break;
+      onLog?.(`Loading folder: ${folder.name}...`);
+
+      // Folder page URL (verified end-to-end by the live spec). If a future X
+      // change moves this, spec 87 fails on guess #5 and the capture file shows
+      // where navigation actually landed.
+      const folderUrl = `https://x.com/i/bookmarks/${folder.id}`;
+
+      const folderLoaded = await new Promise<boolean>((resolve) => {
+        const timeout = setTimeout(() => resolve(false), 15000);
+        const handler = () => { clearTimeout(timeout); resolve(true); };
+        webviewEl.addEventListener("did-finish-load", handler, { once: true });
+        webviewEl.loadURL(folderUrl);
+      });
+
+      if (!folderLoaded) {
+        onLog?.(`[WARN] Folder "${folder.name}" failed to load — skipping`);
+        continue;
+      }
+
+      // Re-inject probe (navigation clears the page context)
+      await wc.executeJavaScript(`
+        try { delete window.__TWITTER_BOOKMARK_SPIKE__; } catch(e) {}
+        try { ${twitterProbeSource}; } catch(e) {}
+        void 0;
+      `).catch(() => {});
+
+      // Wait for folder timeline GraphQL to fire and probe to tag tweets
+      await new Promise(r => setTimeout(r, 3000));
+
+      const taggedCount = await wc.executeJavaScript(`
+        (function() {
+          var s = window.__TWITTER_BOOKMARK_SPIKE__;
+          if (!s) return 0;
+          var count = 0;
+          for (var id in s.tweetCache) {
+            if (s.tweetCache[id]._bookmark_folder === ${JSON.stringify(folder.name)}) count++;
+          }
+          return count;
+        })();
+      `).catch(() => 0);
+
+      onLog?.(`Folder "${folder.name}": ${taggedCount} tweets tagged`);
+      folderResults.push({ name: folder.name, itemCount: taggedCount });
+    }
+
+    // Return to bookmarks page before enrichment (Steps 5+6 need the probe active)
+    if (folders.length > 0 && !isStopped()) {
+      webviewEl.loadURL("https://x.com/i/bookmarks");
+      await new Promise(r => setTimeout(r, 2000));
+      await wc.executeJavaScript(`
+        try { delete window.__TWITTER_BOOKMARK_SPIKE__; } catch(e) {}
+        try { ${twitterProbeSource}; } catch(e) {}
+        void 0;
+      `).catch(() => {});
+    }
+  }
+
   // Steps 5 + 6: TweetDetail probe (thread enrichment) + article body fetch.
   // segments.length >= 2 → real thread; segments.length < 2 → standalone (mark probed);
   // null → fetch failed (mark probe_failed so vault-writer leaves it flagged for retry).
@@ -350,7 +435,7 @@ export async function syncTwitter(
   }
 
   onProgress?.({ phase: "done", count: finalCount, total: finalCount, done: true });
-  return { totalFetched: finalCount };
+  return { totalFetched: finalCount, folders: folderResults };
 }
 
 async function getStoreCount(wc: ElectronWebview): Promise<number> {
