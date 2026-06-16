@@ -65,6 +65,9 @@ export default defineConfig({
       },
       output: {
         assetFileNames: "styles.css",
+        // Keep the plugin as a single main.js file even when async import()
+        // is used for lazy modules (e.g. Leaflet deferred until Places map opens).
+        inlineDynamicImports: true,
         globals: {
           obsidian: "obsidian",
           electron: "electron",
