@@ -457,10 +457,11 @@ Separate ItemView (`roost-hub`) — platform-centric dashboard for sync and enri
 
 Top to bottom:
 
-1. **Header** + global sync actions (`GlobalActionBar`)
-2. **Prerequisites** — sync folder + LLM/Ollama strip (`PrereqStrip`; Ollama status uses `llmReadyForPipelines`)
-3. **Integrations** — tool flags (`IntegrationsPanel`) plus **Pipelines** toggles (`PipelinesPanel` via `buildPipelineRows`)
-4. **Platforms** — TikTok, X, Eagle cards (`PlatformCard`)
+1. **Header** — title + subtitle
+2. **Platforms & sync** — global Fast/Deep sync actions (`GlobalActionBar`) then TikTok, X, Eagle cards (`PlatformCard`)
+3. **Backfill & pipelines** — "Backfill all" + "Run pipelines" buttons (run via the serial job queue)
+4. **Prerequisites** — sync folder + LLM/Ollama strip (`PrereqStrip`; Ollama status uses `llmReadyForPipelines`)
+5. **Integrations** — tool flags (`IntegrationsPanel`) plus **Pipelines** toggles (`PipelinesPanel` via `buildPipelineRows`)
 
 **First-run onboarding.** When `settings.setupComplete` is false the Hub renders *only* an inline onboarding panel (`ui/hub/onboarding-panel.tsx`, steps from `lib/onboarding-steps.ts`) — a lego picker covering sync folder / embeddings / LLM / optional add-ons — and hides the rest of the Hub until the user finishes or skips (which flips `setupComplete`). Re-open via the "Re-run first-time setup" command. (Replaces the old modal wizard.)
 
@@ -678,7 +679,7 @@ Both library tree and staging tree use Obsidian-native CSS:
 
 Score-first rerank constants live in `pipeline/evaluate.ts` rather than `config.ts` because they're coupled to the `PROMPT_VERSION` string and the catHash invariant: `K_RERANK_SMALL=5`, `K_RERANK_LARGE=7`, `CONDITIONAL_REJECT_THRESHOLD=0.87`.
 
-### On-disk caches (`~/ObsidianBookmarks/.roost/`)
+### On-disk caches (`<vault>/.roost/`)
 
 | File | Written by | Invalidation |
 |------|-----------|--------------|
