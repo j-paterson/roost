@@ -214,3 +214,56 @@ describe("deriveHubState — embedding", () => {
     expect(s.embedding).toBeNull();
   });
 });
+
+describe("deriveHubState — pipelinesPending (plan 052)", () => {
+  it("null pendingPipelines → total 0 + empty byPipeline", () => {
+    const s = deriveHubState(baseInputs());
+    expect(s.global.pipelinesPending.total).toBe(0);
+    expect(s.global.pipelinesPending.byPipeline).toHaveLength(0);
+  });
+
+  it("blocked pipeline contributes 0 to total and is reflected in byPipeline", () => {
+    const s = deriveHubState({
+      ...baseInputs(),
+      pendingPipelines: {
+        scannedAt: 1,
+        byPipeline: { recipe: { pending: 0, stale: 0, blocked: true } },
+        pendingItemIds: { recipe: [] },
+      },
+    });
+    expect(s.global.pipelinesPending.total).toBe(0);
+    const entry = s.global.pipelinesPending.byPipeline.find(e => e.id === "recipe");
+    expect(entry?.blocked).toBe(true);
+  });
+
+  it("active pipeline with pending items contributes to total", () => {
+    const s = deriveHubState({
+      ...baseInputs(),
+      pendingPipelines: {
+        scannedAt: 1,
+        byPipeline: { recipe: { pending: 3, stale: 0, blocked: false } },
+        pendingItemIds: { recipe: ["id1", "id2", "id3"] },
+      },
+    });
+    expect(s.global.pipelinesPending.total).toBe(3);
+  });
+
+  it("item appearing in two pipelines is counted once in global total", () => {
+    const s = deriveHubState({
+      ...baseInputs(),
+      pendingPipelines: {
+        scannedAt: 1,
+        byPipeline: {
+          recipe: { pending: 2, stale: 0, blocked: false },
+          place: { pending: 2, stale: 0, blocked: false },
+        },
+        pendingItemIds: {
+          recipe: ["shared-id", "recipe-only"],
+          place: ["shared-id", "place-only"],
+        },
+      },
+    });
+    // 3 distinct ids: shared-id, recipe-only, place-only
+    expect(s.global.pipelinesPending.total).toBe(3);
+  });
+});

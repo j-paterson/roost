@@ -172,6 +172,10 @@ export function useSmartAssign(deps: SmartAssignDeps) {
           await scanLibrary();
           resetSmartAssignStaging(buildResetHost());
           await waitForMetadataQuiet(app.metadataCache);
+          // Refresh pending-pipeline counts now that frontmatter has settled,
+          // then auto-enqueue any pipelines that have new work.
+          plugin.refreshPendingPipelines();
+          void plugin.autoEnqueuePendingPipelines();
         },
       }, proposedFolders);
     } finally {

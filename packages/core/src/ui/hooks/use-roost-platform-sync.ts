@@ -172,6 +172,9 @@ export function useRoostPlatformSync({ app, plugin, log, scanLibrary }: UseRoost
       new Notice(`Sync complete: ${totalPushed} new bookmarks`);
       scanLibrary();
       await ensureBasesFiles(app.vault, plugin.settings.syncFolder);
+      // Refresh pending-pipeline counts post-sync and auto-enqueue any work.
+      plugin.refreshPendingPipelines();
+      void plugin.autoEnqueuePendingPipelines();
     } catch (e: unknown) {
       log(`[ERROR] ${e instanceof Error ? e.message : String(e)}`);
     } finally {
