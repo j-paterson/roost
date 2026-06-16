@@ -314,19 +314,29 @@ export function HubBody({ app, plugin }: { app: App; plugin: IRoostPlugin }) {
 
   const anySyncing = globalRunning || isPlatformSyncing("tiktok") || isPlatformSyncing("twitter");
 
+  // First run: show ONLY the onboarding panel. The rest of the Hub (platforms,
+  // backfills, integrations) would be confusing before setup is done, so it's
+  // hidden until the user finishes or skips (which flips setupComplete and a
+  // hub state change re-renders the full Hub below). All hooks run above this
+  // early return, so it doesn't break the rules of hooks.
+  if (!plugin.settings.setupComplete) {
+    return (
+      <div className="roost-hub-body mx-auto max-w-3xl py-2">
+        <header className="px-4 pt-3 pb-3 border-b border-border">
+          <h1 className="text-base font-semibold tracking-tight">Welcome to Roost</h1>
+          <p className="text-xs text-muted-foreground mt-0.5">Let's get you set up — just a few quick steps.</p>
+        </header>
+        <OnboardingPanel plugin={plugin} onComplete={() => plugin.triggerHubStateChange()} />
+      </div>
+    );
+  }
+
   return (
     <div className="roost-hub-body mx-auto max-w-3xl py-2">
       <header className="px-4 pt-3 pb-3 border-b border-border">
         <h1 className="text-base font-semibold tracking-tight">Roost Hub</h1>
         <p className="text-xs text-muted-foreground mt-0.5">Connect, sync, and manage your platforms — all in one place.</p>
       </header>
-
-      {/* First-run onboarding runs inline at the top of the Hub (not a modal).
-          Gated on setupComplete; finishing/skipping flips the flag and a hub
-          state change re-renders this away. */}
-      {!plugin.settings.setupComplete && (
-        <OnboardingPanel plugin={plugin} onComplete={() => plugin.triggerHubStateChange()} />
-      )}
 
       {/* Platforms + sync are the primary surface, so they lead. The global
           Fast/Deep sync controls sit at the top of this section. */}
