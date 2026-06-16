@@ -128,30 +128,39 @@ function extractRecipeLink(raw: any): string | null {
 
 // ── Candidate gathering ──
 
-/** Exported for unit testing. */
-export function gatherCandidates(app: App, syncFolder: string): RecipeCandidate[] {
+/** Id-only predicate — returns the set of roostIds that are recipe candidates.
+ *  No readRawJson call, so this is cheap enough to use in the pending-pipeline scan. */
+export function gatherRecipeCandidateIds(app: App, syncFolder: string): Set<string> {
   const embeddingCache = loadEmbeddingCache(app.vault);
   const fileIndex = buildFileIndex(app, syncFolder);
-  const candidates: RecipeCandidate[] = [];
-
+  const ids = new Set<string>();
   for (const [roostId, file] of fileIndex) {
     const fm = app.metadataCache.getFileCache(file)?.frontmatter;
     if (!fm) continue;
-
-    const embedded = embeddingCache[roostId];
-    const category = (embedded?.category || "").toLowerCase();
-    const rawTags = Array.isArray(fm.tags) ? fm.tags : [];
-    const tags: string[] = rawTags.map(t => String(t).toLowerCase());
-
+    const category = (embeddingCache[roostId]?.category || "").toLowerCase();
+    const tags = (Array.isArray(fm.tags) ? fm.tags : []).map(t => String(t).toLowerCase());
     const categoryMatch = RECIPE_CATEGORIES.has(category);
-    const tagMatch = tags.some(t =>
-      RECIPE_TAG_KEYWORDS.some(kw => t.includes(kw)),
-    );
+    const tagMatch = tags.some(t => RECIPE_TAG_KEYWORDS.some(kw => t.includes(kw)));
     const filedCat = String(fm[CATEGORY_FIELD] ?? "").toLowerCase();
     const filedSub = String(fm[SUBCATEGORY_FIELD] ?? "").toLowerCase();
     const filedMatch = FILED_RECIPE_CATEGORIES.has(filedCat) || FILED_RECIPE_CATEGORIES.has(filedSub);
+    if (categoryMatch || tagMatch || filedMatch) ids.add(roostId);
+  }
+  return ids;
+}
 
-    if (!categoryMatch && !tagMatch && !filedMatch) continue;
+/** Exported for unit testing. */
+export function gatherCandidates(app: App, syncFolder: string): RecipeCandidate[] {
+  const ids = gatherRecipeCandidateIds(app, syncFolder);
+  const fileIndex = buildFileIndex(app, syncFolder);
+  const embeddingCache = loadEmbeddingCache(app.vault);
+  const candidates: RecipeCandidate[] = [];
+
+  for (const roostId of ids) {
+    const file = fileIndex.get(roostId);
+    if (!file) continue;
+    const fm = app.metadataCache.getFileCache(file)?.frontmatter ?? {};
+    const embedded = embeddingCache[roostId];
 
     const raw = readRawJson(app.vault, syncFolder, roostId);
     const description = extractDescription(raw);
@@ -476,6 +485,9 @@ export const RECIPE_ENRICHMENT: EnrichmentDef = {
   schemaVersion: 1,
   commandId: "run-recipe-pipeline",
   commandName: "Run Recipe extraction pipeline",
+  cacheFile: CACHE_FILE,
+  gatherCandidateIds: gatherRecipeCandidateIds,
+  pendingExtractVerdict: "recipe",
   runBackfill: async (plugin, opts) => {
     const vault = plugin.app.vault;
     const existing = loadPipelineCache<CacheEntry>(vault, CACHE_FILE);

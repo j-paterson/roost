@@ -441,7 +441,7 @@ export function HubBody({ app, plugin }: { app: App; plugin: IRoostPlugin }) {
           onToggle={toggleIntegration}
         />
         <PipelinesPanel
-          rows={buildPipelineRows(plugin.settings.pipelines, pipelineGate.llm)}
+          rows={buildPipelineRows(plugin.settings.pipelines, pipelineGate.llm, state.global.pipelinesPending)}
           llm={pipelineGate.llm}
           onToggle={togglePipeline}
         />

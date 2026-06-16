@@ -22,20 +22,40 @@ export function PipelinesPanel({
       </div>
       {rows.map((row) => {
         const st = statusText(row.status);
+        const hasPending = row.pending > 0;
+        const hasStale = row.stale > 0;
         return (
           <div key={row.id} className="px-4 py-2 hover:bg-accent/30 transition-colors">
             <div className="grid grid-cols-[8rem_1fr_auto] items-center gap-3">
               <span className="text-sm font-medium">{row.label}</span>
               <span className={`text-sm truncate ${st.tone}`}>{row.enabled && llm ? row.blurb : st.text}</span>
-              <Button
-                variant={row.enabled ? "secondary" : "outline"}
-                size="sm"
-                disabled={!llm}
-                aria-label={`${row.enabled ? "Disable" : "Enable"} ${row.label}`}
-                onClick={() => onToggle(row.id, !row.enabled)}
-              >
-                {row.enabled ? "On" : "Off"}
-              </Button>
+              <div className="flex items-center gap-2">
+                {hasPending && row.status === "active" && (
+                  <span
+                    className="inline-flex items-center justify-center rounded-full bg-primary/80 text-primary-foreground text-xs font-semibold min-w-[1.25rem] h-5 px-1"
+                    title={`${row.pending} item${row.pending === 1 ? "" : "s"} pending`}
+                  >
+                    {row.pending}
+                  </span>
+                )}
+                {hasStale && !hasPending && row.status === "active" && (
+                  <span
+                    className="inline-flex items-center justify-center rounded-full bg-amber-500/80 text-white text-xs font-semibold min-w-[1.25rem] h-5 px-1"
+                    title={`${row.stale} item${row.stale === 1 ? "" : "s"} have a stale schema`}
+                  >
+                    {row.stale}
+                  </span>
+                )}
+                <Button
+                  variant={row.enabled ? "secondary" : "outline"}
+                  size="sm"
+                  disabled={!llm}
+                  aria-label={`${row.enabled ? "Disable" : "Enable"} ${row.label}`}
+                  onClick={() => onToggle(row.id, !row.enabled)}
+                >
+                  {row.enabled ? "On" : "Off"}
+                </Button>
+              </div>
             </div>
           </div>
         );

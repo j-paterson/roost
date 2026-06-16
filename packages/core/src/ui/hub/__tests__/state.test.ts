@@ -11,6 +11,7 @@ function baseInputs(): HubInputs {
     llmReadyForPipelines: true,
     syncStateByPlatform: {},
     incompleteByCategory: null,
+    pendingPipelines: null,
     eagleConfigured: false,
     jobBusy: false,
     jobLabel: null,
