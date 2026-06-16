@@ -11,6 +11,29 @@ Note: at planning time the working tree had uncommitted changes to
 `package.json`, `package-lock.json`, and `packages/core/src/sync/media-backfill.ts`
 — none of which are in scope for any plan below.
 
+---
+
+## Open / next up (live backlog — refreshed 2026-06-16)
+
+**This is the single source of truth for what's *not done*.** The 001–054 table
+below is the historical execution record (almost all `MERGED`); the
+"Confirmed findings" / "Direction findings" sections near the bottom are
+2026-06-10 audit residue — most have since shipped (annotated there).
+
+| Item | Where it lives | Notes |
+|------|----------------|-------|
+| **052** — Pending-pipeline tracking: derive per-pipeline pending count, surface as badges, auto-enqueue after sync / Smart Assign | `plans/052-*.md` | the spine; 053 depends on it |
+| **053** — Make the 5 embedded-only pipelines also gather by filed `roost_category` | `plans/053-*.md` | depends on 052's factored matchers |
+| **054** — Cancellable heavy jobs: abort a running/queued pipeline or backfill from the hub | `plans/054-*.md` | independent; most useful with 052 |
+| **Run button → Hub** — remove the pipeline "Run" button from the filetree; move pipeline actions onto the Hub and standardize the Hub's button/action structure | user req 2026-06-16 | UX; touches `library-tree` + `hub-body` |
+| **Expanded-card layout consolidation** — replace the implicit `hasMedia`/`hasBodyText`/`isTweetView` × CSS-class matrix with ONE explicit `data-layout` mode (`media-split` \| `stacked` \| `tweet`) | memory `expanded-card-layout-debt`; backlog 2026-06-16 | caused the videos-above-text bug; brainstorm → spec → build |
+| **Twitter bookmark folders** — sync X bookmark folders like TikTok collections | branch `worktree-agent-ad72a36f9e3095edc` | **BLOCKED** — needs live X devtools verification of the GraphQL probe before merge |
+| **advisor/037 sorting-cost finding** — on honest collection labels, embedding top-1 beats the dual-LLM ensemble (n=265, +5.3pp) | branch `advisor/037-sorting-cost-experiments`; spec `docs/superpowers/specs/2026-06-15-sorting-cost-optimization-design.md` | **DECISION pending** — ship "drop the LLM rerank" or not |
+| **PERF-05** (residual) — `leaflet`/`motion`/`radix-ui` still module-init at startup; defer via dynamic import if startup profiling justifies | 2026-06-10 audit | the only un-shipped audit fix-item |
+| **Direction (maintainer's call)** — D-02 bulk export, D-03 third platform, D-04 demo videos, D-05 surface subcategory in docs | see "Direction findings" below | unranked product calls |
+
+> Other backlogs feed this list: dated session plans/specs in `docs/superpowers/{plans,specs}/` (gitignored, local), and cross-session notes in agent memory. Add new open items here so there's one durable home.
+
 ## Execution order & status
 
 | Plan | Title | Priority | Effort | Depends on | Status |
@@ -336,7 +359,14 @@ Vetted as real during the audit; ask the advisor for a plan when wanted.
 **Promoted & MERGED:** SECURITY-10 → plan 008, CORRECTNESS-02 → plan 009,
 SECURITY-05 → plan 010 (all in `main` @ `c55bf46`). **SEC-06/07 → plan 007
 REJECTED** (premise false — `main` already on wdio-mocha v9; see corrected item
-below). The remainder is still open backlog.
+below).
+
+> **Update 2026-06-16:** most items below have since shipped — **DEV-AUDIT → plan 016**,
+> **TESTS-02 → 023**, **TESTS-03 → 019**, **DX-01 → 027**, **DX-03 → 013**,
+> **DX-04 → 014/030**, **DEBT-02** (VaultWriter decomposition complete). The only
+> genuinely-open residual is **PERF-05** (startup dynamic-import) plus minor TESTS-04/05
+> depth. See **[Open / next up](#open--next-up-live-backlog--refreshed-2026-06-16)** at the
+> top for the current live backlog. The remaining entries are kept for history.
 
 - **SECURITY-10** — `fetchWithRetry` (`pipeline/resolvers/resolver-utils.ts:109`)
   and Ollama calls use Obsidian `requestUrl` with no timeout; a stalled host
