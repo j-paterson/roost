@@ -247,6 +247,8 @@ Before processing each API page, the probe checks every item ID against `__ROOST
 
 **Early-out**: Previous sync complete + `EARLY_OUT_THRESHOLD` (3) consecutive all-known batches → stop scrolling.
 
+**Phase 3 — Bookmark folders** (full sync only): the probe intercepts X's `BookmarkFoldersSlice` op (folder list at `viewer.user_results.result.bookmark_collections_slice.items`); the sync then navigates each folder page (`x.com/i/bookmarks/<id>`), the `BookmarkFolderTimeline` op (keyed by the `bookmark_collection_id` variable) is parsed, and each tweet is stamped `_bookmark_folder`. The writer files that as `collection` + a `collection/<name>` tag — the same alias→`roost_category` path as TikTok collections. The probe matches on op *name* (not the rotating queryId), and the GraphQL contract is regression-guarded by the live spec `tests/e2e/87-x-bookmark-folders.live.spec.ts` (see `tests/e2e/LIVE-TESTING.md`).
+
 ### Skip Layers
 
 | Layer | What it skips | How |
