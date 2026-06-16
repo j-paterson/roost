@@ -1005,6 +1005,192 @@
   display: none;
 }
 
+/* ── Native tweet reading layout (expanded text-only X tweets) ─────────────── */
+.roost-expanded-tweet .roost-expanded-info {
+  padding-top: 8px;
+}
+
+.roost-tweet {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.roost-tweet-segment {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* Threaded tweets read as a connected list: a continuous left rail links the
+   segments, with the focal (bookmarked) tweet accented. */
+.roost-tweet-threaded .roost-tweet-segment {
+  border-left: 2px solid var(--background-modifier-border);
+  padding-left: 14px;
+  margin-left: 4px;
+}
+
+.roost-tweet-threaded .roost-tweet-focal {
+  border-left-color: var(--interactive-accent);
+}
+
+.roost-tweet-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.roost-tweet-avatar {
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 15px;
+  color: var(--text-on-accent);
+  background: var(--interactive-accent);
+}
+
+.roost-tweet-meta {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.roost-tweet-handle {
+  font-weight: 700;
+  color: var(--text-normal);
+  text-decoration: none;
+}
+
+.roost-tweet-handle:hover {
+  text-decoration: underline;
+}
+
+.roost-tweet-date {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.roost-tweet-logo {
+  margin-left: auto;
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  color: var(--text-muted);
+  opacity: 0.7;
+}
+
+.roost-tweet-logo svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.roost-tweet-reply {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.roost-tweet-text {
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--text-normal);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.roost-tweet-para + .roost-tweet-para {
+  margin-top: 10px;
+}
+
+.roost-tweet-link {
+  color: #1d9bf0;
+  text-decoration: none;
+}
+
+.roost-tweet-link:hover {
+  text-decoration: underline;
+}
+
+.roost-tweet-photos {
+  display: grid;
+  gap: 6px;
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+.roost-tweet-photos.roost-photo-grid-1 { grid-template-columns: 1fr; }
+.roost-tweet-photos.roost-photo-grid-2 { grid-template-columns: 1fr 1fr; }
+.roost-tweet-photos.roost-photo-grid-3 { grid-template-columns: 1fr 1fr; }
+.roost-tweet-photos.roost-photo-grid-4 { grid-template-columns: 1fr 1fr; }
+
+.roost-tweet-photo {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 12px;
+}
+
+/* Quoted tweet — nested bordered card. */
+.roost-tweet-quote {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 14px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: var(--background-primary);
+}
+
+.roost-tweet-quote-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.roost-tweet-quote-avatar {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-on-accent);
+  background: var(--text-muted);
+}
+
+.roost-tweet-quote-handle {
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--text-normal);
+}
+
+.roost-tweet-quote-text {
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--text-normal);
+  white-space: pre-wrap;
+}
+
+.roost-tweet-quoted-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
 .roost-expanded-title-toggle {
   display: inline-block;
   margin-left: 4px;

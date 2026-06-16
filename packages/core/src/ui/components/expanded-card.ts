@@ -7,6 +7,8 @@
 
 import { splitCaption } from "@/lib/caption";
 import { splitParagraphs, tokenizeRuns } from "@/sync/card-renderer";
+import { renderTweetThread } from "@/views/tweet-dom";
+import type { TweetThreadView } from "@/views/tweet-view-model";
 
 export interface BodySegment {
   text: string;
@@ -32,6 +34,10 @@ export interface ExpandedCardData {
    *  by an inline photo grid for any per-segment images. Dividers between
    *  segments. For non-threaded text bodies, pass a single-element array. */
   bodySegments?: BodySegment[];
+  /** Native tweet view — when present, the info pane renders a Twitter-like
+   *  layout (header, entity links, quoted cards, thread list) instead of the
+   *  generic title/identity/body-segment chrome. Used for text-only X tweets. */
+  tweetView?: TweetThreadView;
   /** Extra elements appended at the end of the info pane (e.g. "Open note →"). */
   extraEls?: HTMLElement[];
 }
@@ -76,14 +82,20 @@ export function renderExpandedCard(
 ): () => void {
   container.empty();
 
-  const hasMedia = Boolean(
+  // Native tweet view takes over the info pane entirely (no media panel, no
+  // generic title/identity chrome) — a text-only X tweet reads like a tweet.
+  const tweetView = data.tweetView;
+  const isTweetView = !!tweetView;
+
+  const hasMedia = !isTweetView && Boolean(
     data.videoUrl ||
       (data.allImageUrls && data.allImageUrls.length > 0) ||
       data.coverUrl,
   );
   if (!hasMedia) container.addClass("roost-expanded-text-only");
+  if (isTweetView) container.addClass("roost-expanded-tweet");
   const segments = data.bodySegments?.filter((s) => s.text && s.text.trim()) ?? [];
-  const hasBodyText = segments.length > 0;
+  const hasBodyText = isTweetView || segments.length > 0;
   if (hasBodyText) container.addClass("roost-expanded-has-bodytext");
 
   // ── Left: media panel (omitted entirely for text-only items) ──
@@ -140,29 +152,40 @@ export function renderExpandedCard(
   // ── Right: info panel ──
   const info = container.createDiv({ cls: "roost-expanded-info" });
 
+  // Header — always present (the close button mounts here). For a native tweet
+  // view the title chrome is replaced by the tweet thread rendered below.
+  const header = info.createDiv({ cls: "roost-expanded-header" });
+
+  // Native tweet path: render the Twitter-like thread and skip title/identity.
+  if (isTweetView && tweetView) {
+    renderTweetThread(info, tweetView, { url: data.url });
+  }
+
   // Title — split raw caption into a short title and an optional description.
   // When bodyText is being rendered we already show the full content below,
   // so the "…" expand toggle would just duplicate it — skip in that case.
-  const { title, description } = splitCaption(data.title);
-  const header = info.createDiv({ cls: "roost-expanded-header" });
-  const titleEl = header.createDiv({ cls: "roost-expanded-title" });
-  titleEl.createSpan({ cls: "roost-expanded-title-text", text: title || data.title });
-  if (description && !hasBodyText) {
-    const toggle = titleEl.createSpan({ cls: "roost-expanded-title-toggle", text: "…" });
-    toggle.setAttr("role", "button");
-    toggle.setAttr("aria-label", "Show full description");
-    toggle.setAttr("title", "Show full description");
-    const body = info.createDiv({ cls: "roost-expanded-body roost-expanded-body-collapsed", text: description });
-    toggle.addEventListener("click", (e) => {
-      e.stopPropagation();
-      const expanded = body.classList.toggle("roost-expanded-body-collapsed") === false;
-      toggle.setAttr("aria-label", expanded ? "Hide description" : "Show full description");
-      toggle.setAttr("title", expanded ? "Hide description" : "Show full description");
-    });
+  // Skipped entirely for the native tweet view (it renders its own header).
+  if (!isTweetView) {
+    const { title, description } = splitCaption(data.title);
+    const titleEl = header.createDiv({ cls: "roost-expanded-title" });
+    titleEl.createSpan({ cls: "roost-expanded-title-text", text: title || data.title });
+    if (description && !hasBodyText) {
+      const toggle = titleEl.createSpan({ cls: "roost-expanded-title-toggle", text: "…" });
+      toggle.setAttr("role", "button");
+      toggle.setAttr("aria-label", "Show full description");
+      toggle.setAttr("title", "Show full description");
+      const body = info.createDiv({ cls: "roost-expanded-body roost-expanded-body-collapsed", text: description });
+      toggle.addEventListener("click", (e: MouseEvent) => {
+        e.stopPropagation();
+        const expanded = body.classList.toggle("roost-expanded-body-collapsed") === false;
+        toggle.setAttr("aria-label", expanded ? "Hide description" : "Show full description");
+        toggle.setAttr("title", expanded ? "Hide description" : "Show full description");
+      });
+    }
   }
 
   // Identity: @author (linked to URL if present) + platform dot
-  if (data.author || data.platform || data.url) {
+  if (!isTweetView && (data.author || data.platform || data.url)) {
     const identity = info.createDiv({ cls: "roost-expanded-identity" });
     if (data.platform) {
       const dot = identity.createEl("span", { cls: `roost-expanded-identity-dot roost-platform-${data.platform}` });
@@ -184,7 +207,8 @@ export function renderExpandedCard(
 
   // Structured body content — each segment renders its text (paragraph-split
   // + entity-styled) followed by an inline photo grid. Dividers between.
-  if (hasBodyText) {
+  // (Skipped for the native tweet view, which rendered its own thread above.)
+  if (hasBodyText && !isTweetView) {
     const bodyEl = info.createDiv({ cls: "roost-expanded-bodytext" });
     segments.forEach((seg, segIdx) => {
       const segEl = bodyEl.createDiv({ cls: "roost-expanded-bodytext-segment" });

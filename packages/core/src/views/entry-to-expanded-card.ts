@@ -18,6 +18,7 @@ import {
   isRasterizedTextCover,
 } from "@/views/feed/card-helpers";
 import type { ResolvedSegment } from "@/views/expanded-body-segments";
+import type { TweetThreadView } from "@/views/tweet-view-model";
 
 export interface EntryMediaResolvers {
   resolveImageUrl: (entry: BasesEntry, propId: string) => string | null;
@@ -217,20 +218,22 @@ export function mountExpandedCardHost(
   entry: BasesEntry,
   resolvers: EntryMediaResolvers,
   extraEls?: HTMLElement[],
-  opts?: { app: App; bodySegments?: ResolvedSegment[] },
+  opts?: { app: App; bodySegments?: ResolvedSegment[]; tweetView?: TweetThreadView },
 ): () => void {
   container.addClass("roost-expanded");
   const data = entryToExpandedCardData(entry, resolvers, extraEls);
   const bodySegments = opts?.bodySegments;
-  const hasBody = !!bodySegments && bodySegments.length > 0;
+  const tweetView = opts?.tweetView;
+  const hasBody = (!!bodySegments && bodySegments.length > 0) || !!tweetView;
   // Suppress the rasterized text cover + numbered-png carousel; the text is now
-  // shown as body segments and real photos appear inline per segment.
+  // shown as the native tweet view (or body segments), photos inline per segment.
   const suppressRasterized = hasBody && !!opts?.app && isRasterizedTextCover(opts.app, entry);
   const cleanup = renderExpandedCard(container, {
     ...data,
     coverUrl: suppressRasterized ? null : data.coverUrl,
     allImageUrls: suppressRasterized ? undefined : data.allImageUrls,
-    bodySegments: hasBody ? bodySegments : undefined,
+    bodySegments: bodySegments && bodySegments.length > 0 ? bodySegments : undefined,
+    tweetView,
   });
   return () => {
     cleanup();

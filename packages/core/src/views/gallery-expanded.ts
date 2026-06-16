@@ -14,6 +14,7 @@ import {
 import { buildExpandedExtraElements } from "@/views/gallery-expanded-extras";
 import { getCoverFolder, isRasterizedTextCover } from "@/views/feed/card-helpers";
 import { loadBodySegments, type ResolvedSegment } from "@/views/expanded-body-segments";
+import { loadTweetThreadView, type TweetThreadView } from "@/views/tweet-view-model";
 import type { App } from "obsidian";
 
 export interface GalleryExpandState {
@@ -99,17 +100,22 @@ export async function toggleGalleryExpanded(
   const first = cardEl.getBoundingClientRect();
 
   // Text-only tweets / text-focal threads: the cover is a generated card.png
-  // (or numbered text png). Load the real backfilled body text so the expanded
-  // card shows text instead of the rasterized image. cachedRead is fast; the
+  // (or numbered text png). Build the native tweet view (X) — or, as a
+  // fallback, the generic body segments — so the expanded card reads like a
+  // tweet instead of showing the rasterized image. cachedRead is fast; the
   // clicked card stays collapsed during this microtask, so the FLIP is intact.
   let bodySegments: ResolvedSegment[] | undefined;
+  let tweetView: TweetThreadView | undefined;
   if (isRasterizedTextCover(opts.app, entry)) {
-    bodySegments = await loadBodySegments(
-      opts.app,
-      entry.file,
-      getCoverFolder(entry) ?? "",
-      stripAuthorWiki(safeGetValue(entry, "note.author")),
-    );
+    const attachFolder = getCoverFolder(entry) ?? "";
+    const author = stripAuthorWiki(safeGetValue(entry, "note.author"));
+    const platform = (safeGetValue(entry, "note.platform")?.toString() ?? "").toLowerCase();
+    if (platform === "twitter" || platform === "x") {
+      tweetView = (await loadTweetThreadView(opts.app, attachFolder, author)) ?? undefined;
+    }
+    if (!tweetView) {
+      bodySegments = await loadBodySegments(opts.app, entry.file, attachFolder, author);
+    }
     // The card may have been collapsed/rebuilt while we awaited.
     if (!cardEl.isConnected) return;
   }
@@ -137,6 +143,7 @@ export async function toggleGalleryExpanded(
   state.expandedCleanup = mountExpandedCardHost(cardEl, entry, mediaResolvers, extraEls, {
     app: opts.app,
     bodySegments,
+    tweetView,
   });
   mountExpandedCloseButton(cardEl, () => closeGalleryExpanded(state));
 
