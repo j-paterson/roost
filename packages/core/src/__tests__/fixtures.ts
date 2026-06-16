@@ -82,8 +82,8 @@ export function makeWorkoutExtraction(overrides: Partial<WorkoutExtraction> = {}
     difficulty: "intermediate",
     duration: "45 min",
     exercises: [
-      { name: "back squat", reps: "6-8" },
-      { name: "romanian deadlift", reps: "10" },
+      "back squat — 6-8",
+      "romanian deadlift — 10",
     ],
     equipment: ["barbell", "rack"],
     notes: null,

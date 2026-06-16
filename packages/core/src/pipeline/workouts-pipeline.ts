@@ -38,12 +38,15 @@ interface WorkoutExtraction {
   workoutType: WorkoutType;
   name: string;
   targetArea: string;
-  exercises: { name: string; reps: string | null }[];
+  exercises: string[];
   duration: string | null;
   difficulty: "beginner" | "intermediate" | "advanced";
   equipment: string[];
   notes: string | null;
 }
+
+/** Exported for unit-testing the extraction parse step. */
+export type { WorkoutCandidate };
 
 interface CacheEntry {
   triage: "workout" | "skip";
@@ -270,7 +273,7 @@ Respond with ONLY valid JSON — no markdown fences, no commentary:
 }`;
 }
 
-async function extractWorkout(c: WorkoutCandidate): Promise<WorkoutExtraction | null> {
+export async function extractWorkout(c: WorkoutCandidate): Promise<WorkoutExtraction | null> {
   const raw = await ollamaGenerate(buildExtractPrompt(c), { numPredict: 1536, numCtx: 4096 });
   const cleaned = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/, "");
 
@@ -284,10 +287,13 @@ async function extractWorkout(c: WorkoutCandidate): Promise<WorkoutExtraction | 
       name,
       targetArea: parsed.targetArea || "Full body",
       exercises: Array.isArray(parsed.exercises)
-        ? (parsed.exercises as { name?: unknown; reps?: unknown }[]).map(e => ({
-            name: String(e.name || ""),
-            reps: e.reps && e.reps !== "null" ? String(e.reps) : null,
-          })).filter(e => e.name)
+        ? (parsed.exercises as { name?: unknown; reps?: unknown }[])
+            .flatMap(e => {
+              const exName = String(e.name || "").trim();
+              if (!exName) return [];
+              const exReps = e.reps && e.reps !== "null" ? String(e.reps).trim() : null;
+              return [exReps ? `${exName} — ${exReps}` : exName];
+            })
         : [],
       duration: parsed.duration && parsed.duration !== "null" ? parsed.duration : null,
       difficulty: (["beginner", "intermediate", "advanced"].includes(parsed.difficulty)
@@ -316,7 +322,7 @@ export function computeWorkoutBackfillFields(
   updates[WORKOUT_FIELDS.difficulty] = extraction.difficulty;
   updates[WORKOUT_FIELDS.duration] = extraction.duration;
   updates[WORKOUT_FIELDS.equipment] = extraction.equipment;
-  updates[WORKOUT_FIELDS.exercises] = extraction.exercises as unknown as string[];
+  updates[WORKOUT_FIELDS.exercises] = extraction.exercises;
   updates[WORKOUT_FIELDS.notes] = extraction.notes;
   updates[WORKOUT_FIELDS.version] = WORKOUT_PIPELINE_VERSION;
 
@@ -437,7 +443,7 @@ export function reconstructWorkoutsCache(
           ? fm.workout_difficulty : "intermediate",
         duration: typeof fm.workout_duration === "string" ? fm.workout_duration : null,
         equipment: Array.isArray(fm.workout_equipment) ? fm.workout_equipment : [],
-        exercises: Array.isArray(fm.workout_exercises) ? fm.workout_exercises : [],
+        exercises: Array.isArray(fm.workout_exercises) ? fm.workout_exercises as string[] : [],
         notes: typeof fm.workout_notes === "string" ? fm.workout_notes : null,
       },
     };

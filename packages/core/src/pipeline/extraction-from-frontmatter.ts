@@ -197,7 +197,7 @@ export function workoutFromFrontmatter(fm: Record<string, unknown>): WorkoutExtr
       ? fm.workout_difficulty : "intermediate",
     duration: typeof fm.workout_duration === "string" ? fm.workout_duration : null,
     equipment: Array.isArray(fm.workout_equipment) ? fm.workout_equipment : [],
-    exercises: Array.isArray(fm.workout_exercises) ? fm.workout_exercises : [],
+    exercises: Array.isArray(fm.workout_exercises) ? fm.workout_exercises as string[] : [],
     notes: typeof fm.workout_notes === "string" ? fm.workout_notes : null,
   };
 }

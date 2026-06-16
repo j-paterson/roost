@@ -444,8 +444,7 @@ function renderWorkout(el: HTMLElement, data: WorkoutExtraction, source?: Pipeli
     group.createDiv({ cls: "roost-pipeline-group-label", text: "Exercises" });
     const list = group.createEl("ul", { cls: "roost-pipeline-exercises" });
     for (const ex of data.exercises) {
-      const text = ex.reps ? `${ex.name} — ${ex.reps}` : ex.name;
-      list.createEl("li", { text });
+      list.createEl("li", { text: ex });
     }
   }
 

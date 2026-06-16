@@ -352,7 +352,7 @@ describe("workoutFromFrontmatter", () => {
     expect(workoutFromFrontmatter({ enrichment_v_workout: "1" })).toBeNull();
   });
 
-  it("builds a WorkoutExtraction from workout_* frontmatter fields", () => {
+  it("builds a WorkoutExtraction from workout_* frontmatter fields — exercises are strings", () => {
     const fm = {
       enrichment_v_workout: 1,
       workout_name: "Full Body Blast",
@@ -361,7 +361,7 @@ describe("workoutFromFrontmatter", () => {
       workout_difficulty: "intermediate",
       workout_duration: "45 min",
       workout_equipment: ["dumbbells", "mat"],
-      workout_exercises: [{ name: "Burpees", reps: "20" }],
+      workout_exercises: ["Burpees — 20"],
       workout_notes: "Rest 30s between sets",
     };
 
@@ -373,7 +373,7 @@ describe("workoutFromFrontmatter", () => {
     expect(result!.difficulty).toBe("intermediate");
     expect(result!.duration).toBe("45 min");
     expect(result!.equipment).toEqual(["dumbbells", "mat"]);
-    expect(result!.exercises).toEqual([{ name: "Burpees", reps: "20" }]);
+    expect(result!.exercises).toEqual(["Burpees — 20"]);
     expect(result!.notes).toBe("Rest 30s between sets");
   });
 

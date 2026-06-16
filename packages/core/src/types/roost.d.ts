@@ -111,7 +111,7 @@ export interface ProductExtraction {
 
 export interface WorkoutExtraction {
   workoutType: string; name: string; targetArea: string;
-  exercises: { name: string; reps: string | null }[];
+  exercises: string[];
   duration: string | null; difficulty: "beginner" | "intermediate" | "advanced";
   equipment: string[]; notes: string | null;
 }
