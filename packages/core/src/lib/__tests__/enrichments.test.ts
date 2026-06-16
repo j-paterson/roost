@@ -2,6 +2,7 @@
 import { describe, it, expect } from "vitest";
 import {
   ENRICHMENTS,
+  PIPELINE_ENRICHMENTS,
   getEnrichmentById,
   countFor,
   enrichmentVersionField,
@@ -169,5 +170,32 @@ describe("Pipeline enrichments (Phase 2)", () => {
   it("mediaExtraction has legacyAliases for pipeline_v_media", () => {
     const def = getEnrichmentById("mediaExtraction");
     expect(def?.legacyAliases).toContain("pipeline_v_media");
+  });
+});
+
+describe("Pipeline enrichments — pending-scan metadata (plan 052)", () => {
+  it("every PIPELINE_ENRICHMENTS member has a non-empty cacheFile", () => {
+    for (const def of PIPELINE_ENRICHMENTS) {
+      expect(typeof def.cacheFile).toBe("string");
+      expect((def.cacheFile as string).length).toBeGreaterThan(0);
+    }
+  });
+
+  it("every PIPELINE_ENRICHMENTS member has a gatherCandidateIds function", () => {
+    for (const def of PIPELINE_ENRICHMENTS) {
+      expect(typeof def.gatherCandidateIds).toBe("function");
+    }
+  });
+
+  it("every PIPELINE_ENRICHMENTS member has a non-empty pendingExtractVerdict", () => {
+    for (const def of PIPELINE_ENRICHMENTS) {
+      expect(typeof def.pendingExtractVerdict).toBe("string");
+      expect((def.pendingExtractVerdict as string).length).toBeGreaterThan(0);
+    }
+  });
+
+  it("all 7 cache files are distinct", () => {
+    const files = PIPELINE_ENRICHMENTS.map(d => d.cacheFile);
+    expect(new Set(files).size).toBe(files.length);
   });
 });

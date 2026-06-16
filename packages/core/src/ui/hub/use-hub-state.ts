@@ -43,6 +43,7 @@ function gatherInputs(
     eagleConfigured:
       (settings.eagleToken ?? "").length > 0 &&
       (settings.eagleLibraryPath ?? "").length > 0,
+    pendingPipelines: plugin.lastPendingPipelines,
     embedding: embeddingInput,
     jobBusy: plugin.jobQueue.isBusy(),
     jobLabel: plugin.jobQueue.currentLabel(),

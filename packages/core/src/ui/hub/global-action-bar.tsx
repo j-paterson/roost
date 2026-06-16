@@ -78,9 +78,11 @@ export function GlobalActionBar({
 
   const backlogs = countBacklogs(state);
   const platformsReady = countReadyPlatforms(state);
+  const pipelinesPendingTotal = state.global.pipelinesPending.total;
   const subParts: string[] = [];
   if (platformsReady > 0) subParts.push(`${platformsReady} platform${platformsReady === 1 ? "" : "s"}`);
   if (backlogs > 0) subParts.push(`${backlogs} backfills`);
+  if (pipelinesPendingTotal > 0) subParts.push(`${pipelinesPendingTotal} pipeline item${pipelinesPendingTotal === 1 ? "" : "s"} pending`);
   const subline = subParts.length > 0 ? subParts.join(" · ") : "Nothing pending";
 
   return (

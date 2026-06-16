@@ -11,6 +11,9 @@ import { regenerateCardForActiveNote } from "@/plugin/regenerate-card-command";
 import { fetchCoversCommand } from "@/plugin/fetch-covers-command";
 import { maybeAutoRunTweetBodyBackfill } from "@/sync/tweet-body-backfill";
 import { RoostJobQueue } from "@/lib/job-queue";
+import { scanPendingPipelines, type PendingPipelinesResult } from "@/pipeline/scan-pending-pipelines";
+import { PIPELINE_ENRICHMENTS } from "@/lib/enrichments";
+import { isCategoryPipelineActive } from "@/lib/pipeline-gate-plugin";
 import { runJobWithBulkWriteFlag } from "@/lib/run-job-bulk-write";
 // Side-effect import: each pipeline-view module registers itself with the
 // pipeline-view registry on load. Adding a new pipeline visualization is
@@ -76,6 +79,31 @@ export default class RoostPlugin extends Plugin {
    *  Kept on the plugin instance so the hub re-renders pick up the same
    *  result without re-running the (expensive) full-vault scan. */
   lastIncompleteScan: import("./sync/vault-writer").IncompleteByCategory | null = null;
+
+  /** Derived pending-work count per pipeline — recomputed after sync, Smart
+   *  Assign confirm, or a single pipeline run. Null until first refresh. */
+  lastPendingPipelines: PendingPipelinesResult | null = null;
+
+  /** Recompute lastPendingPipelines synchronously and trigger a Hub re-render. */
+  refreshPendingPipelines(): void {
+    this.lastPendingPipelines = scanPendingPipelines(this, Date.now());
+    this.triggerHubStateChange();
+  }
+
+  /** Enqueue any pipeline that has pending work (pending>0, gate active).
+   *  Runs through the serial job queue so jobs are FIFO and never concurrent. */
+  async autoEnqueuePendingPipelines(): Promise<void> {
+    const pending = this.lastPendingPipelines;
+    if (!pending) return;
+    for (const def of PIPELINE_ENRICHMENTS) {
+      const entry = pending.byPipeline[def.id];
+      if (!entry || entry.blocked || entry.pending <= 0) continue;
+      if (!isCategoryPipelineActive(def.categoryMatches[0], this)) continue;
+      void this.runJob(def.commandName, (signal) =>
+        def.runBackfill(this, { signal, onLog: (m) => this.fireLog(`[${def.id}] ${m}`) }),
+      );
+    }
+  }
 
   /** Serial queue for heavy jobs — see IRoostPlugin.jobQueue. */
   readonly jobQueue = new RoostJobQueue();
@@ -213,6 +241,13 @@ export default class RoostPlugin extends Plugin {
     // Deferred so plugin load / first paint are never blocked.
     window.setTimeout(() => {
       void maybeAutoRunTweetBodyBackfill(this);
+    }, 4000);
+
+    // Deferred initial pending-pipeline scan. Uses the same 4s delay so first
+    // paint is never blocked. The result populates hub badges and the subline
+    // in GlobalActionBar without re-running the (expensive) pipeline runner.
+    window.setTimeout(() => {
+      this.refreshPendingPipelines();
     }, 4000);
   }
 

@@ -225,6 +225,28 @@ function hasMediaFastPath(tags: string[]): boolean {
 
 // ── Candidate gathering ──
 
+/** Id-only predicate using the discovery (embedding-category + tag-keyword) branch.
+ *  Does NOT include the filter-scoped (roost_category) branch, which is a
+ *  per-run narrowing mode not part of the default discovery pass.
+ *  No readRawJson call, so this is cheap enough to use in the pending-pipeline scan. */
+export function gatherMediaCandidateIds(app: App, syncFolder: string): Set<string> {
+  const embeddingCache = loadEmbeddingCache(app.vault);
+  const fileIndex = buildFileIndex(app, syncFolder);
+  const ids = new Set<string>();
+  for (const [roostId, file] of fileIndex) {
+    const fm = app.metadataCache.getFileCache(file)?.frontmatter;
+    if (!fm) continue;
+    const category = (embeddingCache[roostId]?.category || "").toLowerCase();
+    const rawTags: string[] = Array.isArray(fm.tags)
+      ? (fm.tags as unknown[]).map(t => String(t).toLowerCase())
+      : [];
+    const categoryMatch = MEDIA_CATEGORIES.has(category);
+    const tagMatch = rawTags.some(t => MEDIA_TAG_KEYWORDS.some(kw => t.includes(kw)));
+    if (categoryMatch || tagMatch) ids.add(roostId);
+  }
+  return ids;
+}
+
 function gatherCandidates(
   app: App,
   syncFolder: string,
@@ -832,6 +854,9 @@ export const MEDIA_EXTRACTION_ENRICHMENT: EnrichmentDef = {
   schemaVersion: MEDIA_PIPELINE_VERSION,
   commandId: "run-media-pipeline",
   commandName: "Run Media extraction pipeline",
+  cacheFile: CACHE_FILE,
+  gatherCandidateIds: gatherMediaCandidateIds,
+  pendingExtractVerdict: "media",
   runBackfill: async (plugin, opts) => {
     const vault = plugin.app.vault;
     const existing = loadPipelineCache<CacheEntry>(vault, CACHE_FILE);

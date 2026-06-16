@@ -70,6 +70,14 @@ export interface EnrichmentDef {
   legacyAliases?: string[];
   /** Chip declarations for gallery display. */
   chips?: ChipDeclaration[];
+  /** (pipelines only) The pipeline's cache file under .roost/cache/, e.g. "recipe-cache.json". */
+  cacheFile?: string;
+  /** (pipelines only) Same id-matching predicate the pipeline's gatherCandidates uses,
+   *  but without readRawJson — returns only the set of matching roostIds. */
+  gatherCandidateIds?: (app: import("obsidian").App, syncFolder: string) => Set<string>;
+  /** (pipelines only) The triage verdict that means "extract me" — a cache entry with this
+   *  verdict and a null extraction (and no `extracted:true`) is still pending. */
+  pendingExtractVerdict?: string;
 }
 
 // Per-enrichment defs are colocated with their runner+cache files so each

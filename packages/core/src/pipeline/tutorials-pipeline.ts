@@ -155,27 +155,40 @@ function hasTutorialFastPath(tags: string[]): boolean {
 
 // ── Candidate gathering ──
 
-function gatherCandidates(app: App, syncFolder: string): TutorialCandidate[] {
+/** Id-only predicate — returns the set of roostIds that are tutorial candidates.
+ *  No readRawJson call, so this is cheap enough to use in the pending-pipeline scan. */
+export function gatherTutorialCandidateIds(app: App, syncFolder: string): Set<string> {
   const embeddingCache = loadEmbeddingCache(app.vault);
   const fileIndex = buildFileIndex(app, syncFolder);
-  const candidates: TutorialCandidate[] = [];
-
+  const ids = new Set<string>();
   for (const [roostId, file] of fileIndex) {
     const fm = app.metadataCache.getFileCache(file)?.frontmatter;
     if (!fm) continue;
-
-    const embedded = embeddingCache[roostId];
-    const category = (embedded?.category || "").toLowerCase();
+    const category = (embeddingCache[roostId]?.category || "").toLowerCase();
     const rawTags: string[] = Array.isArray(fm.tags)
       ? (fm.tags as unknown[]).map(t => String(t).toLowerCase())
       : [];
-
     const categoryMatch = TUTORIAL_CATEGORIES.has(category);
-    const tagMatch = rawTags.some(t =>
-      TUTORIAL_TAG_KEYWORDS.some(kw => t.includes(kw)),
-    );
+    const tagMatch = rawTags.some(t => TUTORIAL_TAG_KEYWORDS.some(kw => t.includes(kw)));
+    if (categoryMatch || tagMatch) ids.add(roostId);
+  }
+  return ids;
+}
 
-    if (!categoryMatch && !tagMatch) continue;
+function gatherCandidates(app: App, syncFolder: string): TutorialCandidate[] {
+  const ids = gatherTutorialCandidateIds(app, syncFolder);
+  const fileIndex = buildFileIndex(app, syncFolder);
+  const embeddingCache = loadEmbeddingCache(app.vault);
+  const candidates: TutorialCandidate[] = [];
+
+  for (const roostId of ids) {
+    const file = fileIndex.get(roostId);
+    if (!file) continue;
+    const fm = app.metadataCache.getFileCache(file)?.frontmatter ?? {};
+    const embedded = embeddingCache[roostId];
+    const fmTags: string[] = Array.isArray(fm.tags)
+      ? (fm.tags as unknown[]).map(t => String(t).toLowerCase())
+      : [];
 
     const raw = readRawJson(app.vault, syncFolder, roostId);
     const description = extractDescription(raw);
@@ -195,7 +208,7 @@ function gatherCandidates(app: App, syncFolder: string): TutorialCandidate[] {
       subtitle: fm.subtitle || "",
       description,
       vision: embedded?.vision || "",
-      tags: [...new Set([...hashtags, ...rawTags])],
+      tags: [...new Set([...hashtags, ...fmTags])],
       author: fm.author ? stripWikilink(fm.author) : "",
       authorHandle: rawAuthor?.uniqueId || "",
       url: fm.url || "",
@@ -452,6 +465,9 @@ export const TUTORIAL_ENRICHMENT: EnrichmentDef = {
   schemaVersion: 1,
   commandId: "run-tutorials-pipeline",
   commandName: "Run Tutorials extraction pipeline",
+  cacheFile: CACHE_FILE,
+  gatherCandidateIds: gatherTutorialCandidateIds,
+  pendingExtractVerdict: "tutorial",
   runBackfill: async (plugin, opts) => {
     const vault = plugin.app.vault;
     const existing = loadPipelineCache<CacheEntry>(vault, CACHE_FILE);

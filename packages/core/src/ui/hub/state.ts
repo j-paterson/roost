@@ -1,4 +1,6 @@
 import type { IncompleteByCategory } from "@/sync/vault-writer";
+import type { PendingPipelinesResult, PendingPipelineEntry } from "@/pipeline/scan-pending-pipelines";
+import type { PipelineId } from "@/lib/enrichments";
 
 export type PrereqStatus = "ok" | "warning" | "missing";
 export type SyncTimestamp = number;
@@ -22,6 +24,8 @@ export interface HubInputs {
   authByPlatform?: Record<string, "connected" | "logged-out" | "unknown" | undefined>;
   /** Pending enrichment buckets from the latest scan; null if no sync has run yet. */
   incompleteByCategory: IncompleteByCategory | null;
+  /** Derived pending-pipeline counts per pipeline; null until first refresh. */
+  pendingPipelines: PendingPipelinesResult | null;
   /** True iff settings.eagleToken + eagleLibraryPath are populated. */
   eagleConfigured: boolean;
   /** Pre-computed active embedding backend + provenance mismatch (async work done at the call site). */
@@ -52,6 +56,13 @@ export type PlatformState =
   | { kind: "expired-auth" }
   | { kind: "error"; reason: string };
 
+export interface PipelinesPending {
+  /** De-duped count of items pending across ALL active pipelines. */
+  total: number;
+  /** Per-pipeline breakdown (only active/unblocked pipelines with data). */
+  byPipeline: { id: PipelineId; pending: number; stale: number; blocked: boolean }[];
+}
+
 export interface HubState {
   prereqs: { folder: PrereqStatus; ollama: PrereqStatus };
   platforms: { tiktok: PlatformState; x: PlatformState; eagle: PlatformState };
@@ -61,8 +72,32 @@ export interface HubState {
     anythingNeedsAttention: boolean;
     /** Non-null while a job is running in the serial queue. */
     runningJob: { label: string } | null;
+    /** Pending + stale pipeline work, derived from the last pending scan. */
+    pipelinesPending: PipelinesPending;
   };
   embedding: { label: string; warn: boolean } | null;
+}
+
+function derivePipelinesPending(input: HubInputs): PipelinesPending {
+  const result = input.pendingPipelines;
+  if (!result) return { total: 0, byPipeline: [] };
+
+  // De-dup the global total using the pending item id sets.
+  // An item matched by two pipelines counts once in the headline total,
+  // but each pipeline's own badge keeps its full count.
+  const dedupSet = new Set<string>();
+  const byPipeline: PipelinesPending["byPipeline"] = [];
+
+  for (const [id, entry] of Object.entries(result.byPipeline) as [PipelineId, PendingPipelineEntry][]) {
+    byPipeline.push({ id, pending: entry.pending, stale: entry.stale, blocked: entry.blocked });
+    if (!entry.blocked) {
+      for (const itemId of (result.pendingItemIds[id] ?? [])) {
+        dedupSet.add(itemId);
+      }
+    }
+  }
+
+  return { total: dedupSet.size, byPipeline };
 }
 
 function derivePrereqs(input: HubInputs): { folder: PrereqStatus; ollama: PrereqStatus } {
@@ -173,6 +208,7 @@ export function deriveHubState(input: HubInputs): HubState {
     : null;
 
   const runningJob = input.jobBusy && input.jobLabel ? { label: input.jobLabel } : null;
+  const pipelinesPending = derivePipelinesPending(input);
 
-  return { prereqs, platforms, global: { lastFullUpdate, anythingToUpdate, anythingNeedsAttention, runningJob }, embedding };
+  return { prereqs, platforms, global: { lastFullUpdate, anythingToUpdate, anythingNeedsAttention, runningJob, pipelinesPending }, embedding };
 }

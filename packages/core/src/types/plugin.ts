@@ -15,6 +15,7 @@ import type { IncompleteByCategory } from "@/sync/vault-writer";
 import type { Embedder, SelectEmbedderOpts } from "@/lib/embedder";
 import type { DetectStatus, IntegrationId } from "@/integrations/registry";
 import type { RoostJobQueue } from "@/lib/job-queue";
+import type { PendingPipelinesResult } from "@/pipeline/scan-pending-pipelines";
 
 export interface IRoostPlugin {
   app: App;
@@ -46,6 +47,15 @@ export interface IRoostPlugin {
    *  read by the hub's useHubState to derive per-platform backlog rows
    *  without re-running the full-vault scan. Null until first sync. */
   lastIncompleteScan: IncompleteByCategory | null;
+
+  /** Derived pending-work count per pipeline — recomputed after sync, Smart
+   *  Assign confirm, or a single pipeline run. Null until first refresh. */
+  lastPendingPipelines: PendingPipelinesResult | null;
+  /** Recompute lastPendingPipelines synchronously and trigger a Hub re-render. */
+  refreshPendingPipelines(): void;
+  /** Enqueue any pipeline that has pending work (pending>0, gate active).
+   *  Runs through the serial job queue so jobs are FIFO and never concurrent. */
+  autoEnqueuePendingPipelines(): Promise<void>;
 
   /** Last detected availability per integration ("unknown" until probed or when its flag is off). */
   integrationStatus: Record<IntegrationId, DetectStatus | "unknown">;

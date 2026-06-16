@@ -120,7 +120,7 @@ below is the historical execution record (almost all `MERGED`); the
 | 049  | Surface category-pipeline logs in the hub log panel | P2 | XS | 047 | MERGED → main @ 718d7ef |
 | 050  | Refresh plans index, README, ARCHITECTURE for plans 033–049 | P3 | S | — | MERGED → main @ 30a5f78 |
 | 051  | Keep the gallery interactive during bulk writes + heavy jobs (drop `pointer-events:none`) | P2 | XS | 041 | MERGED → main @ 8959d97 |
-| 052  | Track + surface (+ auto-enqueue) pending category-pipeline work after sync / Smart Assign | P2 | L | — | TODO |
+| 052  | Track + surface (+ auto-enqueue) pending category-pipeline work after sync / Smart Assign | P2 | L | — | DONE (worktree, pending merge) |
 | 053  | Make the 5 embedded-only pipelines also gather by the filed `roost_category` | P2 | M | 052 | TODO |
 | 054  | Cancellable heavy jobs — abort a running/queued pipeline or backfill from the hub | P2 | M–L | — | TODO |
 

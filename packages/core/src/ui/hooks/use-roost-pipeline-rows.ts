@@ -40,6 +40,8 @@ export function useRoostPipelineRows({ plugin, log }: UseRoostPipelineRowsParams
       // Pipeline mutated frontmatter on existing items; force Bases
       // views to re-read so new fields (media_spotify_id, etc.) show.
       plugin.fireDataRefresh();
+      // Recompute pending counts so the hub badge reflects the completed run.
+      plugin.refreshPendingPipelines();
       setPipelineState(s => ({ ...s, [key]: { status: "done", finishedAt: Date.now() } }));
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
