@@ -126,6 +126,13 @@ const CONCURRENCY = 3;
 
 const PLACE_PIPELINE_VERSION = 1;
 
+/** roost_category / roost_subcategory values the places pipeline owns. A note
+ *  the user (or Smart-Assign) filed under one of these enters triage even if
+ *  its embedding category/tags don't match. Mirrors recipe's FILED_RECIPE_CATEGORIES
+ *  (plan 032); the string list MUST stay in sync with PLACE_ENRICHMENT.categoryMatches.
+ *  Exported for the sync test that guards it against categoryMatches. */
+export const FILED_PLACE_CATEGORIES = new Set(["places", "travel"]);
+
 export const PLACE_FIELDS = {
   name: "place_name",
   city: "place_city",
@@ -294,7 +301,10 @@ export function gatherPlaceCandidateIds(app: App, syncFolder: string): Set<strin
       : [];
     const categoryMatch = PLACE_CATEGORY_SUBSTRINGS.some(sub => category.includes(sub));
     const tagMatch = rawTags.some(t => PLACE_TAG_KEYWORDS.some(kw => t.includes(kw)));
-    if (categoryMatch || tagMatch) ids.add(roostId);
+    const filedCat = String(fm[CATEGORY_FIELD] ?? "").toLowerCase();
+    const filedSub = String(fm[SUBCATEGORY_FIELD] ?? "").toLowerCase();
+    const filedMatch = FILED_PLACE_CATEGORIES.has(filedCat) || FILED_PLACE_CATEGORIES.has(filedSub);
+    if (categoryMatch || tagMatch || filedMatch) ids.add(roostId);
   }
   return ids;
 }

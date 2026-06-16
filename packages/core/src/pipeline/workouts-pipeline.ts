@@ -99,6 +99,13 @@ const CONCURRENCY = 3;
 
 const WORKOUT_PIPELINE_VERSION = 1;
 
+/** roost_category / roost_subcategory values the workouts pipeline owns. A note
+ *  the user (or Smart-Assign) filed under one of these enters triage even if
+ *  its embedding category/tags don't match. Mirrors recipe's FILED_RECIPE_CATEGORIES
+ *  (plan 032); the string list MUST stay in sync with WORKOUT_ENRICHMENT.categoryMatches.
+ *  Exported for the sync test that guards it against categoryMatches. */
+export const FILED_WORKOUT_CATEGORIES = new Set(["fitness", "workouts", "workout", "exercise"]);
+
 const WORKOUT_FIELDS = {
   name: "workout_name",
   type: "workout_type",
@@ -161,7 +168,10 @@ export function gatherWorkoutCandidateIds(app: App, syncFolder: string): Set<str
       : [];
     const categoryMatch = WORKOUT_CATEGORIES.has(category);
     const tagMatch = rawTags.some(t => WORKOUT_TAG_KEYWORDS.some(kw => t.includes(kw)));
-    if (categoryMatch || tagMatch) ids.add(roostId);
+    const filedCat = String(fm[CATEGORY_FIELD] ?? "").toLowerCase();
+    const filedSub = String(fm[SUBCATEGORY_FIELD] ?? "").toLowerCase();
+    const filedMatch = FILED_WORKOUT_CATEGORIES.has(filedCat) || FILED_WORKOUT_CATEGORIES.has(filedSub);
+    if (categoryMatch || tagMatch || filedMatch) ids.add(roostId);
   }
   return ids;
 }

@@ -104,6 +104,13 @@ const CONCURRENCY = 3;
 
 const PRODUCT_PIPELINE_VERSION = 1;
 
+/** roost_category / roost_subcategory values the products pipeline owns. A note
+ *  the user (or Smart-Assign) filed under one of these enters triage even if
+ *  its embedding category/tags don't match. Mirrors recipe's FILED_RECIPE_CATEGORIES
+ *  (plan 032); the string list MUST stay in sync with PRODUCT_ENRICHMENT.categoryMatches.
+ *  Exported for the sync test that guards it against categoryMatches. */
+export const FILED_PRODUCT_CATEGORIES = new Set(["product", "products", "gear", "shopping"]);
+
 const PRODUCT_FIELDS = {
   name: "product_name",
   brand: "product_brand",
@@ -167,7 +174,10 @@ export function gatherProductCandidateIds(app: App, syncFolder: string): Set<str
       : [];
     const categoryMatch = PRODUCT_CATEGORIES.has(category);
     const tagMatch = rawTags.some(t => PRODUCT_TAG_KEYWORDS.some(kw => t.includes(kw)));
-    if (categoryMatch || tagMatch) ids.add(roostId);
+    const filedCat = String(fm[CATEGORY_FIELD] ?? "").toLowerCase();
+    const filedSub = String(fm[SUBCATEGORY_FIELD] ?? "").toLowerCase();
+    const filedMatch = FILED_PRODUCT_CATEGORIES.has(filedCat) || FILED_PRODUCT_CATEGORIES.has(filedSub);
+    if (categoryMatch || tagMatch || filedMatch) ids.add(roostId);
   }
   return ids;
 }
