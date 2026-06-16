@@ -32,7 +32,7 @@ describe("RECIPE_FIELDS", () => {
 const baseExtraction: RecipeExtraction = {
   dish: "Carbonara",
   cuisine: "Italian",
-  ingredients: [{ item: "pasta", qty: "200g" }, { item: "guanciale", qty: "100g" }],
+  ingredients: ["200g pasta", "100g guanciale"],
   steps: ["Boil pasta.", "Toss with cheese."],
   prepTime: "5 min",
   cookTime: "15 min",

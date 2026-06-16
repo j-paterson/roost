@@ -8,9 +8,9 @@ export function makeRecipeExtraction(overrides: Partial<RecipeExtraction> = {}):
     dish: "Cacio e Pepe",
     cuisine: "Italian",
     ingredients: [
-      { qty: "400g", item: "spaghetti" },
-      { qty: "200g", item: "pecorino romano" },
-      { qty: "1 tbsp", item: "black pepper" },
+      "400g spaghetti",
+      "200g pecorino romano",
+      "1 tbsp black pepper",
     ],
     steps: ["Boil pasta.", "Toast pepper.", "Toss with cheese."],
     prepTime: "5 min",
@@ -82,8 +82,8 @@ export function makeWorkoutExtraction(overrides: Partial<WorkoutExtraction> = {}
     difficulty: "intermediate",
     duration: "45 min",
     exercises: [
-      { name: "back squat", reps: "6-8" },
-      { name: "romanian deadlift", reps: "10" },
+      "back squat — 6-8",
+      "romanian deadlift — 10",
     ],
     equipment: ["barbell", "rack"],
     notes: null,

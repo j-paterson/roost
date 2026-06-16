@@ -415,3 +415,43 @@ describe("renderActionLinks — no source", () => {
     expect(el.querySelectorAll(".roost-pipeline-actions").length).toBe(0);
   });
 });
+
+// ── Task 3: pipelineHitFromEntry ─────────────────────────────────────────────
+
+import { pipelineHitFromEntry } from "@/views/pipeline-details";
+import type { App, TFile } from "obsidian";
+
+function makeApp(frontmatter: Record<string, unknown> | undefined): App {
+  return {
+    metadataCache: {
+      getFileCache: () => (frontmatter !== undefined ? { frontmatter } : undefined),
+    },
+  } as unknown as App;
+}
+
+const fakeFile = {} as TFile;
+
+describe("pipelineHitFromEntry", () => {
+  it("returns a recipe PipelineHit when frontmatter has enrichment_v_recipe", () => {
+    const app = makeApp({
+      enrichment_v_recipe: 1,
+      recipe_dish: "Soup",
+      recipe_ingredients: [{ item: "water", qty: null }],
+      recipe_steps: ["boil"],
+    });
+    const result = pipelineHitFromEntry(app, fakeFile);
+    expect(result).not.toBeNull();
+    expect(result!.type).toBe("recipe");
+    expect((result!.extraction as any).dish).toBe("Soup");
+  });
+
+  it("returns null when frontmatter has no pipeline version field", () => {
+    const app = makeApp({ title: "just a note", some_other_field: "hello" });
+    expect(pipelineHitFromEntry(app, fakeFile)).toBeNull();
+  });
+
+  it("returns null when getFileCache returns undefined", () => {
+    const app = makeApp(undefined);
+    expect(pipelineHitFromEntry(app, fakeFile)).toBeNull();
+  });
+});

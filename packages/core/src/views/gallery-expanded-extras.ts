@@ -4,11 +4,12 @@
  */
 import { CATEGORY_FIELD } from "@/config";
 import type { MatchDetail } from "@/types/roost";
-import type { BasesEntry } from "obsidian";
+import type { App, BasesEntry } from "obsidian";
 import { getRoostId, safeGetValue } from "@/lib/bases-entry";
-import { getPipelineData, renderPipelineDetail } from "@/views/pipeline-details";
+import { pipelineHitFromEntry, renderPipelineDetail } from "@/views/pipeline-details";
 
 export interface ExpandedExtrasContext {
+  app: App;
   entry: BasesEntry;
   /** Obsidian element used to create pipeline detail DOM (needs createDiv). */
   domHost: HTMLElement;
@@ -17,7 +18,7 @@ export interface ExpandedExtrasContext {
 }
 
 export function buildExpandedExtraElements(ctx: ExpandedExtrasContext): HTMLElement[] {
-  const { entry, domHost, matchDetailMap, onCollectionClick } = ctx;
+  const { app, entry, domHost, matchDetailMap, onCollectionClick } = ctx;
   const extraEls: HTMLElement[] = [];
   const expandedId = getRoostId(entry);
 
@@ -105,8 +106,8 @@ export function buildExpandedExtraElements(ctx: ExpandedExtrasContext): HTMLElem
     extraEls.push(matchEl);
   }
 
-  if (expandedId) {
-    const pipelineHit = getPipelineData(expandedId);
+  {
+    const pipelineHit = pipelineHitFromEntry(app, entry.file);
     if (pipelineHit) {
       const pipelineEl = domHost.createDiv();
       const source = {

@@ -6,8 +6,18 @@
  *   - renderPipelineOverlay(coverEl, type) → small themed icon on compact card
  *   - renderPipelineDetail(infoEl, type, extraction) → rich section in expanded card
  */
-import { App } from "obsidian";
+import { App, TFile } from "obsidian";
 import { detectPlatformFromUrl } from "@/lib/extract";
+import {
+  pipelineTypeFromFrontmatter,
+  recipeFromFrontmatter,
+  placeFromFrontmatter,
+  mediaFromFrontmatter,
+  productFromFrontmatter,
+  workoutFromFrontmatter,
+  tutorialFromFrontmatter,
+  homeFromFrontmatter,
+} from "@/pipeline/extraction-from-frontmatter";
 import { watchableUrl } from "@/views/pipeline-views/watchable-url";
 import { loadPipelineCache, savePipelineCache } from "@/pipeline/shared";
 import { reconstructRecipeCache } from "@/pipeline/recipe-pipeline";
@@ -120,6 +130,22 @@ export function loadPipelineData(app: App): void {
 
 export function getPipelineData(roostId: string): PipelineHit | null {
   return pipelineLookup?.get(roostId) ?? null;
+}
+
+export function pipelineHitFromEntry(app: App, file: TFile): PipelineHit | null {
+  const fm = app.metadataCache.getFileCache(file)?.frontmatter;
+  if (!fm) return null;
+  const type = pipelineTypeFromFrontmatter(fm);
+  if (!type) return null;
+  const extraction =
+    type === "recipe" ? recipeFromFrontmatter(fm) :
+    type === "place" ? placeFromFrontmatter(fm) :
+    type === "media" ? mediaFromFrontmatter(fm) :
+    type === "product" ? productFromFrontmatter(fm) :
+    type === "workout" ? workoutFromFrontmatter(fm) :
+    type === "tutorial" ? tutorialFromFrontmatter(fm) :
+    homeFromFrontmatter(fm);
+  return extraction ? { type, extraction } : null;
 }
 
 // ── Compact card overlay ──
@@ -281,8 +307,7 @@ function renderRecipe(el: HTMLElement, data: RecipeExtraction, source?: Pipeline
     group.createDiv({ cls: "roost-pipeline-group-label", text: "Ingredients" });
     const list = group.createEl("ul", { cls: "roost-pipeline-ingredients" });
     for (const ing of data.ingredients) {
-      const text = ing.qty ? `${ing.qty} ${ing.item}` : ing.item;
-      list.createEl("li", { text });
+      list.createEl("li", { text: ing });
     }
   }
 
@@ -419,8 +444,7 @@ function renderWorkout(el: HTMLElement, data: WorkoutExtraction, source?: Pipeli
     group.createDiv({ cls: "roost-pipeline-group-label", text: "Exercises" });
     const list = group.createEl("ul", { cls: "roost-pipeline-exercises" });
     for (const ex of data.exercises) {
-      const text = ex.reps ? `${ex.name} — ${ex.reps}` : ex.name;
-      list.createEl("li", { text });
+      list.createEl("li", { text: ex });
     }
   }
 

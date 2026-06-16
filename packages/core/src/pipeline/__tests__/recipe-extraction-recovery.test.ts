@@ -250,4 +250,37 @@ describe("extractRecipe — narrative + repair + empty→null", () => {
     expect(result?.steps).toHaveLength(3);
     expect(m.calls()).toBe(2); // empty first → one repair pass
   });
+
+  it("formats LLM ingredient objects into readable strings (qty item)", async () => {
+    const json = JSON.stringify({
+      dish: "Butter Toast", cuisine: "American",
+      ingredients: [
+        { item: "butter", qty: "2 tbsp" },
+        { item: "Bread", qty: null },
+        { item: "salt", qty: "pinch" },
+      ],
+      steps: ["Toast bread", "Spread butter"],
+      prepTime: null, cookTime: "2m", difficulty: "easy", notes: null,
+    });
+    mockOllamaResponses([json]);
+    const result = await extractRecipe(candidate({ description: "buttered toast recipe" }));
+    expect(result).not.toBeNull();
+    expect(result?.ingredients).toEqual(["2 tbsp butter", "Bread", "pinch salt"]);
+  });
+
+  it("formats LLM ingredient with qty=null as bare item string", async () => {
+    const json = JSON.stringify({
+      dish: "Simple Salad", cuisine: "American",
+      ingredients: [
+        { item: "lettuce", qty: null },
+        { item: "dressing", qty: "to taste" },
+      ],
+      steps: ["Toss"],
+      prepTime: null, cookTime: null, difficulty: "easy", notes: null,
+    });
+    mockOllamaResponses([json]);
+    const result = await extractRecipe(candidate({ description: "salad recipe" }));
+    expect(result).not.toBeNull();
+    expect(result?.ingredients).toEqual(["lettuce", "to taste dressing"]);
+  });
 });

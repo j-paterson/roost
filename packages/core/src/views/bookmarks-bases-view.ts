@@ -57,6 +57,7 @@ import {
   galleryIsTextTileCover,
 } from "@/views/gallery-media-bridge";
 import { createBookmarksPipelineHost } from "@/views/gallery-pipeline-setup";
+import { pipelineTypeFromFrontmatter } from "@/pipeline/extraction-from-frontmatter";
 import type { PipelineGalleryHost } from "@/views/gallery-pipeline-host";
 import { isPipelineSubstituteView } from "@/views/pipeline-views/registry";
 import { isCategoryPipelineActive } from "@/lib/pipeline-gate-plugin";
@@ -459,6 +460,7 @@ export class BookmarksBasesView extends BasesView
       resolveVideoUrl: (entry: BasesEntry) => galleryResolveVideoUrl(this.app, entry),
       hasMultipleImages: (entry: BasesEntry) => galleryHasMultipleImages(this.app, entry),
       isTextTileCover: (entry: BasesEntry) => galleryIsTextTileCover(this.app, entry),
+      pipelineTypeForEntry: (entry: BasesEntry) => pipelineTypeFromFrontmatter(this.app.metadataCache.getFileCache(entry.file)?.frontmatter ?? {}),
     };
   }
 

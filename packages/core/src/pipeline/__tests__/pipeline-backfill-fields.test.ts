@@ -95,7 +95,7 @@ const PIPELINE_BACKFILL_CASES: {
       difficulty: "intermediate",
       duration: "20m",
       equipment: ["mat"],
-      exercises: [{ name: "burpees", reps: null }],
+      exercises: ["burpees"],
       notes: null,
     },
     category: "Workouts",

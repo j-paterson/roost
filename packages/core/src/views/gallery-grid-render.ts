@@ -2,7 +2,6 @@
  * Gallery card grid rebuild — placeholders, split panes, pipeline dispatch hook.
  */
 import type { BasesEntry } from "obsidian";
-import { loadPipelineData } from "@/views/pipeline-details";
 import { traceEvent } from "@/lib/render-trace";
 import { reconcileStandardGrid } from "@/views/gallery-grid-reconcile";
 import { safeGetValue } from "@/lib/bases-entry";
@@ -71,7 +70,6 @@ export function rebuildGalleryGrid(host: GalleryGridRenderHost): boolean {
   const imageRatioPct = (host.config.get("imageRatio") as number) ?? 75;
   host.estimatedHeight = estimateGalleryCardHeight(cardSize, imageRatioPct);
 
-  loadPipelineData(host.app);
   host.refreshFeedEntries(host.currentFilter);
 
   // Split-pane mode or pipeline substitute require full teardown.

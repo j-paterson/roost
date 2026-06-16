@@ -7,7 +7,8 @@ import type { MatchDetail } from "@/types/roost";
 import { safeGetValue } from "@/lib/bases-entry";
 import { cleanCaption } from "@/lib/caption";
 import { ENRICHMENTS } from "@/lib/enrichments";
-import { getPipelineData, renderPipelineOverlay } from "@/views/pipeline-details";
+import { renderPipelineOverlay } from "@/views/pipeline-details";
+import type { PipelineType } from "@/views/pipeline-details";
 import { renderChip } from "@/views/pipeline-views/shared/chip";
 import { setupGalleryVideoScrub } from "@/views/gallery-video-scrub";
 import type { GalleryExpandState } from "@/views/gallery-expanded";
@@ -38,6 +39,8 @@ export interface GalleryCardHandlers {
   /** True when the cover is a generated text card (card.png / threaded text
    *  page). These render as a text tile from note.title instead of an <img>. */
   isTextTileCover: (entry: BasesEntry) => boolean;
+  /** Pipeline type for the compact-card overlay icon, resolved from frontmatter. */
+  pipelineTypeForEntry: (entry: BasesEntry) => PipelineType | null;
 }
 
 /** Render the cover area as a text tile (author + tweet body) instead of the
@@ -186,11 +189,9 @@ export function hydrateGalleryCard(
     setIcon(iconEl, platform === "tiktok" ? "music" : platform === "twitter" ? "message-square" : "bookmark");
   }
 
-  if (roostIdVal) {
-    const pipelineHit = getPipelineData(roostIdVal);
-    if (pipelineHit) {
-      renderPipelineOverlay(coverEl, pipelineHit.type);
-    }
+  const pipelineType = handlers.pipelineTypeForEntry(entry);
+  if (pipelineType) {
+    renderPipelineOverlay(coverEl, pipelineType);
   }
 
   const body = el.createDiv({ cls: "roost-card-body" });

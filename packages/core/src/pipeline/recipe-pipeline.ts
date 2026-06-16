@@ -37,7 +37,7 @@ interface RecipeIngredient {
 interface RecipeExtraction {
   dish: string;
   cuisine: string;
-  ingredients: RecipeIngredient[];
+  ingredients: string[];
   steps: string[];
   prepTime: string | null;
   cookTime: string | null;
@@ -289,10 +289,13 @@ async function runExtract(prompt: string): Promise<RecipeExtraction | null> {
       dish: parsed.dish || "Unknown Dish",
       cuisine: parsed.cuisine || "Unknown",
       ingredients: Array.isArray(parsed.ingredients)
-        ? (parsed.ingredients as { item?: unknown; qty?: unknown }[]).map(i => ({
-            item: String(i.item || ""),
-            qty: i.qty && i.qty !== "null" ? String(i.qty) : null,
-          }))
+        ? (parsed.ingredients as { item?: unknown; qty?: unknown }[])
+            .map(i => {
+              const item = String(i.item ?? "").trim();
+              const qty = i.qty && i.qty !== "null" ? String(i.qty).trim() : "";
+              return qty ? `${qty} ${item}` : item;
+            })
+            .filter(s => s.length > 0)
         : [],
       steps: Array.isArray(parsed.steps)
         ? (parsed.steps as unknown[]).map(s => String(s))
@@ -340,7 +343,7 @@ export function computeRecipeBackfillFields(
   updates[RECIPE_FIELDS.cookTime] = extraction.cookTime;
   updates[RECIPE_FIELDS.difficulty] = extraction.difficulty;
   updates[RECIPE_FIELDS.link] = extraction.recipeLink;
-  updates[RECIPE_FIELDS.ingredients] = extraction.ingredients as unknown as string[];
+  updates[RECIPE_FIELDS.ingredients] = extraction.ingredients;
   updates[RECIPE_FIELDS.steps] = extraction.steps;
   updates[RECIPE_FIELDS.version] = RECIPE_PIPELINE_VERSION;
 
@@ -462,7 +465,7 @@ export function reconstructRecipeCache(
       extraction: {
         dish: String(fm.recipe_dish ?? "Unknown"),
         cuisine: String(fm.recipe_cuisine ?? "Unknown"),
-        ingredients: Array.isArray(fm.recipe_ingredients) ? fm.recipe_ingredients : [],
+        ingredients: Array.isArray(fm.recipe_ingredients) ? fm.recipe_ingredients as string[] : [],
         steps: Array.isArray(fm.recipe_steps) ? fm.recipe_steps : [],
         prepTime: typeof fm.recipe_prep_time === "string" ? fm.recipe_prep_time : null,
         cookTime: typeof fm.recipe_cook_time === "string" ? fm.recipe_cook_time : null,
