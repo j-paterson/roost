@@ -113,25 +113,3 @@ export async function loadBodySegments(
   if (!body) return [];
   return [{ text: decodeHtmlEntities(body), isFocal: true, photoUrls: [] }];
 }
-
-/**
- * Load a non-tweet note's body as a single renderable segment for the expanded
- * card. Strips frontmatter, media embeds, and trailing hashtag-only lines
- * (which the gallery already shows as tag pills), while preserving the caption's
- * own line breaks. Returns [] when the body has no meaningful prose — e.g. a
- * one-line caption already shown as the card title — so the caller can fall back
- * to the flattened caption.
- */
-export async function loadNoteBodySegments(app: App, file: TFile): Promise<ResolvedSegment[]> {
-  const raw = await app.vault.cachedRead(file);
-  const body = stripFrontmatter(raw)
-    .replace(/!\[\[[^\]]+\]\]/g, "")
-    // Drop lines that are only hashtags (TikTok SEO stacks) — pills cover them.
-    .replace(/^\s*#[\w/-]+(?:\s+#[\w/-]+)*\s*$/gm, "")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
-  // Only worth a dedicated body block when there's substantial content beyond a
-  // short title (mirrors splitCaption's ~title-length threshold).
-  if (body.length <= 140) return [];
-  return [{ text: decodeHtmlEntities(body), isFocal: true, photoUrls: [] }];
-}
