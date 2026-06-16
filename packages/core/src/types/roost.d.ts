@@ -71,7 +71,7 @@ export interface EmbeddingCacheEntry {
 
 export interface RecipeIngredient { item: string; qty: string | null; }
 export interface RecipeExtraction {
-  dish: string; cuisine: string; ingredients: RecipeIngredient[];
+  dish: string; cuisine: string; ingredients: string[];
   steps: string[]; prepTime: string | null; cookTime: string | null;
   difficulty: "easy" | "medium" | "hard"; notes: string | null; recipeLink: string | null;
 }

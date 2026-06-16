@@ -86,7 +86,7 @@ export function recipeFromFrontmatter(fm: Record<string, unknown>): RecipeExtrac
   return {
     dish: String(fm.recipe_dish ?? "Unknown"),
     cuisine: String(fm.recipe_cuisine ?? "Unknown"),
-    ingredients: Array.isArray(fm.recipe_ingredients) ? fm.recipe_ingredients : [],
+    ingredients: Array.isArray(fm.recipe_ingredients) ? fm.recipe_ingredients as string[] : [],
     steps: Array.isArray(fm.recipe_steps) ? fm.recipe_steps : [],
     prepTime: typeof fm.recipe_prep_time === "string" ? fm.recipe_prep_time : null,
     cookTime: typeof fm.recipe_cook_time === "string" ? fm.recipe_cook_time : null,

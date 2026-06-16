@@ -307,8 +307,7 @@ function renderRecipe(el: HTMLElement, data: RecipeExtraction, source?: Pipeline
     group.createDiv({ cls: "roost-pipeline-group-label", text: "Ingredients" });
     const list = group.createEl("ul", { cls: "roost-pipeline-ingredients" });
     for (const ing of data.ingredients) {
-      const text = ing.qty ? `${ing.qty} ${ing.item}` : ing.item;
-      list.createEl("li", { text });
+      list.createEl("li", { text: ing });
     }
   }
 

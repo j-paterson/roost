@@ -27,7 +27,7 @@ describe("recipeFromFrontmatter", () => {
       enrichment_v_recipe: 1,
       recipe_dish: "Pasta Carbonara",
       recipe_cuisine: "Italian",
-      recipe_ingredients: [{ item: "eggs", qty: "4" }, { item: "pancetta", qty: "100g" }],
+      recipe_ingredients: ["4 eggs", "100g pancetta"],
       recipe_steps: ["Boil pasta", "Fry pancetta", "Mix eggs"],
       recipe_prep_time: "10 min",
       recipe_cook_time: "20 min",
@@ -39,7 +39,7 @@ describe("recipeFromFrontmatter", () => {
     expect(result).not.toBeNull();
     expect(result!.dish).toBe("Pasta Carbonara");
     expect(result!.cuisine).toBe("Italian");
-    expect(result!.ingredients).toEqual([{ item: "eggs", qty: "4" }, { item: "pancetta", qty: "100g" }]);
+    expect(result!.ingredients).toEqual(["4 eggs", "100g pancetta"]);
     expect(result!.steps).toEqual(["Boil pasta", "Fry pancetta", "Mix eggs"]);
     expect(result!.prepTime).toBe("10 min");
     expect(result!.cookTime).toBe("20 min");
