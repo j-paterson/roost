@@ -3,6 +3,11 @@ import {
   recipeFromFrontmatter,
   placeFromFrontmatter,
   pipelineTypeFromFrontmatter,
+  mediaFromFrontmatter,
+  productFromFrontmatter,
+  workoutFromFrontmatter,
+  tutorialFromFrontmatter,
+  homeFromFrontmatter,
 } from "@/pipeline/extraction-from-frontmatter";
 
 // ── recipeFromFrontmatter ──────────────────────────────────────────────────────
@@ -179,5 +184,329 @@ describe("pipelineTypeFromFrontmatter", () => {
 
   it("recipe wins over place when both present (recipe checked first)", () => {
     expect(pipelineTypeFromFrontmatter({ enrichment_v_recipe: 1, enrichment_v_place: 1 })).toBe("recipe");
+  });
+});
+
+// ── mediaFromFrontmatter ───────────────────────────────────────────────────────
+
+describe("mediaFromFrontmatter", () => {
+  it("returns null when neither pipeline_v_media nor enrichment_v_mediaExtraction is present", () => {
+    expect(mediaFromFrontmatter({})).toBeNull();
+  });
+
+  it("returns null when version fields are not numbers", () => {
+    expect(mediaFromFrontmatter({ pipeline_v_media: "1" })).toBeNull();
+    expect(mediaFromFrontmatter({ enrichment_v_mediaExtraction: null })).toBeNull();
+  });
+
+  it("builds a MediaExtraction from media_* frontmatter fields (pipeline_v_media gate)", () => {
+    const fm = {
+      pipeline_v_media: 3,
+      media_title: "Dark Side of the Moon",
+      media_creator: "Pink Floyd",
+      roost_subcategory: "Music",
+      media_genre: "Rock",
+      media_rating: "5/5",
+      media_where: "Spotify",
+      media_description: "Classic album",
+      media_spotify_id: "abc123",
+      media_tmdb_id: null,
+      media_tmdb_type: null,
+      media_anilist_id: "",
+      media_year: 1973,
+    };
+
+    const result = mediaFromFrontmatter(fm);
+    expect(result).not.toBeNull();
+    expect(result!.title).toBe("Dark Side of the Moon");
+    expect(result!.creator).toBe("Pink Floyd");
+    expect(result!.mediaType).toBe("music");
+    expect(result!.genre).toBe("Rock");
+    expect(result!.rating).toBe("5/5");
+    expect(result!.where).toBe("Spotify");
+    expect(result!.description).toBe("Classic album");
+    expect(result!.year).toBe(1973);
+  });
+
+  it("also gates on enrichment_v_mediaExtraction", () => {
+    const fm = { enrichment_v_mediaExtraction: 2, media_title: "Dune" };
+    const result = mediaFromFrontmatter(fm);
+    expect(result).not.toBeNull();
+    expect(result!.title).toBe("Dune");
+  });
+
+  it("carries resolved spotifyId from frontmatter", () => {
+    const fm = {
+      pipeline_v_media: 1,
+      media_spotify_id: "  spotify42  ",
+    };
+    const result = mediaFromFrontmatter(fm);
+    expect(result).not.toBeNull();
+    expect(result!.spotifyId).toBe("spotify42");
+  });
+
+  it("returns null for spotifyId when value is empty/null/literal-null", () => {
+    expect(mediaFromFrontmatter({ pipeline_v_media: 1, media_spotify_id: "" })!.spotifyId).toBeNull();
+    expect(mediaFromFrontmatter({ pipeline_v_media: 1, media_spotify_id: "null" })!.spotifyId).toBeNull();
+    expect(mediaFromFrontmatter({ pipeline_v_media: 1 })!.spotifyId).toBeNull();
+  });
+
+  it("carries tmdbId and anilistId", () => {
+    const fm = {
+      pipeline_v_media: 1,
+      media_tmdb_id: "tt1234567",
+      media_tmdb_type: "movie",
+      media_anilist_id: "9999",
+    };
+    const result = mediaFromFrontmatter(fm);
+    expect(result!.tmdbId).toBe("tt1234567");
+    expect(result!.tmdbType).toBe("movie");
+    expect(result!.anilistId).toBe("9999");
+  });
+
+  it("nullifies tmdbType when value is not 'movie' or 'tv'", () => {
+    const fm = { pipeline_v_media: 1, media_tmdb_type: "series" };
+    expect(mediaFromFrontmatter(fm)!.tmdbType).toBeNull();
+  });
+
+  it("falls back to defaults for missing optional fields", () => {
+    const fm = { pipeline_v_media: 1 };
+    const result = mediaFromFrontmatter(fm);
+    expect(result).not.toBeNull();
+    expect(result!.title).toBe("Unknown");
+    expect(result!.creator).toBe("");
+    expect(result!.mediaType).toBe("other");
+    expect(result!.genre).toBe("");
+    expect(result!.rating).toBeNull();
+    expect(result!.where).toBeNull();
+    expect(result!.description).toBe("");
+    expect(result!.spotifyId).toBeNull();
+    expect(result!.tmdbId).toBeNull();
+    expect(result!.tmdbType).toBeNull();
+    expect(result!.anilistId).toBeNull();
+    expect(result!.year).toBeNull();
+  });
+});
+
+// ── productFromFrontmatter ─────────────────────────────────────────────────────
+
+describe("productFromFrontmatter", () => {
+  it("returns null when enrichment_v_product is absent", () => {
+    expect(productFromFrontmatter({})).toBeNull();
+  });
+
+  it("returns null when enrichment_v_product is not a number", () => {
+    expect(productFromFrontmatter({ enrichment_v_product: "1" })).toBeNull();
+  });
+
+  it("builds a ProductExtraction from product_* frontmatter fields", () => {
+    const fm = {
+      enrichment_v_product: 1,
+      product_name: "AirPods Pro",
+      product_brand: "Apple",
+      product_type: "tech",
+      product_price: "$249",
+      product_rating: "4.5/5",
+      product_where_to_buy: "Apple Store",
+      product_description: "Wireless earbuds with ANC",
+    };
+
+    const result = productFromFrontmatter(fm);
+    expect(result).not.toBeNull();
+    expect(result!.name).toBe("AirPods Pro");
+    expect(result!.brand).toBe("Apple");
+    expect(result!.productType).toBe("tech");
+    expect(result!.price).toBe("$249");
+    expect(result!.rating).toBe("4.5/5");
+    expect(result!.whereToBuy).toBe("Apple Store");
+    expect(result!.description).toBe("Wireless earbuds with ANC");
+  });
+
+  it("falls back to 'other' for unrecognised productType", () => {
+    const fm = { enrichment_v_product: 1, product_type: "vehicle" };
+    expect(productFromFrontmatter(fm)!.productType).toBe("other");
+  });
+
+  it("falls back to defaults for missing optional fields", () => {
+    const fm = { enrichment_v_product: 1 };
+    const result = productFromFrontmatter(fm);
+    expect(result).not.toBeNull();
+    expect(result!.name).toBe("Unknown");
+    expect(result!.brand).toBe("");
+    expect(result!.productType).toBe("other");
+    expect(result!.price).toBeNull();
+    expect(result!.rating).toBeNull();
+    expect(result!.whereToBuy).toBeNull();
+    expect(result!.description).toBe("");
+  });
+});
+
+// ── workoutFromFrontmatter ─────────────────────────────────────────────────────
+
+describe("workoutFromFrontmatter", () => {
+  it("returns null when enrichment_v_workout is absent", () => {
+    expect(workoutFromFrontmatter({})).toBeNull();
+  });
+
+  it("returns null when enrichment_v_workout is not a number", () => {
+    expect(workoutFromFrontmatter({ enrichment_v_workout: "1" })).toBeNull();
+  });
+
+  it("builds a WorkoutExtraction from workout_* frontmatter fields", () => {
+    const fm = {
+      enrichment_v_workout: 1,
+      workout_name: "Full Body Blast",
+      workout_type: "hiit",
+      workout_target_area: "Full Body",
+      workout_difficulty: "intermediate",
+      workout_duration: "45 min",
+      workout_equipment: ["dumbbells", "mat"],
+      workout_exercises: [{ name: "Burpees", reps: "20" }],
+      workout_notes: "Rest 30s between sets",
+    };
+
+    const result = workoutFromFrontmatter(fm);
+    expect(result).not.toBeNull();
+    expect(result!.name).toBe("Full Body Blast");
+    expect(result!.workoutType).toBe("hiit");
+    expect(result!.targetArea).toBe("Full Body");
+    expect(result!.difficulty).toBe("intermediate");
+    expect(result!.duration).toBe("45 min");
+    expect(result!.equipment).toEqual(["dumbbells", "mat"]);
+    expect(result!.exercises).toEqual([{ name: "Burpees", reps: "20" }]);
+    expect(result!.notes).toBe("Rest 30s between sets");
+  });
+
+  it("normalizes workout type aliases (e.g. weight-training → strength)", () => {
+    const fm = { enrichment_v_workout: 1, workout_type: "weight-training" };
+    expect(workoutFromFrontmatter(fm)!.workoutType).toBe("strength");
+  });
+
+  it("falls back to 'other' for unrecognised workout type", () => {
+    const fm = { enrichment_v_workout: 1, workout_type: "juggling" };
+    expect(workoutFromFrontmatter(fm)!.workoutType).toBe("other");
+  });
+
+  it("falls back difficulty to 'intermediate' for unrecognised value", () => {
+    const fm = { enrichment_v_workout: 1, workout_difficulty: "elite" };
+    expect(workoutFromFrontmatter(fm)!.difficulty).toBe("intermediate");
+  });
+
+  it("falls back to defaults for missing optional fields", () => {
+    const fm = { enrichment_v_workout: 1 };
+    const result = workoutFromFrontmatter(fm);
+    expect(result).not.toBeNull();
+    expect(result!.name).toBe("Unknown");
+    expect(result!.workoutType).toBe("other");
+    expect(result!.targetArea).toBe("");
+    expect(result!.difficulty).toBe("intermediate");
+    expect(result!.duration).toBeNull();
+    expect(result!.equipment).toEqual([]);
+    expect(result!.exercises).toEqual([]);
+    expect(result!.notes).toBeNull();
+  });
+});
+
+// ── tutorialFromFrontmatter ────────────────────────────────────────────────────
+
+describe("tutorialFromFrontmatter", () => {
+  it("returns null when enrichment_v_tutorial is absent", () => {
+    expect(tutorialFromFrontmatter({})).toBeNull();
+  });
+
+  it("returns null when enrichment_v_tutorial is not a number", () => {
+    expect(tutorialFromFrontmatter({ enrichment_v_tutorial: "1" })).toBeNull();
+  });
+
+  it("builds a TutorialExtraction from tutorial_* frontmatter fields", () => {
+    const fm = {
+      enrichment_v_tutorial: 1,
+      tutorial_topic: "React Hooks",
+      tutorial_skill_area: "Web Development",
+      tutorial_difficulty: "beginner",
+      tutorial_time_estimate: "2 hours",
+      tutorial_description: "Learn useState and useEffect",
+      tutorial_tools: ["VS Code", "Node.js"],
+      tutorial_steps: ["Install Node", "Create project", "Add hooks"],
+    };
+
+    const result = tutorialFromFrontmatter(fm);
+    expect(result).not.toBeNull();
+    expect(result!.topic).toBe("React Hooks");
+    expect(result!.skillArea).toBe("Web Development");
+    expect(result!.difficulty).toBe("beginner");
+    expect(result!.timeEstimate).toBe("2 hours");
+    expect(result!.description).toBe("Learn useState and useEffect");
+    expect(result!.tools).toEqual(["VS Code", "Node.js"]);
+    expect(result!.steps).toEqual(["Install Node", "Create project", "Add hooks"]);
+  });
+
+  it("falls back difficulty to 'intermediate' for unrecognised value", () => {
+    const fm = { enrichment_v_tutorial: 1, tutorial_difficulty: "expert" };
+    expect(tutorialFromFrontmatter(fm)!.difficulty).toBe("intermediate");
+  });
+
+  it("falls back to defaults for missing optional fields", () => {
+    const fm = { enrichment_v_tutorial: 1 };
+    const result = tutorialFromFrontmatter(fm);
+    expect(result).not.toBeNull();
+    expect(result!.topic).toBe("Unknown");
+    expect(result!.skillArea).toBe("");
+    expect(result!.difficulty).toBe("intermediate");
+    expect(result!.timeEstimate).toBeNull();
+    expect(result!.description).toBe("");
+    expect(result!.tools).toEqual([]);
+    expect(result!.steps).toEqual([]);
+  });
+});
+
+// ── homeFromFrontmatter ────────────────────────────────────────────────────────
+
+describe("homeFromFrontmatter", () => {
+  it("returns null when enrichment_v_home is absent", () => {
+    expect(homeFromFrontmatter({})).toBeNull();
+  });
+
+  it("returns null when enrichment_v_home is not a number", () => {
+    expect(homeFromFrontmatter({ enrichment_v_home: "1" })).toBeNull();
+  });
+
+  it("builds a HomeExtraction from home_* frontmatter fields", () => {
+    const fm = {
+      enrichment_v_home: 1,
+      home_title: "Cozy Reading Nook",
+      home_room: "Living Room",
+      home_idea_type: "Decor",
+      home_style: "Scandinavian",
+      home_budget: "$500",
+      home_description: "Minimalist reading corner with warm lighting",
+      home_products: ["IKEA shelf", "Floor lamp"],
+      home_tips: ["Use warm bulbs", "Add plants"],
+    };
+
+    const result = homeFromFrontmatter(fm);
+    expect(result).not.toBeNull();
+    expect(result!.title).toBe("Cozy Reading Nook");
+    expect(result!.room).toBe("Living Room");
+    expect(result!.ideaType).toBe("Decor");
+    expect(result!.style).toBe("Scandinavian");
+    expect(result!.budget).toBe("$500");
+    expect(result!.description).toBe("Minimalist reading corner with warm lighting");
+    expect(result!.products).toEqual(["IKEA shelf", "Floor lamp"]);
+    expect(result!.tips).toEqual(["Use warm bulbs", "Add plants"]);
+  });
+
+  it("falls back to defaults for missing optional fields", () => {
+    const fm = { enrichment_v_home: 1 };
+    const result = homeFromFrontmatter(fm);
+    expect(result).not.toBeNull();
+    expect(result!.title).toBe("Unknown");
+    expect(result!.room).toBe("");
+    expect(result!.ideaType).toBe("");
+    expect(result!.style).toBe("");
+    expect(result!.budget).toBeNull();
+    expect(result!.description).toBe("");
+    expect(result!.products).toEqual([]);
+    expect(result!.tips).toEqual([]);
   });
 });
