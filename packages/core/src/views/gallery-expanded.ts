@@ -12,7 +12,7 @@ import {
 } from "@/views/entry-to-expanded-card";
 import { buildExpandedExtraElements } from "@/views/gallery-expanded-extras";
 import { getCoverFolder, isRasterizedTextCover } from "@/views/feed/card-helpers";
-import { loadBodySegments, type ResolvedSegment } from "@/views/expanded-body-segments";
+import { loadBodySegments, loadNoteBodySegments, type ResolvedSegment } from "@/views/expanded-body-segments";
 import { loadTweetThreadView, type TweetThreadView } from "@/views/tweet-view-model";
 import type { App } from "obsidian";
 
@@ -116,6 +116,14 @@ export async function toggleGalleryExpanded(
       bodySegments = await loadBodySegments(opts.app, entry.file, attachFolder, author);
     }
     // The card may have been collapsed/rebuilt while we awaited.
+    if (!cardEl.isConnected) return;
+  } else {
+    // Media items (TikTok recipes, X photos/videos): the recipe or write-up
+    // lives in the note body, not in structured fields. Render that body in the
+    // expanded card so it's not hidden. Empty/short bodies fall back to the
+    // flattened caption shown by the title block.
+    const seg = await loadNoteBodySegments(opts.app, entry.file);
+    bodySegments = seg.length ? seg : undefined;
     if (!cardEl.isConnected) return;
   }
 
