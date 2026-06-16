@@ -310,8 +310,10 @@ Custom Bases view type (`roost-bookmarks`) registered in the Bases dropdown:
 - **Skeleton loading** — shimmer placeholders crossfade to real cards (fade-in animation)
 - **Video scrubbing** — hover to play, mousemove to seek, 300ms auto-resume, progress bar
 - **Multi-photo gallery** — `📷+` badge on cards, prev/next navigation in expanded view
-- **Inline expansion** — click card → FLIP animation (Motion spring) to full-width detail view
+- **Inline expansion** — click card → FLIP animation (Motion spring) to full-width detail view (click the card again to collapse)
   - Video with native controls, stats, tags, collection, source URL, "Open note" link
+  - Layout adapts to content: media items show video/photos side-by-side with details and collapse the raw caption behind a "…" toggle (structured pipeline fields carry the content); text-only X tweets render a **native tweet layout** (`views/tweet-dom.ts` + `tweet-view-model.ts` from `raw.json`) — header, real entity links, quoted/reply context, threads as a connected list; the pipeline-detail section is built from frontmatter (`pipelineHitFromEntry`)
+- **Text tiles** — text-only X bookmarks whose body is backfilled render their text as a tile in the grid instead of the generated `card.png`
 - **Dense grid packing** — `grid-auto-flow: dense` backfills gaps from expanded cards
 - **Folder cards** — stacked thumbnail view during Smart Assign staging
   - 3 thumbnails per category with CSS rotation + hover fan-out
@@ -398,6 +400,22 @@ second synthesis-shaped pipeline ever appears, that is the trigger for a
 `runSynthesisPipeline` sibling template — one instance of a shape does not
 justify a template.
 
+**Extraction storage — frontmatter is the single source of truth.** Each pipeline
+writes its `<cat>_*` fields onto the source note's frontmatter; that is the durable
+record. Display reads extraction *straight from frontmatter* via `pipelineHitFromEntry`
+and `pipeline/extraction-from-frontmatter.ts` (per-pipeline `<x>FromFrontmatter(fm)`
+mappers + `pipelineTypeFromFrontmatter`) — never the cache. The
+`.roost/cache/<cat>-cache.json` files exist only for the *runner* (triage verdict + a
+done flag): recipe/products/workouts/tutorials/home store slim `{ triage, extracted: true }`
+entries with no payload; **media and places keep the full extraction** because their
+caches are live data sources beyond display — media stashes resolved Spotify/TMDB/AniList
+ids, and the places map (`views/places-map.ts`) reads lat/lng/city from the cache to draw
+pins. `reconstruct<X>Cache` rebuilds a wiped cache from frontmatter (slim for the five,
+full for media/places). Object-valued fields (recipe `ingredients`, workout `exercises`)
+are stored as readable **strings** — YAML frontmatter can't round-trip `{item,qty}`
+objects (they serialize to `[object Object]`). The historical `getPipelineData`/
+`loadPipelineData` cache-read display path has been removed.
+
 **When is a pipeline active?** Toggle on in `settings.pipelines` **and** `llmAvailable()`:
 
 - **`llmBackend: "local"`** — `settings.integrations.ollama` is true and the Ollama integration probe reports `available` (HTTP at `OLLAMA_URL`).
@@ -443,6 +461,8 @@ Top to bottom:
 2. **Prerequisites** — sync folder + LLM/Ollama strip (`PrereqStrip`; Ollama status uses `llmReadyForPipelines`)
 3. **Integrations** — tool flags (`IntegrationsPanel`) plus **Pipelines** toggles (`PipelinesPanel` via `buildPipelineRows`)
 4. **Platforms** — TikTok, X, Eagle cards (`PlatformCard`)
+
+**First-run onboarding.** When `settings.setupComplete` is false the Hub renders *only* an inline onboarding panel (`ui/hub/onboarding-panel.tsx`, steps from `lib/onboarding-steps.ts`) — a lego picker covering sync folder / embeddings / LLM / optional add-ons — and hides the rest of the Hub until the user finishes or skips (which flips `setupComplete`). Re-open via the "Re-run first-time setup" command. (Replaces the old modal wizard.)
 
 ### Integrations panel
 
@@ -669,7 +689,7 @@ Score-first rerank constants live in `pipeline/evaluate.ts` rather than `config.
 | `collection-not-descriptions.json` | `evaluate.ts` `generateClusterDescriptions` | Same key as above; stores the paired "NOT" clause |
 | `digest-cache.json` | `digest-pipeline.ts` | Per-week cluster summary reuse |
 | `roost-memory-cache.json` | `pipeline/memory/cache.ts` | Concept + claim routing decisions |
-| `*-cache.json` (per pipeline) | Individual `*-pipeline.ts` runners | Recipe, places, media, etc. — see enrichments doc |
+| `<cat>-cache.json` (per pipeline) | `runCategoryPipeline` via each `*-pipeline.ts` | Runner-only triage/done state — **display reads frontmatter, not these.** recipe/products/workouts/tutorials/home are slim `{triage, extracted}`; **media + places keep the full extraction** (resolved deep-link ids / map-pin geodata). `reconstruct<X>Cache` rebuilds from frontmatter when wiped |
 
 Cache paths use `packages/core/src/lib/roost-paths.ts` — prefer `cachePath()` over hardcoded `.roost/` strings in new code.
 
