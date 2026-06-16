@@ -123,6 +123,13 @@ const CONCURRENCY = 3;
 
 const HOME_PIPELINE_VERSION = 1;
 
+/** roost_category / roost_subcategory values the home pipeline owns. A note
+ *  the user (or Smart-Assign) filed under one of these enters triage even if
+ *  its embedding category/tags don't match. Mirrors recipe's FILED_RECIPE_CATEGORIES
+ *  (plan 032); the string list MUST stay in sync with HOME_ENRICHMENT.categoryMatches.
+ *  Exported for the sync test that guards it against categoryMatches. */
+export const FILED_HOME_CATEGORIES = new Set(["home", "interiors", "home & interiors", "decor"]);
+
 export const HOME_FIELDS = {
   title: "home_title",
   room: "home_room",
@@ -197,7 +204,10 @@ export function gatherHomeCandidateIds(app: App, syncFolder: string): Set<string
       : [];
     const categoryMatch = HOME_CATEGORIES.has(category);
     const tagMatch = rawTags.some(t => HOME_TAG_KEYWORDS.some(kw => t.includes(kw)));
-    if (categoryMatch || tagMatch) ids.add(roostId);
+    const filedCat = String(fm[CATEGORY_FIELD] ?? "").toLowerCase();
+    const filedSub = String(fm[SUBCATEGORY_FIELD] ?? "").toLowerCase();
+    const filedMatch = FILED_HOME_CATEGORIES.has(filedCat) || FILED_HOME_CATEGORIES.has(filedSub);
+    if (categoryMatch || tagMatch || filedMatch) ids.add(roostId);
   }
   return ids;
 }

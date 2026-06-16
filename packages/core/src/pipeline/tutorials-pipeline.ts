@@ -44,6 +44,15 @@ export const TUTORIAL_FIELDS = {
 
 const TUTORIAL_CATEGORY_MATCHES = new Set(["Tutorials", "Tutorial", "How-To", "Skills"]);
 
+/** roost_category / roost_subcategory values the tutorials pipeline owns. A note
+ *  the user (or Smart-Assign) filed under one of these enters triage even if
+ *  its embedding category/tags don't match. Mirrors recipe's FILED_RECIPE_CATEGORIES
+ *  (plan 032); derived from TUTORIAL_CATEGORY_MATCHES so the two can't silently desync.
+ *  Exported for the sync test that guards it against TUTORIAL_ENRICHMENT.categoryMatches. */
+export const FILED_TUTORIAL_CATEGORIES = new Set(
+  [...TUTORIAL_CATEGORY_MATCHES].map(c => c.toLowerCase()),
+);
+
 // ── Types ──
 
 type SkillArea =
@@ -170,7 +179,10 @@ export function gatherTutorialCandidateIds(app: App, syncFolder: string): Set<st
       : [];
     const categoryMatch = TUTORIAL_CATEGORIES.has(category);
     const tagMatch = rawTags.some(t => TUTORIAL_TAG_KEYWORDS.some(kw => t.includes(kw)));
-    if (categoryMatch || tagMatch) ids.add(roostId);
+    const filedCat = String(fm[CATEGORY_FIELD] ?? "").toLowerCase();
+    const filedSub = String(fm[SUBCATEGORY_FIELD] ?? "").toLowerCase();
+    const filedMatch = FILED_TUTORIAL_CATEGORIES.has(filedCat) || FILED_TUTORIAL_CATEGORIES.has(filedSub);
+    if (categoryMatch || tagMatch || filedMatch) ids.add(roostId);
   }
   return ids;
 }
