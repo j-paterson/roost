@@ -109,6 +109,7 @@ export function toggleGalleryExpanded(
   if (expandedId) opts.onPipelineExpand?.(expandedId);
 
   const extraEls = buildExpandedExtraElements({
+    app: opts.app,
     entry,
     domHost: opts.domHost,
     matchDetailMap,
