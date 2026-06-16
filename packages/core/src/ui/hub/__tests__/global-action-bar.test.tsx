@@ -14,7 +14,7 @@ function mkState(over: Partial<HubState> = {}): HubState {
       x: { kind: "unconfigured" },
       eagle: { kind: "unconfigured" },
     },
-    global: { lastFullUpdate: null, anythingToUpdate: false, anythingNeedsAttention: false },
+    global: { lastFullUpdate: null, anythingToUpdate: false, anythingNeedsAttention: false, runningJob: null },
     embedding: null,
     ...over,
   };
@@ -30,7 +30,7 @@ function connectedState(): HubState {
       x: { kind: "unconfigured" },
       eagle: { kind: "unconfigured" },
     },
-    global: { lastFullUpdate: null, anythingToUpdate: true, anythingNeedsAttention: false },
+    global: { lastFullUpdate: null, anythingToUpdate: true, anythingNeedsAttention: false, runningJob: null },
   });
 }
 
@@ -57,7 +57,7 @@ describe("GlobalActionBar", () => {
         x: { kind: "unconfigured" },
         eagle: { kind: "unconfigured" },
       },
-      global: { lastFullUpdate: null, anythingToUpdate: true, anythingNeedsAttention: false },
+      global: { lastFullUpdate: null, anythingToUpdate: true, anythingNeedsAttention: false, runningJob: null },
     });
     render(<GlobalActionBar state={state} isRunning={false} onFastSync={noop} onDeepSync={noop} onCancel={noop} />);
     expect(screen.getByText(/1 platform · 12 backfills/i)).toBeTruthy();
@@ -72,7 +72,7 @@ describe("GlobalActionBar", () => {
   it("disables button when prereqs missing", () => {
     const state = mkState({
       prereqs: { folder: "missing", ollama: "ok" },
-      global: { lastFullUpdate: null, anythingToUpdate: false, anythingNeedsAttention: true },
+      global: { lastFullUpdate: null, anythingToUpdate: false, anythingNeedsAttention: true, runningJob: null },
     });
     render(<GlobalActionBar state={state} isRunning={false} onFastSync={noop} onDeepSync={noop} onCancel={noop} />);
     const btn = screen.getByRole("button", { name: /fix prereqs/i });

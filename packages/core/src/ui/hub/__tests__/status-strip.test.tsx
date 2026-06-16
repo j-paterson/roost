@@ -14,7 +14,7 @@ function mkState(over: Partial<HubState> = {}): HubState {
       x: { kind: "connected-idle", itemCount: 50, lastSync: Date.now(), backlogs: { mediaFiles: 0, thread: 0, articleBody: 0, playback: 0 } },
       eagle: { kind: "unconfigured" },
     },
-    global: { lastFullUpdate: Date.now(), anythingToUpdate: true, anythingNeedsAttention: false },
+    global: { lastFullUpdate: Date.now(), anythingToUpdate: true, anythingNeedsAttention: false, runningJob: null },
     embedding: null,
     ...over,
   };
@@ -29,7 +29,7 @@ describe("StatusStrip", () => {
   it("renders 'needs attention' for partial setup (folder missing but a platform connected)", () => {
     const state = mkState({
       prereqs: { folder: "missing", ollama: "ok" },
-      global: { lastFullUpdate: null, anythingToUpdate: true, anythingNeedsAttention: true },
+      global: { lastFullUpdate: null, anythingToUpdate: true, anythingNeedsAttention: true, runningJob: null },
     });
     render(<StatusStrip state={state} onOpenHub={() => {}} />);
     expect(screen.getByText(/needs attention/i)).toBeTruthy();
@@ -43,7 +43,7 @@ describe("StatusStrip", () => {
         x: { kind: "unconfigured" },
         eagle: { kind: "unconfigured" },
       },
-      global: { lastFullUpdate: null, anythingToUpdate: false, anythingNeedsAttention: true },
+      global: { lastFullUpdate: null, anythingToUpdate: false, anythingNeedsAttention: true, runningJob: null },
     });
     render(<StatusStrip state={state} onOpenHub={() => {}} />);
     expect(screen.getByText(/setup incomplete/i)).toBeTruthy();

@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { RoostJobQueue } from "@/lib/job-queue";
 
 /** A promise you can resolve/reject by hand, to control job timing in tests. */
@@ -92,5 +92,105 @@ describe("RoostJobQueue", () => {
     a.resolve();
     await Promise.all([pA, pB]);
     expect(true).toBe(true);
+  });
+
+  // ── Cancellation tests ──
+
+  it("cancelCurrent() aborts the running job's signal (fn observes signal.aborted)", async () => {
+    const q = new RoostJobQueue();
+    const a = deferred();
+    let signalAborted = false;
+    const pA = q.enqueue("A", async (signal) => {
+      await a.promise;
+      signalAborted = signal.aborted;
+    });
+    // Cancel while A is suspended.
+    q.cancelCurrent();
+    a.resolve();
+    await pA;
+    expect(signalAborted).toBe(true);
+  });
+
+  it("a cancelled job still lets the next queued job run (no wedge)", async () => {
+    const q = new RoostJobQueue();
+    const a = deferred();
+    const ran: string[] = [];
+    const pA = q.enqueue("A", async (signal) => {
+      await a.promise;
+      if (!signal.aborted) ran.push("A");
+    });
+    const pB = q.enqueue("B", async () => { ran.push("B"); });
+
+    q.cancelCurrent();
+    a.resolve();
+    await pA;
+    await pB;
+    // B must run even though A was cancelled.
+    expect(ran).toContain("B");
+  });
+
+  it("cancelAll() settles every queued enqueuer promise and the queue ends idle", async () => {
+    const q = new RoostJobQueue();
+    const a = deferred();
+    // Enqueue A (running) + B + C (pending).
+    const pA = q.enqueue("A", async () => { await a.promise; });
+    const pB = q.enqueue("B", async () => {});
+    const pC = q.enqueue("C", async () => {});
+
+    // Give microtasks a chance so A starts running.
+    await Promise.resolve();
+    expect(q.isBusy()).toBe(true);
+
+    q.cancelAll();
+
+    // B and C should have been settled with AbortError immediately.
+    await expect(pB).rejects.toThrow();
+    await expect(pC).rejects.toThrow();
+
+    // A was aborted but it's still running (awaiting a.promise). Resolve it so
+    // the drain loop can finish.
+    a.resolve();
+    await pA;
+
+    expect(q.isBusy()).toBe(false);
+  });
+
+  it("onIdle() still resolves after a cancel", async () => {
+    const q = new RoostJobQueue();
+    const a = deferred();
+    const pA = q.enqueue("A", async () => { await a.promise; });
+    const idleP = q.onIdle();
+    q.cancelCurrent();
+    a.resolve();
+    await pA;
+    // Should resolve (not hang).
+    await expect(idleP).resolves.toBeUndefined();
+  });
+
+  it("onChange fires on enqueue, job start, and drain", async () => {
+    const q = new RoostJobQueue();
+    const changes: string[] = [];
+    q.onChange = () => changes.push(q.currentLabel() ?? "idle");
+
+    const a = deferred();
+    const pA = q.enqueue("A", async () => { await a.promise; });
+    // onChange fires on enqueue and when job starts in drain.
+    await Promise.resolve(); // let microtasks flush
+    await Promise.resolve();
+    a.resolve();
+    await pA;
+    // onChange fires on drain (idle).
+
+    // Must have fired at least 3 times: enqueue, start, idle.
+    expect(changes.length).toBeGreaterThanOrEqual(3);
+    // Last notification should reflect idle state.
+    expect(changes[changes.length - 1]).toBe("idle");
+  });
+
+  it("fn receives the AbortSignal as its first argument", async () => {
+    const q = new RoostJobQueue();
+    let receivedSignal: AbortSignal | null = null;
+    await q.enqueue("test", async (signal) => { receivedSignal = signal; });
+    expect(receivedSignal).toBeInstanceOf(AbortSignal);
   });
 });

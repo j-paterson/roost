@@ -44,6 +44,8 @@ function gatherInputs(
       (settings.eagleToken ?? "").length > 0 &&
       (settings.eagleLibraryPath ?? "").length > 0,
     embedding: embeddingInput,
+    jobBusy: plugin.jobQueue.isBusy(),
+    jobLabel: plugin.jobQueue.currentLabel(),
   };
 }
 

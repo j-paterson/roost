@@ -86,8 +86,13 @@ export interface IRoostPlugin {
    *  enqueued; it yields to queued/running jobs via jobQueue.onIdle(). */
   jobQueue: RoostJobQueue;
   /** Convenience: enqueue `fn` under `label` on the serial queue and return
-   *  its promise (same value/rejection). */
-  runJob<T>(label: string, fn: () => Promise<T>): Promise<T>;
+   *  its promise (same value/rejection). `fn` receives the job's AbortSignal
+   *  so it can stop between batches when cancelled. Existing callers that pass
+   *  `() => …` are unaffected — the extra arg is ignored. */
+  runJob<T>(label: string, fn: (signal?: AbortSignal) => Promise<T>): Promise<T>;
+  /** Abort the currently-running job's signal. The fn stops between batches.
+   *  The queue continues draining after the aborted job completes. */
+  cancelCurrentJob(): void;
 
   onFilterChange(fn: (filter: RoostFilter) => void): () => void;
   onItemClick(fn: (data: ItemClickData) => void): () => void;

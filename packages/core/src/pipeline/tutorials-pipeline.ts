@@ -418,8 +418,9 @@ export async function runTutorialsPipeline(
   app: App,
   syncFolder: string,
   onLog?: (msg: string) => void,
+  signal?: AbortSignal,
 ): Promise<TutorialsPipelineResult> {
-  return runCategoryPipeline(app, syncFolder, TUTORIALS_CONFIG, onLog);
+  return runCategoryPipeline(app, syncFolder, TUTORIALS_CONFIG, onLog, signal);
 }
 
 // ─── Cache reconstruction ─────────────────────────────────────────────────────
@@ -460,7 +461,7 @@ export const TUTORIAL_ENRICHMENT: EnrichmentDef = {
         savePipelineCache(vault, CACHE_FILE, reconstructed);
       }
     }
-    await runTutorialsPipeline(plugin.app, plugin.settings.syncFolder, opts?.onLog);
+    await runTutorialsPipeline(plugin.app, plugin.settings.syncFolder, opts?.onLog, opts?.signal);
   },
   panelDetail: "Extract step-by-step skill tutorials from how-to bookmarks. Writes tutorial_* fields onto each source bookmark.",
   categoryMatches: ["Tutorials", "Tutorial", "How-To", "Skills"],

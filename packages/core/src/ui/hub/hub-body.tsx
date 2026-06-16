@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useHubState } from "@/ui/hub/use-hub-state";
 import { GlobalActionBar } from "@/ui/hub/global-action-bar";
+import { RunningJobBar } from "@/ui/hub/running-job-bar";
 import { PrereqStrip } from "@/ui/hub/prereq-strip";
 import { PlatformCard, type PlatformId } from "@/ui/hub/platform-card";
 import { ENRICHMENTS, PIPELINE_ENRICHMENTS, isPipelineEnrichmentId } from "@/lib/enrichments";
@@ -238,11 +239,22 @@ export function HubBody({ app, plugin }: { app: App; plugin: IRoostPlugin }) {
     });
   };
 
+  /** Cancel the currently-running job in the serial queue. */
+  const cancelJob = () => {
+    plugin.cancelCurrentJob();
+  };
+
   const backfillAll = async () => {
     setBackfilling(true);
     try {
       await Promise.all(
-        DATA_BACKFILLS.map(d => plugin.runJob(d.commandName, () => d.runBackfill(plugin))),
+        DATA_BACKFILLS.map(d => plugin.runJob(d.commandName, (signal) => d.runBackfill(plugin, { signal }))
+          .catch((e: unknown) => {
+            // Suppress AbortError — a cancelled job is not an error.
+            if (e instanceof DOMException && e.name === "AbortError") return;
+            throw e;
+          }),
+        ),
       );
     } finally {
       setBackfilling(false);
@@ -264,9 +276,13 @@ export function HubBody({ app, plugin }: { app: App; plugin: IRoostPlugin }) {
         return;
       }
       await Promise.all(
-        active.map(d => plugin.runJob(d.commandName, () =>
-          d.runBackfill(plugin, { onLog: (m) => plugin.fireLog(`[${d.id}] ${m}`) }),
-        )),
+        active.map(d => plugin.runJob(d.commandName, (signal) =>
+          d.runBackfill(plugin, { signal, onLog: (m) => plugin.fireLog(`[${d.id}] ${m}`) }),
+        ).catch((e: unknown) => {
+          // Suppress AbortError — a cancelled job is not an error.
+          if (e instanceof DOMException && e.name === "AbortError") return;
+          throw e;
+        })),
       );
     } finally {
       setPipelinesRunning(false);
@@ -337,6 +353,14 @@ export function HubBody({ app, plugin }: { app: App; plugin: IRoostPlugin }) {
         <h1 className="text-base font-semibold tracking-tight">Roost Hub</h1>
         <p className="text-xs text-muted-foreground mt-0.5">Connect, sync, and manage your platforms — all in one place.</p>
       </header>
+
+      {/* Running job bar — shown whenever a heavy job is active in the queue */}
+      {state.global.runningJob && (
+        <RunningJobBar
+          label={state.global.runningJob.label}
+          onCancel={cancelJob}
+        />
+      )}
 
       {/* Platforms + sync are the primary surface, so they lead. The global
           Fast/Deep sync controls sit at the top of this section. */}

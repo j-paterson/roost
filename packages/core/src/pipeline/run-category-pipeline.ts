@@ -125,6 +125,7 @@ export async function runCategoryPipeline<
   syncFolder: string,
   config: CategoryPipelineConfig<TCand, TExtract, TVerdict, TResult, TEntry>,
   onLog?: (msg: string) => void,
+  signal?: AbortSignal,
 ): Promise<TResult> {
   const log = onLog || (() => {});
   const vault = app.vault;
@@ -193,6 +194,7 @@ export async function runCategoryPipeline<
   const needTriage = uncached.filter(c => !cache[c.roostId]);
   let triageCount = 0;
   await forEachBatch(needTriage, config.concurrency, async batch => {
+    if (signal?.aborted) return;
     const results = await Promise.allSettled(
       batch.map(async c => {
         const triage = await config.triageItem(c);
@@ -214,7 +216,16 @@ export async function runCategoryPipeline<
 
     savePipelineCache(vault, config.cacheFile, cache);
     log(config.log.triageProgress(triageCount, needTriage.length));
-  });
+  }, signal);
+
+  // Stop between phases if aborted. Per-batch cache saves already persisted
+  // partial progress — the run is resumable via cache-presence next time.
+  if (signal?.aborted) {
+    log("[cancelled] pipeline stopped after triage phase");
+    const result = config.buildResult(candidates, cache, 0);
+    log(config.log.done(result));
+    return result;
+  }
 
   // 3. Backfill previously cached extractions onto their source bookmarks
   if (!config.backfillCachedFirst) await backfillCached();
@@ -227,6 +238,7 @@ export async function runCategoryPipeline<
   let extractCount = 0;
   let extractErrors = 0;
   await forEachBatch(toExtract, config.concurrency, async batch => {
+    if (signal?.aborted) return;
     const results = await Promise.allSettled(
       batch.map(async c => {
         const extraction = await config.extractItem(c);
@@ -262,10 +274,19 @@ export async function runCategoryPipeline<
 
     savePipelineCache(vault, config.cacheFile, cache);
     log(config.log.extractProgress(extractCount, toExtract.length));
-  });
+  }, signal);
+
+  // Log a cancellation note if aborted during the extract phase, then fall
+  // through to buildResult so partial progress is reported cleanly.
+  if (signal?.aborted) {
+    log("[cancelled] pipeline stopped during extract phase");
+  }
 
   // 4. Post-core stages (media: playback + deep-link resolution)
-  if (config.afterCore) {
+  // Skip afterCore on abort: partial extraction is safe (cache consistent),
+  // but post-core stages (deep-link resolution, playback fetch) may make
+  // outbound requests that are unnecessary if the user cancelled.
+  if (config.afterCore && !signal?.aborted) {
     await config.afterCore({ app, candidates, cache, log });
   }
 

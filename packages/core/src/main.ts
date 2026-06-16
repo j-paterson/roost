@@ -129,12 +129,17 @@ export default class RoostPlugin extends Plugin {
     this.buses.log.emit(msg);
   }
 
-  runJob<T>(label: string, fn: () => Promise<T>): Promise<T> {
+  runJob<T>(label: string, fn: (signal?: AbortSignal) => Promise<T>): Promise<T> {
     // Suppress per-write gallery rebuilds for the duration of the job (the Bases
     // view guards onDataUpdated on bulkWriteInProgress and shows an "Updating
     // items…" overlay), then settle the view exactly once when it finishes. The
     // wrapper is nesting-safe — see runJobWithBulkWriteFlag.
-    return this.jobQueue.enqueue(label, () => runJobWithBulkWriteFlag(this, fn));
+    return this.jobQueue.enqueue(label, (signal) => runJobWithBulkWriteFlag(this, () => fn(signal)));
+  }
+
+  /** Abort the currently-running job's signal. The fn stops between batches. */
+  cancelCurrentJob(): void {
+    this.jobQueue.cancelCurrent();
   }
 
   onFilterChange(fn: (filter: RoostFilter) => void): () => void {
@@ -158,6 +163,10 @@ export default class RoostPlugin extends Plugin {
 
   async onload() {
     await this.loadSettings();
+
+    // Wire the job queue's change notifications to hub re-renders so the
+    // running-job bar updates whenever the queue transitions state.
+    this.jobQueue.onChange = () => this.triggerHubStateChange();
 
     // Install the active LLM provider before any pipeline code can run.
     // Updates again whenever settings change (see refreshLLMProvider).
