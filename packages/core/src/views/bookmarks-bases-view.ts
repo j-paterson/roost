@@ -397,7 +397,7 @@ export class BookmarksBasesView extends BasesView
   }
 
   private toggleExpandedCard(cardEl: HTMLElement, entry: BasesEntry): void {
-    toggleGalleryExpanded(this.expandState, cardEl, {
+    void toggleGalleryExpanded(this.expandState, cardEl, {
       app: this.app,
       entry,
       domHost: this.containerEl,

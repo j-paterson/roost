@@ -17,6 +17,7 @@ import {
   resolveVideoUrl,
   isRasterizedTextCover,
 } from "@/views/feed/card-helpers";
+import type { ResolvedSegment } from "@/views/expanded-body-segments";
 
 export interface EntryMediaResolvers {
   resolveImageUrl: (entry: BasesEntry, propId: string) => string | null;
@@ -205,15 +206,32 @@ export interface ExpandedCardActionHandlers {
   onDelete?: (roostId: string) => void;
 }
 
-/** Mount expanded-card DOM into container; returns cleanup fn. */
+/** Mount expanded-card DOM into container; returns cleanup fn.
+ *
+ * When `opts.bodySegments` are supplied (gallery expand of a text-only tweet or
+ * thread), the rasterized `card.png` / numbered-text-png cover and its carousel
+ * are suppressed — the real backfilled text renders as body segments instead,
+ * with any genuine inline photos already carried per-segment. */
 export function mountExpandedCardHost(
   container: HTMLElement,
   entry: BasesEntry,
   resolvers: EntryMediaResolvers,
   extraEls?: HTMLElement[],
+  opts?: { app: App; bodySegments?: ResolvedSegment[] },
 ): () => void {
   container.addClass("roost-expanded");
-  const cleanup = renderExpandedCard(container, entryToExpandedCardData(entry, resolvers, extraEls));
+  const data = entryToExpandedCardData(entry, resolvers, extraEls);
+  const bodySegments = opts?.bodySegments;
+  const hasBody = !!bodySegments && bodySegments.length > 0;
+  // Suppress the rasterized text cover + numbered-png carousel; the text is now
+  // shown as body segments and real photos appear inline per segment.
+  const suppressRasterized = hasBody && !!opts?.app && isRasterizedTextCover(opts.app, entry);
+  const cleanup = renderExpandedCard(container, {
+    ...data,
+    coverUrl: suppressRasterized ? null : data.coverUrl,
+    allImageUrls: suppressRasterized ? undefined : data.allImageUrls,
+    bodySegments: hasBody ? bodySegments : undefined,
+  });
   return () => {
     cleanup();
     container.removeClass("roost-expanded");

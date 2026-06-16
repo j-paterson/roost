@@ -3,7 +3,7 @@
  */
 import { animate } from "motion";
 import type { BasesEntry } from "obsidian";
-import { safeGetValue } from "@/lib/bases-entry";
+import { safeGetValue, stripAuthorWiki } from "@/lib/bases-entry";
 import type { MatchDetail } from "@/types/roost";
 import {
   mountExpandedCardActions,
@@ -12,6 +12,8 @@ import {
   type EntryMediaResolvers,
 } from "@/views/entry-to-expanded-card";
 import { buildExpandedExtraElements } from "@/views/gallery-expanded-extras";
+import { getCoverFolder, isRasterizedTextCover } from "@/views/feed/card-helpers";
+import { loadBodySegments, type ResolvedSegment } from "@/views/expanded-body-segments";
 import type { App } from "obsidian";
 
 export interface GalleryExpandState {
@@ -82,11 +84,11 @@ export interface ToggleGalleryExpandedOpts {
 }
 
 /** Expand card in-place with FLIP; collapses previous expanded card first. */
-export function toggleGalleryExpanded(
+export async function toggleGalleryExpanded(
   state: GalleryExpandState,
   cardEl: HTMLElement,
   opts: ToggleGalleryExpandedOpts,
-): void {
+): Promise<void> {
   const { entry, mediaResolvers, matchDetailMap } = opts;
 
   if (state.expandedEl === cardEl) {
@@ -95,6 +97,23 @@ export function toggleGalleryExpanded(
   }
 
   const first = cardEl.getBoundingClientRect();
+
+  // Text-only tweets / text-focal threads: the cover is a generated card.png
+  // (or numbered text png). Load the real backfilled body text so the expanded
+  // card shows text instead of the rasterized image. cachedRead is fast; the
+  // clicked card stays collapsed during this microtask, so the FLIP is intact.
+  let bodySegments: ResolvedSegment[] | undefined;
+  if (isRasterizedTextCover(opts.app, entry)) {
+    bodySegments = await loadBodySegments(
+      opts.app,
+      entry.file,
+      getCoverFolder(entry) ?? "",
+      stripAuthorWiki(safeGetValue(entry, "note.author")),
+    );
+    // The card may have been collapsed/rebuilt while we awaited.
+    if (!cardEl.isConnected) return;
+  }
+
   closeGalleryExpanded(state);
 
   state.savedCardContent = document.createDocumentFragment();
@@ -115,7 +134,10 @@ export function toggleGalleryExpanded(
     onCollectionClick: opts.onCollectionClick,
   });
 
-  state.expandedCleanup = mountExpandedCardHost(cardEl, entry, mediaResolvers, extraEls);
+  state.expandedCleanup = mountExpandedCardHost(cardEl, entry, mediaResolvers, extraEls, {
+    app: opts.app,
+    bodySegments,
+  });
   mountExpandedCloseButton(cardEl, () => closeGalleryExpanded(state));
 
   mountExpandedCardActions(cardEl, {
