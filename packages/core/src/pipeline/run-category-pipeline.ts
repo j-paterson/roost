@@ -31,6 +31,9 @@ import { forEachBatch, loadPipelineCache, savePipelineCache } from "@/pipeline/s
 export type PipelineCacheEntry<TVerdict extends string, TExtract> = {
   triage: TVerdict;
   extraction: TExtract | null;
+  /** Set to true when storeExtractionInCache === false after a successful extraction.
+   *  Prevents re-extraction on subsequent runs. */
+  extracted?: boolean;
 };
 export type PipelineCache<TVerdict extends string, TExtract> =
   Record<string, PipelineCacheEntry<TVerdict, TExtract>>;
@@ -52,6 +55,12 @@ export interface CategoryPipelineConfig<
 > {
   cacheFile: string;
   concurrency: number;
+  /** When false, a successful extraction sets `extracted: true` on the cache
+   *  entry instead of storing the full extraction payload. The extraction is
+   *  still written to frontmatter via writeToBookmark. Defaults to true.
+   *  Set to false for pipelines whose cache is NOT a live data source (recipe,
+   *  products, workouts, tutorials, home). */
+  storeExtractionInCache?: boolean;
   /** The triage verdict that means "extract this" and is the pipeline's positive class. */
   extractVerdict: TVerdict;
   gatherCandidates(app: App, syncFolder: string): TCand[];
@@ -127,7 +136,7 @@ export async function runCategoryPipeline<
 
   const uncached = candidates.filter(c => !cache[c.roostId]);
   const needExtract = candidates.filter(
-    c => cache[c.roostId]?.triage === config.extractVerdict && !cache[c.roostId]?.extraction,
+    c => cache[c.roostId]?.triage === config.extractVerdict && !cache[c.roostId]?.extraction && !cache[c.roostId]?.extracted,
   ).length;
   log(config.log.triageExtractCounts(
     uncached.length,
@@ -141,6 +150,12 @@ export async function runCategoryPipeline<
   // NOTE: this re-scans the live cache, so the two call sites (pre-triage
   // vs post-triage) may produce different write sets for newly-triaged items.
   const backfillCached = async (): Promise<void> => {
+    // When storeExtractionInCache is false, the cache is slim ({triage, extracted:true})
+    // — there is no extraction payload to backfill from, so this stage is a no-op.
+    if (config.storeExtractionInCache === false) {
+      log(config.log.wroteCached(0));
+      return;
+    }
     const alreadyCached: { entry: TEntry; candidate: TCand }[] = [];
     for (const c of candidates) {
       const entry = cache[c.roostId];
@@ -205,7 +220,7 @@ export async function runCategoryPipeline<
   if (!config.backfillCachedFirst) await backfillCached();
 
   const toExtract = candidates.filter(
-    c => cache[c.roostId]?.triage === config.extractVerdict && !cache[c.roostId]?.extraction,
+    c => cache[c.roostId]?.triage === config.extractVerdict && !cache[c.roostId]?.extraction && !cache[c.roostId]?.extracted,
   );
   log(config.log.extracting(toExtract.length));
 
@@ -224,7 +239,12 @@ export async function runCategoryPipeline<
       if (r.status === "fulfilled" && r.value.extraction) {
         const extraction = r.value.extraction;
         config.afterExtract?.(extraction, r.value.candidate);
-        cache[r.value.roostId].extraction = extraction;
+        if (config.storeExtractionInCache === false) {
+          // Slim mode: mark as done without storing the payload.
+          cache[r.value.roostId] = { ...cache[r.value.roostId], extraction: null, extracted: true };
+        } else {
+          cache[r.value.roostId].extraction = extraction;
+        }
         extractCount++;
         await config.writeToBookmark(app, r.value.candidate, extraction);
       } else {

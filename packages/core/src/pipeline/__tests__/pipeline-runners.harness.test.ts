@@ -1250,11 +1250,12 @@ describe("pipeline runners — uniform harness", () => {
       expect(fmB).not.toHaveProperty("recipe_dish");
       expect(fmB).not.toHaveProperty("enrichment_v_recipe");
 
-      // Cache: A is fully extracted; B keeps its triage verdict with extraction
-      // still null (recipe leaves failed items for retry — it never demotes to skip).
+      // Cache: A is slim-extracted (extraction:null, extracted:true); B keeps its triage
+      // verdict with extraction null (recipe leaves failed items for retry — never demotes).
       const cache = JSON.parse(fs.readFileSync(path.join(tmp, ".roost", "cache", "recipe-cache.json"), "utf-8"));
       expect(cache[idA].triage).toBe("recipe");
-      expect(cache[idA].extraction).not.toBeNull();
+      expect(cache[idA].extracted).toBe(true);
+      expect(cache[idA].extraction).toBeNull();
       expect(cache[idB]).toEqual({ triage: "recipe", extraction: null });
 
       // Tally: the failed extraction counts as one error (extractErrors++).
@@ -1282,11 +1283,12 @@ describe("pipeline runners — uniform harness", () => {
       expect(fmB).not.toHaveProperty("product_name");
       expect(fmB).not.toHaveProperty("enrichment_v_product");
 
-      // Cache: A is fully extracted; B is DEMOTED to skip (the all+catch idiom
-      // overwrites the failed item's entry, so it will NOT be retried).
+      // Cache: A is slim-extracted (extraction:null, extracted:true); B is DEMOTED to skip
+      // (the demote policy overwrites the failed item's entry, so it will NOT be retried).
       const cache = JSON.parse(fs.readFileSync(path.join(tmp, ".roost", "cache", "products-cache.json"), "utf-8"));
       expect(cache[idA].triage).toBe("product");
-      expect(cache[idA].extraction).not.toBeNull();
+      expect(cache[idA].extracted).toBe(true);
+      expect(cache[idA].extraction).toBeNull();
       expect(cache[idB]).toEqual({ triage: "skip", extraction: null });
 
       // Tally: the failed extraction counts as one error.

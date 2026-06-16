@@ -415,10 +415,11 @@ const RECIPE_CONFIG: CategoryPipelineConfig<
   extractItem: extractRecipe,
   afterExtract: (ex, c) => { ex.recipeLink = c.recipeLink; },
   writeToBookmark: (app, c, ex) => writeRecipeToBookmark(app, c.file, ex),
+  storeExtractionInCache: false,
   buildResult: (candidates, cache, errors) => ({
     candidates: candidates.length,
     recipes: candidates.filter(
-      c => cache[c.roostId]?.triage === "recipe" && cache[c.roostId]?.extraction,
+      c => cache[c.roostId]?.triage === "recipe" && ((cache[c.roostId] as any)?.extracted === true || !!cache[c.roostId]?.extraction),
     ).length,
     restaurants: candidates.filter(c => cache[c.roostId]?.triage === "restaurant").length,
     skipped: candidates.filter(c => cache[c.roostId]?.triage === "skip").length,
@@ -452,29 +453,15 @@ export async function runRecipePipeline(
  *  recipe_* fields, and returns a cache record keyed by roost_id. */
 export function reconstructRecipeCache(
   app: App,
-): Record<string, { triage: "recipe"; extraction: RecipeExtraction }> {
-  const out: Record<string, { triage: "recipe"; extraction: RecipeExtraction }> = {};
+): Record<string, { triage: "recipe"; extraction: null; extracted: true }> {
+  const out: Record<string, { triage: "recipe"; extraction: null; extracted: true }> = {};
   for (const f of app.vault.getMarkdownFiles()) {
     if (!f.path.startsWith("Bookmarks/")) continue;
     const fm = app.metadataCache.getFileCache(f)?.frontmatter;
     if (!fm || typeof fm.enrichment_v_recipe !== "number") continue;
     const id = typeof fm.roost_id === "string" ? fm.roost_id : null;
     if (!id) continue;
-    out[id] = {
-      triage: "recipe",
-      extraction: {
-        dish: String(fm.recipe_dish ?? "Unknown"),
-        cuisine: String(fm.recipe_cuisine ?? "Unknown"),
-        ingredients: Array.isArray(fm.recipe_ingredients) ? fm.recipe_ingredients as string[] : [],
-        steps: Array.isArray(fm.recipe_steps) ? fm.recipe_steps : [],
-        prepTime: typeof fm.recipe_prep_time === "string" ? fm.recipe_prep_time : null,
-        cookTime: typeof fm.recipe_cook_time === "string" ? fm.recipe_cook_time : null,
-        difficulty: (fm.recipe_difficulty === "easy" || fm.recipe_difficulty === "hard")
-          ? fm.recipe_difficulty : "medium",
-        notes: null,
-        recipeLink: typeof fm.recipe_link === "string" ? fm.recipe_link : null,
-      },
-    };
+    out[id] = { triage: "recipe", extraction: null, extracted: true };
   }
   return out;
 }

@@ -139,10 +139,18 @@ export type AnyExtractionData =
  * Each pipeline narrows the triage and extraction fields with its own types;
  * this generic version is used where the exact extraction shape doesn't matter
  * (e.g. gallery headers, pipeline-details overlay loader).
+ *
+ * For slim pipelines (recipe, products, workouts, tutorials, home) the
+ * extraction payload is NOT stored in the cache — instead `extracted: true`
+ * is set after a successful extraction to prevent re-extraction on the next run.
+ * The payload lives in frontmatter (the source of truth).
  */
 export interface PipelineCacheEntry {
   triage: string;
   extraction: AnyExtractionData | null;
+  /** Set to true for slim-cache pipelines after a successful extraction.
+   *  When true, the entry is considered done even though extraction is null. */
+  extracted?: boolean;
 }
 
 /** A single entry in the gallery folder tree */

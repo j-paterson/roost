@@ -388,10 +388,11 @@ const PRODUCTS_CONFIG: CategoryPipelineConfig<
   onExtractError: (roostId, err) =>
     console.warn(`[roost] products: extraction error for ${roostId}:`, err),
   writeToBookmark: (app, c, ex) => writeProductToBookmark(app, c.file, ex),
+  storeExtractionInCache: false,
   buildResult: (candidates, cache, errors) => ({
     candidates: candidates.length,
     products: candidates.filter(
-      c => cache[c.roostId]?.triage === "product" && cache[c.roostId]?.extraction,
+      c => cache[c.roostId]?.triage === "product" && ((cache[c.roostId] as any)?.extracted === true || !!cache[c.roostId]?.extraction),
     ).length,
     skipped: candidates.filter(c => cache[c.roostId]?.triage === "skip").length,
     errors,
@@ -424,26 +425,15 @@ export async function runProductsPipeline(
  *  product_* fields, and returns a cache record keyed by roost_id. */
 export function reconstructProductsCache(
   app: App,
-): Record<string, { triage: "product"; extraction: ProductExtraction }> {
-  const out: Record<string, { triage: "product"; extraction: ProductExtraction }> = {};
+): Record<string, { triage: "product"; extraction: null; extracted: true }> {
+  const out: Record<string, { triage: "product"; extraction: null; extracted: true }> = {};
   for (const f of app.vault.getMarkdownFiles()) {
     if (!f.path.startsWith("Bookmarks/")) continue;
     const fm = app.metadataCache.getFileCache(f)?.frontmatter;
     if (!fm || typeof fm.enrichment_v_product !== "number") continue;
     const id = typeof fm.roost_id === "string" ? fm.roost_id : null;
     if (!id) continue;
-    out[id] = {
-      triage: "product",
-      extraction: {
-        name: String(fm.product_name ?? "Unknown"),
-        brand: typeof fm.product_brand === "string" ? fm.product_brand : "",
-        productType: asProductCategory(fm.product_type),
-        price: typeof fm.product_price === "string" ? fm.product_price : null,
-        rating: typeof fm.product_rating === "string" ? fm.product_rating : null,
-        whereToBuy: typeof fm.product_where_to_buy === "string" ? fm.product_where_to_buy : null,
-        description: typeof fm.product_description === "string" ? fm.product_description : "",
-      },
-    };
+    out[id] = { triage: "product", extraction: null, extracted: true };
   }
   return out;
 }

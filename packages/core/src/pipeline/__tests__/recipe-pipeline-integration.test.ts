@@ -164,7 +164,9 @@ describe("runRecipePipeline — integration", () => {
 
     const cache = JSON.parse(fs.readFileSync(path.join(tmp, ".roost", "cache", "recipe-cache.json"), "utf8"));
     expect(cache["twitter:rec1"].triage).toBe("recipe");
-    expect(cache["twitter:rec1"].extraction.dish).toBe("Carbonara");
+    // Slim cache: extraction payload is NOT stored; extracted flag is set instead.
+    expect(cache["twitter:rec1"].extracted).toBe(true);
+    expect(cache["twitter:rec1"].extraction).toBeNull();
   });
 });
 

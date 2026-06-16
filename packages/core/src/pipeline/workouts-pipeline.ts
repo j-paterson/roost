@@ -389,10 +389,11 @@ const WORKOUTS_CONFIG: CategoryPipelineConfig<
   onExtractError: (roostId, err) =>
     console.warn(`[roost] workouts: extraction error for ${roostId}:`, err),
   writeToBookmark: (app, c, ex) => writeWorkoutToBookmark(app, c.file, ex),
+  storeExtractionInCache: false,
   buildResult: (candidates, cache, errors) => ({
     candidates: candidates.length,
     workouts: candidates.filter(
-      c => cache[c.roostId]?.triage === "workout" && cache[c.roostId]?.extraction,
+      c => cache[c.roostId]?.triage === "workout" && ((cache[c.roostId] as any)?.extracted === true || !!cache[c.roostId]?.extraction),
     ).length,
     skipped: candidates.filter(c => cache[c.roostId]?.triage === "skip").length,
     errors,
@@ -425,28 +426,15 @@ export async function runWorkoutsPipeline(
  *  workout_* fields, and returns a cache record keyed by roost_id. */
 export function reconstructWorkoutsCache(
   app: App,
-): Record<string, { triage: "workout"; extraction: WorkoutExtraction }> {
-  const out: Record<string, { triage: "workout"; extraction: WorkoutExtraction }> = {};
+): Record<string, { triage: "workout"; extraction: null; extracted: true }> {
+  const out: Record<string, { triage: "workout"; extraction: null; extracted: true }> = {};
   for (const f of app.vault.getMarkdownFiles()) {
     if (!f.path.startsWith("Bookmarks/")) continue;
     const fm = app.metadataCache.getFileCache(f)?.frontmatter;
     if (!fm || typeof fm.enrichment_v_workout !== "number") continue;
     const id = typeof fm.roost_id === "string" ? fm.roost_id : null;
     if (!id) continue;
-    out[id] = {
-      triage: "workout",
-      extraction: {
-        name: String(fm.workout_name ?? "Unknown"),
-        workoutType: normalizeWorkoutType(typeof fm.workout_type === "string" ? fm.workout_type : ""),
-        targetArea: typeof fm.workout_target_area === "string" ? fm.workout_target_area : "",
-        difficulty: (fm.workout_difficulty === "beginner" || fm.workout_difficulty === "advanced")
-          ? fm.workout_difficulty : "intermediate",
-        duration: typeof fm.workout_duration === "string" ? fm.workout_duration : null,
-        equipment: Array.isArray(fm.workout_equipment) ? fm.workout_equipment : [],
-        exercises: Array.isArray(fm.workout_exercises) ? fm.workout_exercises as string[] : [],
-        notes: typeof fm.workout_notes === "string" ? fm.workout_notes : null,
-      },
-    };
+    out[id] = { triage: "workout", extraction: null, extracted: true };
   }
   return out;
 }

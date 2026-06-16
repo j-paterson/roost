@@ -81,12 +81,8 @@ const CASES: ReconstructCase[] = [
     },
     assert: (e) => {
       expect(e.triage).toBe("recipe");
-      expect(e.extraction.dish).toBe("Pasta");
-      expect(e.extraction.cuisine).toBe("Italian");
-      expect(e.extraction.difficulty).toBe("easy");
-      expect(e.extraction.prepTime).toBe("5 min");
-      expect(e.extraction.cookTime).toBe("15 min");
-      expect(e.extraction.recipeLink).toBe("https://example.com/pasta");
+      expect(e.extraction).toBeNull();
+      expect(e.extracted).toBe(true);
     },
   },
   {
@@ -147,11 +143,8 @@ const CASES: ReconstructCase[] = [
     },
     assert: (e) => {
       expect(e.triage).toBe("product");
-      expect(e.extraction.name).toBe("Vitamix 5200");
-      expect(e.extraction.brand).toBe("Vitamix");
-      expect(e.extraction.productType).toBe("other");
-      expect(e.extraction.price).toBe("$549");
-      expect(e.extraction.whereToBuy).toBe("Amazon");
+      expect(e.extraction).toBeNull();
+      expect(e.extracted).toBe(true);
     },
   },
   {
@@ -168,11 +161,8 @@ const CASES: ReconstructCase[] = [
     },
     assert: (e) => {
       expect(e.triage).toBe("workout");
-      expect(e.extraction.name).toBe("Lower Body Strength");
-      expect(e.extraction.workoutType).toBe("strength");
-      expect(e.extraction.targetArea).toBe("legs");
-      expect(e.extraction.difficulty).toBe("intermediate");
-      expect(e.extraction.duration).toBe("45 min");
+      expect(e.extraction).toBeNull();
+      expect(e.extracted).toBe(true);
     },
   },
   {
@@ -188,10 +178,8 @@ const CASES: ReconstructCase[] = [
     },
     assert: (e) => {
       expect(e.triage).toBe("tutorial");
-      expect(e.extraction.topic).toBe("Pour-over coffee");
-      expect(e.extraction.skillArea).toBe("cooking");
-      expect(e.extraction.difficulty).toBe("beginner");
-      expect(e.extraction.timeEstimate).toBe("5 min");
+      expect(e.extraction).toBeNull();
+      expect(e.extracted).toBe(true);
     },
   },
   {
@@ -207,10 +195,8 @@ const CASES: ReconstructCase[] = [
     },
     assert: (e) => {
       expect(e.triage).toBe("home");
-      expect(e.extraction.title).toBe("Living room reading corner");
-      expect(e.extraction.room).toBe("living-room");
-      expect(e.extraction.ideaType).toBe("decor");
-      expect(e.extraction.style).toBe("mid-century modern");
+      expect(e.extraction).toBeNull();
+      expect(e.extracted).toBe(true);
     },
   },
 ];

@@ -416,10 +416,11 @@ const HOME_CONFIG: CategoryPipelineConfig<
   onExtractError: (roostId, err) =>
     console.warn(`[roost] home: extraction error for ${roostId}:`, err),
   writeToBookmark: (app, c, ex) => writeHomeToBookmark(app, c.file, ex),
+  storeExtractionInCache: false,
   buildResult: (candidates, cache, errors) => ({
     candidates: candidates.length,
     ideas: candidates.filter(
-      c => cache[c.roostId]?.triage === "home" && cache[c.roostId]?.extraction,
+      c => cache[c.roostId]?.triage === "home" && ((cache[c.roostId] as any)?.extracted === true || !!cache[c.roostId]?.extraction),
     ).length,
     skipped: candidates.filter(c => cache[c.roostId]?.triage === "skip").length,
     errors,
@@ -452,27 +453,15 @@ export async function runHomePipeline(
  *  home_* fields, and returns a cache record keyed by roost_id. */
 export function reconstructHomeCache(
   app: App,
-): Record<string, { triage: "home"; extraction: HomeExtraction }> {
-  const out: Record<string, { triage: "home"; extraction: HomeExtraction }> = {};
+): Record<string, { triage: "home"; extraction: null; extracted: true }> {
+  const out: Record<string, { triage: "home"; extraction: null; extracted: true }> = {};
   for (const f of app.vault.getMarkdownFiles()) {
     if (!f.path.startsWith("Bookmarks/")) continue;
     const fm = app.metadataCache.getFileCache(f)?.frontmatter;
     if (!fm || typeof fm.enrichment_v_home !== "number") continue;
     const id = typeof fm.roost_id === "string" ? fm.roost_id : null;
     if (!id) continue;
-    out[id] = {
-      triage: "home",
-      extraction: {
-        title: String(fm.home_title ?? "Unknown"),
-        room: typeof fm.home_room === "string" ? fm.home_room : "",
-        ideaType: typeof fm.home_idea_type === "string" ? fm.home_idea_type : "",
-        style: typeof fm.home_style === "string" ? fm.home_style : "",
-        budget: typeof fm.home_budget === "string" ? fm.home_budget : null,
-        description: typeof fm.home_description === "string" ? fm.home_description : "",
-        products: Array.isArray(fm.home_products) ? fm.home_products : [],
-        tips: Array.isArray(fm.home_tips) ? fm.home_tips : [],
-      },
-    };
+    out[id] = { triage: "home", extraction: null, extracted: true };
   }
   return out;
 }

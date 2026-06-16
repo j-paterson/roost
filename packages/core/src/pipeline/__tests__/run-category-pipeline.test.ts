@@ -200,4 +200,66 @@ describe("runCategoryPipeline extensions", () => {
     expect(result.yes).toBe(42);
     expect(coreCacheSnapshot?.["x"]).toMatchObject({ triage: "yes", extraction: "data" });
   });
+
+  // ── storeExtractionInCache tests ──
+
+  it("storeExtractionInCache:false — successful extraction sets extracted:true and leaves extraction null", async () => {
+    const writeArgs: { id: string; extraction: unknown }[] = [];
+    const result = await runCategoryPipeline(app, "Sync", baseConfig({
+      gatherCandidates: () => [cand("slim")],
+      triageItem: async () => "yes",
+      extractItem: async () => "data",
+      writeToBookmark: async (_a, c, ex) => { writeArgs.push({ id: c.roostId, extraction: ex }); },
+      storeExtractionInCache: false,
+      buildResult: (cands, cache, errors) => ({
+        yes: cands.filter(c => (cache[c.roostId] as any)?.extracted === true || !!cache[c.roostId]?.extraction).length,
+        errors,
+      }),
+    }));
+
+    // writeToBookmark still called with the real extraction
+    expect(writeArgs).toHaveLength(1);
+    expect(writeArgs[0].extraction).toBe("data");
+    // result still counts it as done
+    expect(result.yes).toBe(1);
+    // cache entry has extracted:true and extraction:null
+    const saved = readCache(tmp);
+    expect(saved["slim"]).toMatchObject({ triage: "yes", extraction: null, extracted: true });
+  });
+
+  it("storeExtractionInCache:false — an entry with {triage, extracted:true} is NOT re-extracted on next run", async () => {
+    // Seed cache as if a prior run already set extracted:true
+    seedCache(tmp, { done: { triage: "yes", extraction: null, extracted: true } });
+    const extractCalls: string[] = [];
+    await runCategoryPipeline(app, "Sync", baseConfig({
+      gatherCandidates: () => [cand("done")],
+      triageItem: async () => "yes",
+      extractItem: async c => { extractCalls.push(c.roostId); return "data"; },
+      storeExtractionInCache: false,
+    }));
+    // Must NOT call extractItem again for already-slim entry
+    expect(extractCalls).toHaveLength(0);
+  });
+
+  it("storeExtractionInCache absent/true — behavior unchanged (stores extraction)", async () => {
+    await runCategoryPipeline(app, "Sync", baseConfig({
+      gatherCandidates: () => [cand("fat")],
+    }));
+    const saved = readCache(tmp);
+    expect(saved["fat"]).toMatchObject({ triage: "yes", extraction: "data" });
+    expect((saved["fat"] as any).extracted).toBeUndefined();
+  });
+
+  it("storeExtractionInCache:false — backfillCached is a no-op (does not write cached entries)", async () => {
+    // Seed cache with a slim entry that would otherwise be backfilled
+    seedCache(tmp, { slim: { triage: "yes", extraction: null, extracted: true } });
+    const writes: string[] = [];
+    await runCategoryPipeline(app, "Sync", baseConfig({
+      gatherCandidates: () => [cand("slim")],
+      writeToBookmark: async (_a, c) => { writes.push(c.roostId); },
+      storeExtractionInCache: false,
+    }));
+    // backfillCached should have been a no-op
+    expect(writes).toHaveLength(0);
+  });
 });

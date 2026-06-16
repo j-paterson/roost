@@ -370,7 +370,6 @@ interface TutorialsPipelineResult {
   tutorials: number;
   skipped: number;
   errors: number;
-  areas: number;
 }
 
 /** Tutorials wiring for {@link runCategoryPipeline} — standard profile (tag fast-path, triage-throw → skip, extract-failure → demote), plus a distinct skillArea count (`areas`) computed in buildResult. */
@@ -393,18 +392,15 @@ const TUTORIALS_CONFIG: CategoryPipelineConfig<
   onExtractError: (roostId, err) =>
     console.warn(`[roost] tutorials: extraction error for ${roostId}:`, err),
   writeToBookmark: (app, c, ex) => writeTutorialToBookmark(app, c.file, ex),
-  buildResult: (candidates, cache, errors) => {
-    const done = candidates.filter(
-      c => cache[c.roostId]?.triage === "tutorial" && cache[c.roostId]?.extraction,
-    );
-    return {
-      candidates: candidates.length,
-      tutorials: done.length,
-      skipped: candidates.filter(c => cache[c.roostId]?.triage === "skip").length,
-      errors,
-      areas: new Set(done.map(c => (cache[c.roostId]!.extraction as TutorialExtraction).skillArea)).size,
-    };
-  },
+  storeExtractionInCache: false,
+  buildResult: (candidates, cache, errors) => ({
+    candidates: candidates.length,
+    tutorials: candidates.filter(
+      c => cache[c.roostId]?.triage === "tutorial" && ((cache[c.roostId] as any)?.extracted === true || !!cache[c.roostId]?.extraction),
+    ).length,
+    skipped: candidates.filter(c => cache[c.roostId]?.triage === "skip").length,
+    errors,
+  }),
   log: {
     candidatesFound: n => `Found ${n} tutorial candidates`,
     triageExtractCounts: (uncached, needExtract, complete) =>
@@ -414,7 +410,7 @@ const TUTORIALS_CONFIG: CategoryPipelineConfig<
     wroteCached: n => `Enriched ${n} cached tutorials`,
     extracting: n => `Extracting ${n} tutorials...`,
     extractProgress: (done, total) => `Extracted ${done}/${total}`,
-    done: r => `Done: ${r.tutorials} tutorials across ${r.areas} skill areas, ${r.skipped} skipped, ${r.errors} errors`,
+    done: r => `Done: ${r.tutorials} tutorials, ${r.skipped} skipped, ${r.errors} errors`,
   },
 };
 
@@ -433,27 +429,15 @@ export async function runTutorialsPipeline(
  *  tutorial_* fields, and returns a cache record keyed by roost_id. */
 export function reconstructTutorialsCache(
   app: App,
-): Record<string, { triage: "tutorial"; extraction: TutorialExtraction }> {
-  const out: Record<string, { triage: "tutorial"; extraction: TutorialExtraction }> = {};
+): Record<string, { triage: "tutorial"; extraction: null; extracted: true }> {
+  const out: Record<string, { triage: "tutorial"; extraction: null; extracted: true }> = {};
   for (const f of app.vault.getMarkdownFiles()) {
     if (!f.path.startsWith("Bookmarks/")) continue;
     const fm = app.metadataCache.getFileCache(f)?.frontmatter;
     if (!fm || typeof fm.enrichment_v_tutorial !== "number") continue;
     const id = typeof fm.roost_id === "string" ? fm.roost_id : null;
     if (!id) continue;
-    out[id] = {
-      triage: "tutorial",
-      extraction: {
-        topic: String(fm.tutorial_topic ?? "Unknown"),
-        skillArea: typeof fm.tutorial_skill_area === "string" ? fm.tutorial_skill_area : "",
-        difficulty: (fm.tutorial_difficulty === "beginner" || fm.tutorial_difficulty === "advanced")
-          ? fm.tutorial_difficulty : "intermediate",
-        timeEstimate: typeof fm.tutorial_time_estimate === "string" ? fm.tutorial_time_estimate : null,
-        description: typeof fm.tutorial_description === "string" ? fm.tutorial_description : "",
-        tools: Array.isArray(fm.tutorial_tools) ? fm.tutorial_tools : [],
-        steps: Array.isArray(fm.tutorial_steps) ? fm.tutorial_steps : [],
-      },
-    };
+    out[id] = { triage: "tutorial", extraction: null, extracted: true };
   }
   return out;
 }
