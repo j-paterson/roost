@@ -162,25 +162,16 @@ export function renderExpandedCard(
   }
 
   // Title — split raw caption into a short title and an optional description.
-  // When bodyText is being rendered we already show the full content below,
-  // so the "…" expand toggle would just duplicate it — skip in that case.
-  // Skipped entirely for the native tweet view (it renders its own header).
+  // The full caption shows in the expanded (detail) view: long TikTok captions
+  // frequently carry the entire recipe/details inline, which the old collapsed
+  // "…" toggle hid — so the expanded card looked empty. Skipped for the native
+  // tweet view (it renders its own header + body).
   if (!isTweetView) {
     const { title, description } = splitCaption(data.title);
     const titleEl = header.createDiv({ cls: "roost-expanded-title" });
     titleEl.createSpan({ cls: "roost-expanded-title-text", text: title || data.title });
     if (description && !hasBodyText) {
-      const toggle = titleEl.createSpan({ cls: "roost-expanded-title-toggle", text: "…" });
-      toggle.setAttr("role", "button");
-      toggle.setAttr("aria-label", "Show full description");
-      toggle.setAttr("title", "Show full description");
-      const body = info.createDiv({ cls: "roost-expanded-body roost-expanded-body-collapsed", text: description });
-      toggle.addEventListener("click", (e: MouseEvent) => {
-        e.stopPropagation();
-        const expanded = body.classList.toggle("roost-expanded-body-collapsed") === false;
-        toggle.setAttr("aria-label", expanded ? "Hide description" : "Show full description");
-        toggle.setAttr("title", expanded ? "Hide description" : "Show full description");
-      });
+      info.createDiv({ cls: "roost-expanded-body", text: description });
     }
   }
 
