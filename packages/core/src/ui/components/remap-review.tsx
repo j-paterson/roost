@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useId } from "react";
 import * as React from "react";
 import type { MappingSuggestion, ResolvedMapping } from "@/lib/collection-remap";
 
@@ -27,6 +27,7 @@ export function RemapReview({ suggestions, categoryNames, onConfirm, onCancel }:
     setRows((rs) => rs.map((r, j) => (j === i ? { ...r, ...patch } : r)));
 
   const targets = Array.from(new Set([...categoryNames, ...rows.map((r) => r.target)])).sort();
+  const targetsId = useId(); // per-instance datalist id (avoids a global DOM collision)
 
   return (
     <div className="roost-remap-review">
@@ -41,14 +42,14 @@ export function RemapReview({ suggestions, categoryNames, onConfirm, onCancel }:
               <td><input type="checkbox" checked={r.include} onChange={(e) => setRow(i, { include: e.target.checked })} /></td>
               <td>{r.platform}: {r.collection}</td>
               <td>
-                <input list="roost-remap-targets" value={r.target} onChange={(e) => setRow(i, { target: e.target.value })} />
+                <input list={targetsId} value={r.target} onChange={(e) => setRow(i, { target: e.target.value })} />
               </td>
               <td>{r.sim == null ? "—" : r.sim.toFixed(2)}</td>
             </tr>
           ))}
         </tbody>
       </table>
-      <datalist id="roost-remap-targets">
+      <datalist id={targetsId}>
         {targets.map((t) => <option key={t} value={t} />)}
       </datalist>
       <div className="roost-remap-actions">

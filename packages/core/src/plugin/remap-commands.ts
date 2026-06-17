@@ -33,7 +33,10 @@ export function registerRemapCommands(plugin: RoostCommandHost): void {
         suggestions,
         categoryNames: categories.map((c) => c.name),
         onConfirm: (resolved) => {
-          const next = applyResolvedMappings(existing, resolved);
+          // Re-read at save time: a category rename (handleRenameCategory) may have
+          // written the shared alias map while the modal was open — merge onto fresh.
+          const fresh = loadCollectionAliases(app.vault);
+          const next = applyResolvedMappings(fresh, resolved);
           saveCollectionAliases(app.vault, next);
           new Notice(`Roost: saved ${resolved.length} collection mapping(s).`);
         },
