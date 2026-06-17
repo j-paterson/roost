@@ -82,6 +82,15 @@ def test_operating_point_bounds():
     reject_all = L.operating_point(knowns, unknowns, tau=2.0, r=0.3, lam=0.0)
     assert abs(reject_all - 0.3) < 1e-9, reject_all
 
+def test_apply_alias_resolves_and_falls_back():
+    aliases = {"twitter:Cooking ideas": "Recipes"}
+    # mapped
+    assert L.apply_alias(aliases, "twitter", "Cooking ideas") == "Recipes"
+    # no entry -> falls back to the raw collection
+    assert L.apply_alias(aliases, "tiktok", "Recipes") == "Recipes"
+    # empty map -> raw collection
+    assert L.apply_alias({}, "twitter", "Cooking ideas") == "Cooking ideas"
+
 TESTS = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
 
 def main():
