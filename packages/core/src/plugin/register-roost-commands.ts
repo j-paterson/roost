@@ -9,6 +9,7 @@ import { registerDigestCommands } from "@/plugin/digest-commands";
 import { registerMemoryCommands } from "@/plugin/memory-commands";
 import { registerBackfillCommands } from "@/plugin/backfill-commands";
 import { registerMigrationCommands } from "@/plugin/migration-commands";
+import { registerRemapCommands } from "@/plugin/remap-commands";
 import type { RoostCommandHost } from "@/plugin/roost-command-host";
 import { findBinary } from "@/integrations/detect";
 import { getIntegration } from "@/integrations/registry";
@@ -124,6 +125,7 @@ export function registerRoostCommands(plugin: RoostCommandHost): void {
   registerDigestCommands(plugin);
   registerMemoryCommands(plugin);
   registerBackfillCommands(plugin);
+  registerRemapCommands(plugin);
 
   plugin.addCommand({
     id: "regenerate-card-image",
