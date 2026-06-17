@@ -81,34 +81,39 @@ export async function runFolderBackfill(plugin: IRoostPlugin): Promise<void> {
     const reinject = (): void => {
       wc.executeJavaScript(`try{delete window.__TWITTER_BOOKMARK_SPIKE__;}catch(e){} try{${twitterProbeSource}}catch(e){} void 0;`).catch(() => {});
     };
+    // The dom-ready listener re-injects the probe on EVERY navigation (each full
+    // page load clears the JS context). This is the only reinjection mechanism —
+    // a manual reinject() would `delete` the store and wipe what was just captured.
     webviewEl.addEventListener("dom-ready", reinject);
+    const readTweetCache = () =>
+      wc.executeJavaScript(`(function(){try{return JSON.stringify(window.__TWITTER_BOOKMARK_SPIKE__.tweetCache||{});}catch(e){return '{}';}})();`).catch(() => "{}");
     try {
-      // Load bookmarks home so the probe captures the folder list.
+      // 1. Load bookmarks home; dom-ready injects the probe before the
+      //    BookmarkFoldersSlice op fires, so the folder list is captured.
       await new Promise<void>((res) => { const h = () => res(); webviewEl.addEventListener("did-finish-load", h, { once: true }); webviewEl.loadURL("https://x.com/i/bookmarks"); });
-      await new Promise(r => setTimeout(r, 2500));
-      reinject();
-      await new Promise(r => setTimeout(r, 2000));
+      await new Promise(r => setTimeout(r, 3000)); // let BookmarkFoldersSlice fire + be captured
 
-      // 2. Folder list from the probe store.
+      // 2. Folder list from the probe store (no reinject here — it would wipe it).
       const rawFolders = await wc.executeJavaScript(`(function(){try{var s=window.__TWITTER_BOOKMARK_SPIKE__;return JSON.stringify(Object.entries(s.bookmarkFolders||{}).map(function(e){return {id:e[0],name:e[1]};}));}catch(e){return '[]';}})();`).catch(() => "[]");
       const folders: { id: string; name: string }[] = JSON.parse(rawFolders);
       log(`Found ${folders.length} bookmark folders`);
 
-      // 3. Navigate each folder so the probe tags its tweets.
+      // 3. Navigate each folder; read its tweets IMMEDIATELY — the next
+      //    navigation clears the context and the dom-ready reinject resets the
+      //    store, so a single read at the end would only see the last folder.
+      const folderByTweet = new Map<string, string>();
       for (const folder of folders) {
         log(`Loading folder: ${folder.name}...`);
         const loaded = await new Promise<boolean>((res) => { const t = setTimeout(() => res(false), 15000); const h = () => { clearTimeout(t); res(true); }; webviewEl.addEventListener("did-finish-load", h, { once: true }); webviewEl.loadURL(`https://x.com/i/bookmarks/${folder.id}`); });
         if (!loaded) { log(`[WARN] Folder "${folder.name}" failed to load — skipping`); continue; }
-        reinject();
-        await new Promise(r => setTimeout(r, 3000));
+        await new Promise(r => setTimeout(r, 3000)); // BookmarkFolderTimeline fires; probe tags tweets
+        const thisFolder = parseFolderTweetMap(await readTweetCache());
+        for (const [id, name] of thisFolder) folderByTweet.set(id, name);
+        log(`  "${folder.name}": ${thisFolder.size} tweets`);
       }
-
-      // 4. Read the whole tweetCache once -> tweetId -> folder map.
-      const cacheJson = await wc.executeJavaScript(`(function(){try{return JSON.stringify(window.__TWITTER_BOOKMARK_SPIKE__.tweetCache||{});}catch(e){return '{}';}})();`).catch(() => "{}");
-      const folderByTweet = parseFolderTweetMap(cacheJson);
       log(`${folderByTweet.size} tweets are in folders`);
 
-      // 5. Apply to existing notes.
+      // 4. Apply to existing notes.
       const r = await applyFolderMapToNotes(app, syncFolder, folderByTweet, log);
       new Notice(`Folder backfill: ${r.tagged} tagged, ${r.clearedAuto} auto-categories cleared, ${r.stampedOnly} marked checked.`);
     } finally {
