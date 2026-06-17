@@ -34,6 +34,10 @@ export interface ScoreWithSubcategoriesOpts {
   /** CLIP fusion strength passed through to both scoreAgainstCategories passes.
    *  0 = text only, 1 = CLIP only. Defaults to DEFAULT_CLIP_FUSION_ALPHA (0.5). */
   clipFusionAlpha?: number;
+  /** When true, the TOP-LEVEL pass (pass 1) uses embedding top-1 (no LLM rerank) —
+   *  the validated honest-label win. Pass 2 (subcategory) is left LLM-based
+   *  (unvalidated for subcats). */
+  embeddingOnly?: boolean;
 }
 
 export interface ScoreWithSubcategoriesResult {
@@ -51,7 +55,7 @@ export async function scoreWithSubcategories(
   const {
     itemIds, cache, topLevelCategories, subcatsByParent,
     vault, threshold, subcatThreshold, ollamaUrl, onProgress, onLog, stopSignal, concurrency,
-    clipFusionAlpha,
+    clipFusionAlpha, embeddingOnly,
   } = opts;
 
   // Total work: pass 1 = N items + pass 2 = up to N more (depends on pass-1 routing).
@@ -64,7 +68,7 @@ export async function scoreWithSubcategories(
   const pass1 = await scoreAgainstCategories({
     itemIds, cache, categories: topLevelCategories, vault,
     threshold, ollamaUrl, onLog, stopSignal, concurrency,
-    clipFusionAlpha,
+    clipFusionAlpha, embeddingOnly,
     onProgress: (d) => { done = d; reportProgress(); },
   });
 

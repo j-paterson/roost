@@ -43,6 +43,12 @@ export interface RoostSettings {
    *  (with anthropicApiKey), "skip" disables AI features (extraction calls
    *  throw with a helpful message). */
   llmBackend: "local" | "cloud" | "skip";
+  /** Smart Assign top-level scoring: when true (default), assign each item to its
+   *  top-1 nearest category centroid and skip the dual-LLM rerank. Validated to
+   *  beat the ensemble on honest labels (+11.7pp; adversary could-not-refute —
+   *  see docs/superpowers/specs/2026-06-16-honest-eval-results.md). Set false to
+   *  restore the LLM rerank. */
+  smartAssignEmbeddingOnly: boolean;
   /** Anthropic API key. Only used when llmBackend === "cloud". Stored in
    *  plain text in data.json — same security model as every other Obsidian
    *  plugin. Empty string when not set. */
@@ -112,6 +118,7 @@ export const DEFAULT_SETTINGS: RoostSettings = {
   clipFusionAlpha: 0.5,
   embeddingBackend: "auto",
   llmBackend: "local",
+  smartAssignEmbeddingOnly: true,
   anthropicApiKey: "",
   anthropicModel: "claude-haiku-4-5-20251001",
   tmdbApiKey: "",
