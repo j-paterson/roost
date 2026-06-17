@@ -8,10 +8,15 @@ import os, sys, argparse, json
 import numpy as np
 import honest_eval_lib as L
 
-def rank(vec, cents_names, C):
-    sims = C @ vec / (np.linalg.norm(C, axis=1) * np.linalg.norm(vec) + 1e-9)
-    order = np.argsort(-sims)
-    return cents_names[order[0]], float(sims[order[0]])
+def rank(vec, cents_names, Cn):
+    # Cn is pre-row-normalized float64; normalize vec → cosine = dot. float64 +
+    # np.dot avoids NumPy 2.x's spurious matmul FPE flags on float32 `@` (the
+    # inputs are finite & unit-norm; the warnings are a SIMD artifact, not real).
+    vn = np.ascontiguousarray(vec, dtype=np.float64)
+    vn = vn / (float(np.linalg.norm(vn)) + 1e-9)
+    sims = np.dot(Cn, vn)
+    i = int(np.argmax(sims))
+    return cents_names[i], float(sims[i])
 
 def main():
     ap = argparse.ArgumentParser()
@@ -41,7 +46,16 @@ def main():
         with open(os.path.join(build, args.centroids)) as fh:
             prod = json.load(fh)
         cents = {k: np.asarray(v["centroid"], dtype=np.float32) for k, v in prod.items()}
-    cnames = list(cents); C = np.stack([cents[c] for c in cnames])
+    cnames = list(cents)
+    if not cnames:
+        raise SystemExit(
+            "No centroids: every member was excluded as a fixture item. The fixture covers "
+            "100% of honest labels, so the in-Python '--centroids mean' path (honest labels "
+            "only) is degenerate by construction. Use --centroids production-centroids.json "
+            "(production candidate pool incl. auto items, fixture strictly held out)."
+        )
+    C = np.ascontiguousarray(np.stack([cents[c] for c in cnames]), dtype=np.float64)
+    C = C / (np.linalg.norm(C, axis=1, keepdims=True) + 1e-9)  # row-normalize once
 
     # self-check (run by default)
     L.assert_gt_not_roost_category("collection")
