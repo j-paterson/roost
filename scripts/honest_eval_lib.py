@@ -135,7 +135,7 @@ def assert_disjoint(dev_ids, holdout_ids):
 
 # ── Vault loaders ─────────────────────────────────────────────────────────────
 
-import glob, re, random
+import glob, re
 
 _FM = re.compile(r"^---\n(.*?)\n---", re.S)
 _FIELD = re.compile(r"^(roost_id|collection|roost_category|roost_assigned_by):\s*(.+)$")
