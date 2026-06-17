@@ -1,3 +1,13 @@
+import { Notice } from "obsidian";
+import type { IRoostPlugin } from "@/types/plugin";
+import type { EnrichmentDef } from "@/lib/enrichments";
+
+/** Mirror of enrichmentVersionField in enrichments.ts — duplicated here to
+ *  avoid a circular import (enrichments.ts → this file → enrichments.ts). */
+function enrichmentVersionField(id: string): string {
+  return `enrichment_v_${id}`;
+}
+
 /** Frontmatter patch (passed to processFrontMatter) for one note, given whether the
  * live folder scan found it in a folder. `null` values delete the key. Pure. */
 export function folderFrontmatterPatch(
@@ -6,7 +16,7 @@ export function folderFrontmatterPatch(
   fm: Record<string, unknown>,
   schemaVersion: number,
 ): Record<string, unknown> {
-  const stamp = "enrichment_v_folder"; // (Task 3 swaps this for enrichmentVersionField("folder") once "folder" is a valid EnrichmentId)
+  const stamp = enrichmentVersionField("folder");
   if (!inFolder) {
     // Mark checked so it doesn't re-scan forever; change nothing else.
     return { [stamp]: schemaVersion };
@@ -40,3 +50,22 @@ export function parseFolderTweetMap(tweetCacheJson: string): Map<string, string>
   }
   return map;
 }
+
+export const FOLDER_SCHEMA_VERSION = 1;
+
+/** Driver: live folder scan -> write rule over existing notes. Implemented in Task 4. */
+export async function runFolderBackfill(plugin: IRoostPlugin): Promise<void> {
+  void plugin;
+  new Notice("Folder backfill not yet implemented.");
+}
+
+export const FOLDER_ENRICHMENT: EnrichmentDef = {
+  id: "folder",
+  displayName: "Bookmark folder",
+  schemaVersion: FOLDER_SCHEMA_VERSION,
+  commandId: "backfill-x-folders",
+  commandName: "Backfill X bookmark folders",
+  fieldsWritten: ["collection"],
+  runBackfill: (plugin) => runFolderBackfill(plugin),
+  panelDetail: "Already-synced X bookmarks with no folder tag yet. Backfill navigates your bookmark folders and records each tweet's folder in `collection` (human-assigned), superseding stale auto categories.",
+};
