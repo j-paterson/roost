@@ -175,7 +175,8 @@ def load_honest_labels(vault, sync_folder="Bookmarks"):
 
 
 def load_fixture(build_dir, split):
-    """split ∈ {large, dev, holdout}. Returns list[{id, gt, is_negative}]."""
+    """split ∈ {large, dev, holdout}. Returns the testItems list; each item is
+    {id, groundTruth, isNegative} (groundTruth is None for negatives)."""
     with open(os.path.join(build_dir, f"eval-fixture-{split}.json")) as fh:
         f = json.load(fh)
     return f["testItems"]

@@ -27,8 +27,8 @@ def main():
         k = max(1, round(len(ts) * 0.30)) if len(ts) >= 2 else 0
         hold += ts[:k]; dev += ts[k:]
     def dump(split, rows):
-        json.dump({"seed": L.SEED, "split": split, "testItems": rows},
-                  open(os.path.join(build, f"eval-fixture-{split}.json"), "w"))
+        with open(os.path.join(build, f"eval-fixture-{split}.json"), "w") as fh:
+            json.dump({"seed": L.SEED, "split": split, "testItems": rows}, fh)
     dump("large", items); dump("dev", dev); dump("holdout", hold)
     L.assert_disjoint([t["id"] for t in dev], [t["id"] for t in hold])
     print(f"large={len(items)} (pos {len(pos)}, neg {len(neg)}) | dev={len(dev)} holdout={len(hold)} | seed={L.SEED}")
