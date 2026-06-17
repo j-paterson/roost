@@ -131,3 +131,51 @@ def assert_disjoint(dev_ids, holdout_ids):
     overlap = set(dev_ids) & set(holdout_ids)
     if overlap:
         raise AssertionError(f"dev/holdout overlap: {len(overlap)} ids")
+
+
+# ── Vault loaders ─────────────────────────────────────────────────────────────
+
+import glob, re, random
+
+_FM = re.compile(r"^---\n(.*?)\n---", re.S)
+_FIELD = re.compile(r"^(roost_id|collection|roost_category|roost_assigned_by):\s*(.+)$")
+
+
+def _read_fm(path):
+    with open(path, encoding="utf-8") as fh:
+        content = fh.read()
+    m = _FM.match(content)
+    if not m:
+        return {}
+    out = {}
+    for line in m.group(1).split("\n"):
+        f = _FIELD.match(line)
+        if f:
+            out[f.group(1)] = f.group(2).strip().strip('"').strip("'")
+    return out
+
+
+def load_honest_labels(vault, sync_folder="Bookmarks"):
+    """{roost_id: collection} for items whose roost_assigned_by != 'auto'. GT is the
+    human `collection` field ONLY — never roost_category. Also returns the set of
+    negative ids (have roost_id but no collection)."""
+    assert_gt_not_roost_category("collection")  # tripwire: this loader uses `collection`
+    labels, negatives = {}, set()
+    for p in glob.glob(os.path.join(vault, sync_folder, "**", "*.md"), recursive=True):
+        fm = _read_fm(p)
+        rid = fm.get("roost_id")
+        if not rid:
+            continue
+        coll = fm.get("collection")
+        if coll and fm.get("roost_assigned_by") != "auto" and coll not in ("undefined", "null", ""):
+            labels[rid] = coll
+        elif not coll:
+            negatives.add(rid)
+    return labels, negatives
+
+
+def load_fixture(build_dir, split):
+    """split ∈ {large, dev, holdout}. Returns list[{id, gt, is_negative}]."""
+    with open(os.path.join(build_dir, f"eval-fixture-{split}.json")) as fh:
+        f = json.load(fh)
+    return f["testItems"]
