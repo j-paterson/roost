@@ -2,11 +2,11 @@ import { Notice } from "obsidian";
 import type { IRoostPlugin } from "@/types/plugin";
 import type { EnrichmentDef } from "@/lib/enrichments";
 
-/** Mirror of enrichmentVersionField in enrichments.ts — duplicated here to
- *  avoid a circular import (enrichments.ts → this file → enrichments.ts). */
-function enrichmentVersionField(id: string): string {
-  return `enrichment_v_${id}`;
-}
+// Inlined to match the sibling backfills (they import only the EnrichmentDef *type*
+// from enrichments.ts and inline their stamp string — importing the value here would
+// create a runtime cycle: enrichments.ts → this file → enrichments.ts).
+// Mirrors enrichmentVersionField("folder").
+const FOLDER_STAMP = "enrichment_v_folder";
 
 /** Frontmatter patch (passed to processFrontMatter) for one note, given whether the
  * live folder scan found it in a folder. `null` values delete the key. Pure. */
@@ -16,7 +16,7 @@ export function folderFrontmatterPatch(
   fm: Record<string, unknown>,
   schemaVersion: number,
 ): Record<string, unknown> {
-  const stamp = enrichmentVersionField("folder");
+  const stamp = FOLDER_STAMP;
   if (!inFolder) {
     // Mark checked so it doesn't re-scan forever; change nothing else.
     return { [stamp]: schemaVersion };
