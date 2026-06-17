@@ -41,6 +41,8 @@ def main():
         for i, coll in labels.items():
             if i in cache:
                 members.setdefault(coll, []).append((i, cache[i]))
+        # honor build_centroids' contract: post-exclusion members must not leak the fixture
+        L.assert_no_fixture_leak([i for ms in members.values() for i, _ in ms if i not in fixture_ids], fixture_ids)
         cents = L.build_centroids(members, exclude_ids=fixture_ids)
     else:
         with open(os.path.join(build, args.centroids), encoding="utf-8") as fh:
