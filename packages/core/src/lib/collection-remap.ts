@@ -57,3 +57,37 @@ export function suggestCollectionMappings(
       : { ...base, action: "create" as const, target: c.name, sim: best.sim };
   });
 }
+
+/** A user-confirmed mapping to persist (skips are simply not included). */
+export interface ResolvedMapping {
+  platform: string;
+  collection: string;
+  target: string;
+}
+
+/** Return a new alias map with the resolved mappings merged in (input untouched). */
+export function applyResolvedMappings(
+  map: CollectionAliasMap,
+  resolved: ResolvedMapping[],
+): CollectionAliasMap {
+  const next: CollectionAliasMap = { ...map };
+  for (const r of resolved) next[makeAliasKey(r.platform, r.collection)] = r.target;
+  return next;
+}
+
+/**
+ * Plain-mean centroid per category from members present in the embedding cache.
+ * Categories with no cached members are dropped. `cache` is any record whose values
+ * carry a `vec: number[]` (the EmbeddingCacheEntry shape).
+ */
+export function buildCategoryCentroids(
+  categories: Record<string, string[]>,
+  cache: Record<string, { vec: number[] | null }>,
+): CategoryCentroid[] {
+  const out: CategoryCentroid[] = [];
+  for (const [name, ids] of Object.entries(categories)) {
+    const vecs = ids.map((id) => cache[id]?.vec).filter((v): v is number[] => Array.isArray(v));
+    if (vecs.length) out.push({ name, centroid: computeCentroid(vecs) });
+  }
+  return out;
+}

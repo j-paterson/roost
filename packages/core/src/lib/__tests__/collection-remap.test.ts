@@ -1,8 +1,11 @@
 import { describe, it, expect } from "vitest";
 import {
   suggestCollectionMappings,
+  applyResolvedMappings,
+  buildCategoryCentroids,
   type CollectionInput,
   type CategoryCentroid,
+  type ResolvedMapping,
 } from "../collection-remap";
 
 const cats: CategoryCentroid[] = [
@@ -40,5 +43,31 @@ describe("suggestCollectionMappings", () => {
     const cols: CollectionInput[] = [{ platform: "twitter", name: "Anything", memberVecs: [[1, 0]] }];
     const out = suggestCollectionMappings(cols, [], {}, 0.8);
     expect(out[0]).toMatchObject({ action: "create", target: "Anything", sim: null });
+  });
+});
+
+describe("applyResolvedMappings", () => {
+  it("adds resolved mappings keyed by platform:collection, preserving existing entries", () => {
+    const start = { "tiktok:Old": "Kept" };
+    const resolved: ResolvedMapping[] = [
+      { platform: "twitter", collection: "Cooking ideas", target: "Recipes" },
+      { platform: "twitter", collection: "Woodworking", target: "Woodworking" }, // create => self-map
+    ];
+    const out = applyResolvedMappings(start, resolved);
+    expect(out).toEqual({
+      "tiktok:Old": "Kept",
+      "twitter:Cooking ideas": "Recipes",
+      "twitter:Woodworking": "Woodworking",
+    });
+    expect(start).toEqual({ "tiktok:Old": "Kept" }); // input not mutated
+  });
+});
+
+describe("buildCategoryCentroids", () => {
+  it("computes a mean centroid per category and drops categories with no cached vectors", () => {
+    const categories = { Recipes: ["a", "b"], Empty: ["missing"] };
+    const cache = { a: { vec: [2, 0] }, b: { vec: [0, 2] } } as Record<string, { vec: number[] }>;
+    const out = buildCategoryCentroids(categories, cache);
+    expect(out).toEqual([{ name: "Recipes", centroid: [1, 1] }]);
   });
 });
