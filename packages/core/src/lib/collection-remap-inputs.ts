@@ -1,5 +1,6 @@
 import type { App, Vault, TFile } from "obsidian";
 import { gatherVaultCollections, getSyncFiles } from "@/lib/vault-utils";
+import { loadCollectionAliases } from "@/lib/collection-aliases";
 import { loadEmbeddingCache } from "@/pipeline/shared";
 import {
   buildCategoryCentroids,
@@ -41,7 +42,11 @@ export function buildRemapInputs(
   syncFolder: string,
 ): { collections: CollectionInput[]; categories: CategoryCentroid[] } {
   const cache = loadEmbeddingCache(app.vault as Vault);
-  const { collections: categoryGroups } = gatherVaultCollections(app, syncFolder);
+  // Pass aliases so already-mapped collections fold into their canonical category's
+  // centroid (consistent with smart-assign-inputs). categoryGroups are keyed by
+  // resolved category (roost_category > alias > collection), the correct match targets.
+  const aliases = loadCollectionAliases(app.vault as Vault);
+  const { collections: categoryGroups } = gatherVaultCollections(app, syncFolder, undefined, aliases);
   const categories = buildCategoryCentroids(
     categoryGroups,
     cache as Record<string, { vec: number[] | null }>,
