@@ -116,6 +116,7 @@ export async function runClusteringStep1ScoreKnown(
       onLog: host.log,
       stopSignal: signal,
       clipFusionAlpha: host.plugin.settings.clipFusionAlpha,
+      embeddingOnly: host.plugin.settings.smartAssignEmbeddingOnly,
     });
     phase1Assignments = new Map();
     const newSubcats = new Map<string, string | null>();
@@ -143,6 +144,7 @@ export async function runClusteringStep1ScoreKnown(
       onLog: host.log,
       stopSignal: signal,
       clipFusionAlpha: host.plugin.settings.clipFusionAlpha,
+      embeddingOnly: host.plugin.settings.smartAssignEmbeddingOnly,
     });
     phase1Assignments = phase1.assignments;
     phase1Unmatched = phase1.unmatched;

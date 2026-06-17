@@ -165,6 +165,7 @@ export async function runClusteringStep2DiscoverAndScore(
             onLog: host.log,
             stopSignal: signal,
             clipFusionAlpha: host.plugin.settings.clipFusionAlpha,
+            embeddingOnly: host.plugin.settings.smartAssignEmbeddingOnly,
           });
           phase2Assignments = phase2.assignments;
           phase2Unmatched = phase2.unmatched;

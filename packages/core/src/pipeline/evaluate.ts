@@ -161,6 +161,18 @@ interface ScoreOpts {
    *  DEFAULT_CLIP_FUSION_ALPHA (0.5). Items without CLIP coverage transparently
    *  fall back to text-only via fusedSimilarity's null guards. */
   clipFusionAlpha?: number;
+  /**
+   * When true, assign each item to its top-1 nearest centroid and SKIP the LLM
+   * rerank entirely (no T1/T2 calls). On contamination-free honest labels (GT =
+   * non-auto TikTok `collection`) this BEATS the dual-LLM ensemble on top-1
+   * accuracy: 52.1% vs 40.4% on the 265-item fixture (+11.7pp), holdout 56.2% vs
+   * 45.2%; an independent adversary could-not-refute (mechanism-confirmed: when
+   * the LLM deviates from the centroid pick it is wrong ~67% of the time). The
+   * rerank actively overrides correct nearest-centroid picks. Negative rejection
+   * is unchanged (both paths ~FPR 100% — a separate unsolved problem). See
+   * docs/superpowers/specs/2026-06-16-honest-eval-results.md.
+   */
+  embeddingOnly?: boolean;
 }
 
 interface ScoreResult {
@@ -373,9 +385,10 @@ export async function scoreAgainstCategories(opts: ScoreOpts): Promise<ScoreResu
   const concurrency = opts.concurrency ?? SCORE_CONCURRENCY;
   const disableT2 = opts.disableT2Rerank === true;
   const noneRefusal = opts.noneRefusal === true;
+  const embeddingOnly = opts.embeddingOnly === true;
   const alpha = opts.clipFusionAlpha ?? DEFAULT_CLIP_FUSION_ALPHA;
 
-  if (desc) log(`[${tag}] ${desc} (concurrency=${concurrency})`);
+  if (desc) log(`[${tag}] ${desc} (concurrency=${concurrency}${embeddingOnly ? ", embedding-only" : ""})`);
 
   if (categories.length === 0) {
     log(`[${tag}] 0 categories with centroids — skipping LLM scoring, all items unmatched`);
@@ -384,6 +397,47 @@ export async function scoreAgainstCategories(opts: ScoreOpts): Promise<ScoreResu
       unmatched: [...itemIds],
       matchDetails: new Map(),
     };
+  }
+
+  // Embedding-only fast path: assign each item to its top-1 nearest centroid,
+  // no LLM. Validated to beat the dual-LLM ensemble on honest labels (+11.7pp,
+  // adversary could-not-refute). See the embeddingOnly JSDoc on ScoreOpts.
+  if (embeddingOnly) {
+    const assignments = new Map<string, string>();
+    const matchDetails = new Map<string, MatchDetail>();
+    const unmatched: string[] = [];
+    for (let idx = 0; idx < itemIds.length; idx++) {
+      const id = itemIds[idx];
+      const entry = cache[id];
+      if (!entry?.vec) { unmatched.push(id); continue; }
+      const ranked = categories
+        .map(cat => ({
+          name: cat.name,
+          sim: fusedSimilarity(entry.vec!, cat.centroid, entry.clipVec, cat.clipCentroid, alpha),
+        }))
+        .sort((a, b) => b.sim - a.sim);
+      if (ranked.length === 0) { unmatched.push(id); continue; }
+      const top = ranked[0];
+      // simThreshold floor still applies (default 0 = pure argmax).
+      if (top.sim < simThreshold) { unmatched.push(id); continue; }
+      const scoreInt = Math.max(0, Math.min(10, Math.round(top.sim * 10)));
+      const summary = stripPreamble((entry.summary || entry.vision?.slice(0, 100) || id)).slice(0, 120);
+      assignments.set(id, top.name);
+      matchDetails.set(id, {
+        collection: top.name,
+        score: scoreInt,
+        sim: top.sim,
+        reason: `emb-top1 sim=${top.sim.toFixed(3)}`,
+        t1Pick: null, t2Pick: null, decision: "agree",
+        topCentroids: ranked.slice(0, 5).map(c => ({ name: c.name, sim: c.sim })),
+        ollamaCategory: entry.category || undefined,
+        summarySnippet: summary,
+        cached: false,
+      });
+      if (idx % 10 === 0 || idx === itemIds.length - 1) onProgress?.(idx + 1, itemIds.length);
+    }
+    log(`[${tag}] embedding-only: ${assignments.size} assigned, ${unmatched.length} unmatched (no LLM)`);
+    return { assignments, unmatched, matchDetails };
   }
 
   if (opts.vault && !scoreCachePath) loadScoreCache(opts.vault);

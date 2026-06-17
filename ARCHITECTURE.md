@@ -523,7 +523,21 @@ Three stages per item, results cached in `.roost/cache/` (vectors in `embedding-
 
 Embeddings go through a local sidecar at `EMBED_URL` (`http://localhost:11435`) that runs the fine-tuned `sentence-transformers` model with an Ollama-compatible `/api/embed` endpoint. Vision and topic analysis still go through stock Ollama at `OLLAMA_URL`. Category centroid embeddings in `taxonomy.ts` are routed through the same sidecar — critical, since item↔category cosines are garbage if the two live in different vector spaces.
 
-### Score-first ensemble classifier (`evaluate.ts`)
+### Default: embedding top-1 (LLM rerank dropped — 2026-06-16)
+
+**Smart Assign now assigns each item to its top-1 nearest category centroid and
+skips the LLM rerank by default** (`settings.smartAssignEmbeddingOnly`, default
+`true`; `scoreAgainstCategories({ embeddingOnly })`). On a contamination-free
+honest fixture (GT = non-auto TikTok `collection`, never `roost_category`) this
+beats the dual-LLM ensemble on top-1 accuracy — **52.1% vs 40.4%** on 265 items
+(+11.7pp), holdout 56.2% vs 45.2% — and an independent adversary could-not-refute
+(the rerank overrides correct nearest-centroid picks; net −8 items). The full
+ensemble below is retained and re-enabled by setting `smartAssignEmbeddingOnly:
+false`. Rationale + every data point: `docs/superpowers/specs/2026-06-16-honest-eval-results.md`.
+Note: this is an *assignment* win; open-set rejection (FPR) is unchanged and
+remains a separate unsolved problem.
+
+### Score-first ensemble classifier (`evaluate.ts`) — retained, off by default
 
 For each item:
 1. Compute cosine similarity to every category centroid, take the top-7 candidates.
