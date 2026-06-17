@@ -138,7 +138,7 @@ def assert_disjoint(dev_ids, holdout_ids):
 import glob, re
 
 _FM = re.compile(r"^---\n(.*?)\n---", re.S)
-_FIELD = re.compile(r"^(roost_id|collection|roost_category|roost_assigned_by):\s*(.+)$")
+_FIELD = re.compile(r"^(roost_id|collection|roost_category|roost_assigned_by|platform):\s*(.+)$")
 
 
 def _read_fm(path):
@@ -155,11 +155,30 @@ def _read_fm(path):
     return out
 
 
+def load_collection_aliases(vault):
+    """Read .roost/cache/collection-aliases.json ({"platform:collection": category}).
+    Returns {} when the file is absent."""
+    path = os.path.join(vault, ".roost", "cache", "collection-aliases.json")
+    if not os.path.exists(path):
+        return {}
+    with open(path, encoding="utf-8") as fh:
+        return json.load(fh)
+
+
+def apply_alias(aliases, platform, collection):
+    """Resolve a source collection to its canonical category via the alias map,
+    falling back to the raw collection name. Mirrors TS makeAliasKey('platform:name')."""
+    return aliases.get(f"{platform}:{collection}", collection)
+
+
 def load_honest_labels(vault, sync_folder="Bookmarks"):
-    """{roost_id: collection} for items whose roost_assigned_by != 'auto'. GT is the
-    human `collection` field ONLY — never roost_category. Also returns the set of
-    negative ids (have roost_id but no collection)."""
+    """{roost_id: category} for items whose roost_assigned_by != 'auto'. The collection
+    is resolved through the alias map (.roost/cache/collection-aliases.json) so that
+    renamed collections map to their canonical category; falls back to the raw collection
+    when no alias exists. GT is the human `collection` field ONLY — never roost_category.
+    Also returns the set of negative ids (have roost_id but no collection)."""
     assert_gt_not_roost_category("collection")  # tripwire: this loader uses `collection`
+    aliases = load_collection_aliases(vault)
     labels, negatives = {}, set()
     for p in glob.glob(os.path.join(vault, sync_folder, "**", "*.md"), recursive=True):
         fm = _read_fm(p)
@@ -168,7 +187,7 @@ def load_honest_labels(vault, sync_folder="Bookmarks"):
             continue
         coll = fm.get("collection")
         if coll and fm.get("roost_assigned_by") != "auto" and coll not in ("undefined", "null", ""):
-            labels[rid] = coll
+            labels[rid] = apply_alias(aliases, fm.get("platform", ""), coll)
         elif not coll:
             negatives.add(rid)
     return labels, negatives
