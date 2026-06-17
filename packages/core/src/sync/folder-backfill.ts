@@ -1,6 +1,9 @@
-import { Notice } from "obsidian";
+import { App, Notice, TFile } from "obsidian";
 import type { IRoostPlugin } from "@/types/plugin";
 import type { EnrichmentDef } from "@/lib/enrichments";
+import { getSyncFiles } from "@/lib/vault-utils";
+// @ts-ignore — raw probe loaded as string by esbuild plugin
+import twitterProbeSource from "@/probes/twitter-probe.probe";
 
 // Inlined to match the sibling backfills (they import only the EnrichmentDef *type*
 // from enrichments.ts and inline their stamp string — importing the value here would
@@ -53,10 +56,96 @@ export function parseFolderTweetMap(tweetCacheJson: string): Map<string, string>
 
 export const FOLDER_SCHEMA_VERSION = 1;
 
-/** Driver: live folder scan -> write rule over existing notes. Implemented in Task 4. */
+let folderBackfillRunning = false;
+
+/** Driver: live folder scan -> write rule over existing notes. */
 export async function runFolderBackfill(plugin: IRoostPlugin): Promise<void> {
-  void plugin;
-  new Notice("Folder backfill not yet implemented.");
+  if (folderBackfillRunning) { new Notice("Folder backfill already running."); return; }
+  folderBackfillRunning = true;
+  const log = (m: string) => plugin.fireLog("[folder-backfill] " + m);
+  try {
+    const app = plugin.app;
+    const syncFolder = plugin.settings.syncFolder;
+
+    // 1. Webview bootstrap — VERBATIM from thread-backfill.ts.
+    const wm = plugin.getWebviewManager();
+    let wcReady = wm.getWebContents("twitter");
+    if (!wcReady) {
+      const deadline = Date.now() + 8000;
+      while (!wcReady && Date.now() < deadline) { await new Promise(r => setTimeout(r, 300)); wcReady = wm.getWebContents("twitter"); }
+    }
+    if (!wcReady) { new Notice("Folder backfill failed: X webview not ready (open Roost + log in to X)."); return; }
+    const wc = wcReady;
+    const webviewEl = wm.getElement("twitter");
+    if (!webviewEl) { new Notice("Folder backfill failed: X webview element missing."); return; }
+    const reinject = (): void => {
+      wc.executeJavaScript(`try{delete window.__TWITTER_BOOKMARK_SPIKE__;}catch(e){} try{${twitterProbeSource}}catch(e){} void 0;`).catch(() => {});
+    };
+    webviewEl.addEventListener("dom-ready", reinject);
+    try {
+      // Load bookmarks home so the probe captures the folder list.
+      await new Promise<void>((res) => { const h = () => res(); webviewEl.addEventListener("did-finish-load", h, { once: true }); webviewEl.loadURL("https://x.com/i/bookmarks"); });
+      await new Promise(r => setTimeout(r, 2500));
+      reinject();
+      await new Promise(r => setTimeout(r, 2000));
+
+      // 2. Folder list from the probe store.
+      const rawFolders = await wc.executeJavaScript(`(function(){try{var s=window.__TWITTER_BOOKMARK_SPIKE__;return JSON.stringify(Object.entries(s.bookmarkFolders||{}).map(function(e){return {id:e[0],name:e[1]};}));}catch(e){return '[]';}})();`).catch(() => "[]");
+      const folders: { id: string; name: string }[] = JSON.parse(rawFolders);
+      log(`Found ${folders.length} bookmark folders`);
+
+      // 3. Navigate each folder so the probe tags its tweets.
+      for (const folder of folders) {
+        log(`Loading folder: ${folder.name}...`);
+        const loaded = await new Promise<boolean>((res) => { const t = setTimeout(() => res(false), 15000); const h = () => { clearTimeout(t); res(true); }; webviewEl.addEventListener("did-finish-load", h, { once: true }); webviewEl.loadURL(`https://x.com/i/bookmarks/${folder.id}`); });
+        if (!loaded) { log(`[WARN] Folder "${folder.name}" failed to load — skipping`); continue; }
+        reinject();
+        await new Promise(r => setTimeout(r, 3000));
+      }
+
+      // 4. Read the whole tweetCache once -> tweetId -> folder map.
+      const cacheJson = await wc.executeJavaScript(`(function(){try{return JSON.stringify(window.__TWITTER_BOOKMARK_SPIKE__.tweetCache||{});}catch(e){return '{}';}})();`).catch(() => "{}");
+      const folderByTweet = parseFolderTweetMap(cacheJson);
+      log(`${folderByTweet.size} tweets are in folders`);
+
+      // 5. Apply to existing notes.
+      const r = await applyFolderMapToNotes(app, syncFolder, folderByTweet, log);
+      new Notice(`Folder backfill: ${r.tagged} tagged, ${r.clearedAuto} auto-categories cleared, ${r.stampedOnly} marked checked.`);
+    } finally {
+      webviewEl.removeEventListener("dom-ready", reinject);
+    }
+  } catch (e) {
+    log(`failed: ${e instanceof Error ? e.message : String(e)}`);
+    new Notice("Folder backfill failed — see console.");
+  } finally {
+    folderBackfillRunning = false;
+  }
+}
+
+/** Apply the folder map to every existing Twitter note, stamping each (folder or not). */
+async function applyFolderMapToNotes(
+  app: App,
+  syncFolder: string,
+  folderByTweet: Map<string, string>,
+  log: (m: string) => void,
+): Promise<{ tagged: number; clearedAuto: number; stampedOnly: number }> {
+  let tagged = 0, clearedAuto = 0, stampedOnly = 0;
+  const files = getSyncFiles(app.vault, syncFolder).filter((f): f is TFile => f instanceof TFile);
+  for (const file of files) {
+    const fm = app.metadataCache.getFileCache(file)?.frontmatter;
+    if (!fm || fm.platform !== "twitter") continue;
+    const id = fm.roost_id as string | undefined;
+    if (!id) continue;
+    if (fm[FOLDER_STAMP] === FOLDER_SCHEMA_VERSION) continue; // idempotent
+    const inFolder = folderByTweet.has(id);
+    const patch = folderFrontmatterPatch(inFolder, folderByTweet.get(id) ?? null, fm, FOLDER_SCHEMA_VERSION);
+    await app.fileManager.processFrontMatter(file, (front) => {
+      for (const [k, v] of Object.entries(patch)) { if (v === null) delete front[k]; else front[k] = v; }
+    });
+    if (inFolder) { tagged++; if ("roost_category" in patch) clearedAuto++; } else { stampedOnly++; }
+  }
+  log(`applied: ${tagged} tagged, ${clearedAuto} cleared-auto, ${stampedOnly} stamped-only`);
+  return { tagged, clearedAuto, stampedOnly };
 }
 
 export const FOLDER_ENRICHMENT: EnrichmentDef = {
