@@ -34,7 +34,7 @@ def main():
     else:
         cache = L.load_cache(json_path=os.path.join(build, args.cache))
 
-    fixture_ids = {t["id"] for t in L.load_fixture(build, "large")}
+    fixture_ids = {t["id"] for t in L.load_fixture(build, "large")}  # large == dev ∪ holdout (full fixture)
     if args.centroids == "mean":
         labels, _ = L.load_honest_labels(vault)
         members = {}
@@ -43,7 +43,7 @@ def main():
                 members.setdefault(coll, []).append((i, cache[i]))
         cents = L.build_centroids(members, exclude_ids=fixture_ids)
     else:
-        with open(os.path.join(build, args.centroids)) as fh:
+        with open(os.path.join(build, args.centroids), encoding="utf-8") as fh:
             prod = json.load(fh)
         cents = {k: np.asarray(v["centroid"], dtype=np.float32) for k, v in prod.items()}
     cnames = list(cents)
@@ -57,16 +57,18 @@ def main():
     C = np.ascontiguousarray(np.stack([cents[c] for c in cnames]), dtype=np.float64)
     C = C / (np.linalg.norm(C, axis=1, keepdims=True) + 1e-9)  # row-normalize once
 
-    # self-check (run by default)
+    # self-check (run by default). large == dev ∪ holdout by construction, so we
+    # assert the only meaningful disjointness: dev ∩ holdout == ∅.
     L.assert_gt_not_roost_category("collection")
     L.assert_disjoint([t["id"] for t in L.load_fixture(build, "dev")],
                       [t["id"] for t in L.load_fixture(build, "holdout")])
 
     items = L.load_fixture(build, args.split)
-    knowns, unknowns, rc_items = [], [], []
+    knowns, unknowns, rc_items, skipped = [], [], [], 0
     for it in items:
         v = cache.get(it["id"])
         if v is None:
+            skipped += 1  # no cached embedding (stale cache) — not scored
             continue
         pred, score = rank(v, cnames, C)
         if args.rejection == "none":
@@ -77,13 +79,23 @@ def main():
             correct = pred == it["groundTruth"]
             knowns.append((correct, score)); rc_items.append((0 if correct else 1, score))
 
+    acc = sum(1 for c, _ in knowns if c) / len(knowns) if knowns else float("nan")
     print(f"=== honest-eval | split={args.split} cache={args.cache} centroids={args.centroids} "
-          f"rejection={args.rejection} | knowns={len(knowns)} unknowns={len(unknowns)} ===")
+          f"rejection={args.rejection} | knowns={len(knowns)} unknowns={len(unknowns)} skipped={skipped} ===")
+    print(f"  ACCURACY (top-1, no rejection) = {acc:.4f}  ({sum(1 for c,_ in knowns if c)}/{len(knowns)})")
+    if args.rejection == "none":
+        # All scores forced to 1.0 → no rejection signal; OSCR/AURC degenerate to a
+        # single tied point and are not meaningful. Report accuracy + accept-all only.
+        print("  NOTE: --rejection none has no rejection signal; OSCR/AURC omitted (use --rejection maxsim).")
+        op = L.operating_point(knowns, unknowns, 0.5, args.op_r, args.op_lambda)  # accept-all (all scores==1.0)
+        print(f"  DEPLOY-VIEW (λ={args.op_lambda}, r={args.op_r}): accept-all={op:.3f}")
+        return
     print(f"  PRIMARY  OSCR = {L.oscr(knowns, unknowns):.4f}  (area under CCR-FPR, higher better)")
     aurc, _curve = L.risk_coverage(rc_items)
     print(f"  PRIMARY  AURC = {aurc:.4f}  (area under risk-coverage, lower better)")
     all_s = np.array([s for _, s in knowns] + unknowns)
     taus = np.quantile(all_s, np.linspace(0, 1, 41))
+    # ties broken by tau (2nd tuple element) → picks the higher/more-conservative threshold.
     best = max((L.operating_point(knowns, unknowns, t, args.op_r, args.op_lambda), t) for t in taus)
     accept_all = L.operating_point(knowns, unknowns, all_s.min() - 1, args.op_r, args.op_lambda)
     reject_all = L.operating_point(knowns, unknowns, all_s.max() + 1, args.op_r, args.op_lambda)
