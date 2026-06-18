@@ -189,8 +189,9 @@ export async function applyFolderMapToNotes(
   folderByTweet: Map<string, string>,
   log: (m: string) => void = () => {},
 ): Promise<{ tagged: number; clearedAuto: number; stampedOnly: number }> {
-  let tagged = 0, clearedAuto = 0, stampedOnly = 0;
+  let tagged = 0, clearedAuto = 0, stampedOnly = 0, writes = 0;
   const files = getSyncFiles(app.vault, syncFolder); // already TFile[]
+  log(`writing folder tags to notes (cloud-synced vault writes can be slow)...`);
   for (const file of files) {
     const fm = app.metadataCache.getFileCache(file)?.frontmatter;
     if (!fm || fm.platform !== "twitter") continue;
@@ -211,6 +212,7 @@ export async function applyFolderMapToNotes(
       for (const [k, v] of Object.entries(patch)) { if (v === null) delete front[k]; else front[k] = v; }
     });
     if (inFolder) { tagged++; if ("roost_category" in patch) clearedAuto++; } else { stampedOnly++; }
+    if (++writes % 200 === 0) log(`  ...wrote ${writes} notes so far (tagged ${tagged})`);
   }
   log(`applied: ${tagged} tagged, ${clearedAuto} cleared-auto, ${stampedOnly} stamped-only`);
   return { tagged, clearedAuto, stampedOnly };
