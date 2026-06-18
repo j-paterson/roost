@@ -7,6 +7,7 @@ import { buildRemapInputs } from "@/lib/collection-remap-inputs";
 import { suggestCollectionMappings, applyResolvedMappings } from "@/lib/collection-remap";
 import { loadCollectionAliases, saveCollectionAliases } from "@/lib/collection-aliases";
 import { RemapConfirmModal } from "@/views/remap-confirm-modal";
+import { resortByCollection } from "@/sync/resort-by-collection";
 
 /** Similarity at/above which we suggest mapping onto an existing category. */
 const REMAP_THRESHOLD = 0.6;
@@ -41,6 +42,40 @@ export function registerRemapCommands(plugin: RoostCommandHost): void {
           new Notice(`Roost: saved ${resolved.length} collection mapping(s).`);
         },
       }).open();
+    },
+  });
+
+  plugin.addCommand({
+    id: "resort-by-collection-preview",
+    name: "Resort by collection mapping (preview / dry-run)",
+    callback: async () => {
+      const aliases = loadCollectionAliases(plugin.app.vault);
+      const result = await resortByCollection(
+        plugin.app,
+        plugin.settings.syncFolder,
+        aliases,
+        { dryRun: true },
+        (m) => plugin.fireLog("[resort] " + m),
+      );
+      new Notice(`Resort preview: would change ${result.changed} items — see log.`);
+    },
+  });
+
+  plugin.addCommand({
+    id: "resort-by-collection-apply",
+    name: "Resort by collection mapping (apply)",
+    callback: async () => {
+      const aliases = loadCollectionAliases(plugin.app.vault);
+      const result = await resortByCollection(
+        plugin.app,
+        plugin.settings.syncFolder,
+        aliases,
+        { dryRun: false },
+        (m) => plugin.fireLog("[resort] " + m),
+      );
+      new Notice(
+        `Resort: changed ${result.changed} items into ${Object.keys(result.byTarget).length} categories.`,
+      );
     },
   });
 }
