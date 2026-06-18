@@ -37,11 +37,12 @@ describe("resortPatch", () => {
     expect(resortPatch({ collection: "null" }, aliases)).toBeNull();
   });
 
-  it("returns patch with alias when collection has an alias", () => {
+  it("returns patch with alias when collection has an alias (fold → subcategory = collection)", () => {
     const fm = { platform: "tiktok", collection: "Finance Tips" };
     expect(resortPatch(fm, aliases)).toEqual({
       roost_category: "Finances",
       roost_assigned_by: "human",
+      roost_subcategory: "Finance Tips",
     });
   });
 
@@ -53,12 +54,13 @@ describe("resortPatch", () => {
     });
   });
 
-  it("returns null when already correctly set by a human", () => {
+  it("returns null when already correctly set by a human (incl. the folded subcategory)", () => {
     const fm = {
       platform: "tiktok",
       collection: "Finance Tips",
       roost_category: "Finances",
       roost_assigned_by: "human",
+      roost_subcategory: "Finance Tips",
     };
     expect(resortPatch(fm, aliases)).toBeNull();
   });
@@ -73,6 +75,7 @@ describe("resortPatch", () => {
     expect(resortPatch(fm, aliases)).toEqual({
       roost_category: "Finances",
       roost_assigned_by: "human",
+      roost_subcategory: "Finance Tips",
     });
   });
 
@@ -87,6 +90,7 @@ describe("resortPatch", () => {
     expect(resortPatch(fm, aliases)).toEqual({
       roost_category: "Finances",
       roost_assigned_by: "human",
+      roost_subcategory: "Finance Tips",
     });
   });
 
@@ -97,41 +101,38 @@ describe("resortPatch", () => {
     expect(result).toEqual({ roost_category: "Finance Tips", roost_assigned_by: "human" });
   });
 
-  it("clears an orphaned subcategory when the category CHANGES", () => {
-    // A subcategory is a child of a specific category; moving the note to a new
-    // category strands it, so the resort must clear it.
-    const fm = {
-      platform: "tiktok",
-      collection: "Finance Tips",
-      roost_category: "OldAuto",
-      roost_assigned_by: "auto",
-      roost_subcategory: "Web_Development",
-    };
-    expect(resortPatch(fm, aliases)).toEqual({
-      roost_category: "Finances",
+  it("FOLD: sets subcategory = collection when it folds into a different top-level", () => {
+    const aliases2 = { "twitter:web3": "Tech" };
+    const fm = { platform: "twitter", collection: "web3", roost_category: "web3", roost_assigned_by: "auto" };
+    expect(resortPatch(fm, aliases2)).toEqual({
+      roost_category: "Tech",
+      roost_assigned_by: "human",
+      roost_subcategory: "web3",
+    });
+  });
+
+  it("FOLD: overwrites a stale subcategory with the folded collection name", () => {
+    const aliases2 = { "twitter:web3": "Tech" };
+    const fm = { platform: "twitter", collection: "web3", roost_category: "web3", roost_assigned_by: "auto", roost_subcategory: "Web_Development" };
+    expect(resortPatch(fm, aliases2)).toMatchObject({ roost_category: "Tech", roost_subcategory: "web3" });
+  });
+
+  it("IDENTITY + category moved: clears the orphaned subcategory", () => {
+    // collection 'Food' has no alias → target 'Food'; the note was under a different (auto) category.
+    const fm = { platform: "tiktok", collection: "Food", roost_category: "OldAuto", roost_assigned_by: "auto", roost_subcategory: "Stale" };
+    expect(resortPatch(fm, {})).toEqual({
+      roost_category: "Food",
       roost_assigned_by: "human",
       roost_subcategory: null,
     });
   });
 
-  it("does NOT touch the subcategory when only provenance flips (category unchanged)", () => {
-    // category already equals the target — the subcategory is still valid, keep it.
-    const fm = {
-      platform: "tiktok",
-      collection: "Finance Tips",
-      roost_category: "Finances",
-      roost_assigned_by: "auto",
-      roost_subcategory: "Budgeting",
-    };
-    expect(resortPatch(fm, aliases)).toEqual({
-      roost_category: "Finances",
-      roost_assigned_by: "human",
-    });
-  });
-
-  it("omits the subcategory clear when there is no subcategory to clear", () => {
-    const fm = { platform: "tiktok", collection: "Finance Tips", roost_category: "OldAuto", roost_assigned_by: "auto" };
-    expect(resortPatch(fm, aliases)).toEqual({ roost_category: "Finances", roost_assigned_by: "human" });
+  it("IDENTITY + unchanged: leaves a pipeline subcategory untouched", () => {
+    // collection 'Food' → 'Food'; category already Food → keep Food/Recipes (pipeline owns it).
+    const fm = { platform: "tiktok", collection: "Food", roost_category: "Food", roost_assigned_by: "auto", roost_subcategory: "Recipes" };
+    const patch = resortPatch(fm, {});
+    expect(patch).toEqual({ roost_category: "Food", roost_assigned_by: "human" });
+    expect("roost_subcategory" in patch!).toBe(false);
   });
 });
 
@@ -148,10 +149,10 @@ describe("resortByCollection", () => {
         path: "Bookmarks/a.md",
         fm: { platform: "tiktok", collection: "Finance Tips", roost_category: "OldAuto", roost_assigned_by: "auto" },
       },
-      // Already correct: human-assigned, alias matches
+      // Already correct: human-assigned, alias matches, folded subcategory already present
       {
         path: "Bookmarks/b.md",
-        fm: { platform: "tiktok", collection: "Finance Tips", roost_category: "Finances", roost_assigned_by: "human" },
+        fm: { platform: "tiktok", collection: "Finance Tips", roost_category: "Finances", roost_assigned_by: "human", roost_subcategory: "Finance Tips" },
       },
       // Will be changed: no roost_category, has collection without alias
       {
@@ -205,6 +206,7 @@ describe("resortByCollection", () => {
       collection: "Finance Tips",
       roost_category: "Finances",
       roost_assigned_by: "human",
+      roost_subcategory: "Finance Tips",
     });
 
     // d: no collection, skipped
@@ -226,7 +228,9 @@ describe("resortByCollection", () => {
     expect(files[2].fm.roost_category).toBeUndefined();
   });
 
-  it("deletes the orphaned subcategory key from a note whose category changes", async () => {
+  it("folds collection→category and rewrites subcategory to the collection name", async () => {
+    // 'Finance Tips' folds into 'Finances'; the stale subcategory is replaced by the
+    // folded collection name (Finances / Finance Tips), not deleted.
     const files = [
       { path: "Bookmarks/a.md", fm: { platform: "tiktok", collection: "Finance Tips", roost_category: "OldAuto", roost_assigned_by: "auto", roost_subcategory: "Web_Development" } },
     ];
@@ -237,8 +241,8 @@ describe("resortByCollection", () => {
       collection: "Finance Tips",
       roost_category: "Finances",
       roost_assigned_by: "human",
+      roost_subcategory: "Finance Tips",
     });
-    expect("roost_subcategory" in files[0].fm).toBe(false);
   });
 
   it("files outside syncFolder are ignored", async () => {

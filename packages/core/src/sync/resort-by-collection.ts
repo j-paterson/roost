@@ -10,24 +10,30 @@ const EMPTY = new Set(["", "undefined", "null"]);
 export function resortPatch(
   fm: Record<string, unknown>,
   aliases: CollectionAliasMap,
-): { roost_category: string; roost_assigned_by: "human"; roost_subcategory?: null } | null {
+): { roost_category: string; roost_assigned_by: "human"; roost_subcategory?: string | null } | null {
   const collection = (fm.collection as string | undefined)?.trim();
   if (!collection || EMPTY.has(collection)) return null; // nothing to resort by
   const platform = (fm.platform as string | undefined) ?? "";
   const target = resolveCollectionAlias(aliases, platform, collection) ?? collection;
-  // Idempotent: skip if already resolved to target by a human.
-  if (fm.roost_category === target && fm.roost_assigned_by === "human") return null;
-  const patch: { roost_category: string; roost_assigned_by: "human"; roost_subcategory?: null } = {
+  // Subcategory policy:
+  //  - FOLD (collection folds into a different top-level): the fragment name becomes the
+  //    subcategory (e.g. `web3` → Tech / web3).
+  //  - IDENTITY + category moved here from elsewhere: clear the now-orphaned subcategory.
+  //  - IDENTITY + unchanged: leave it (undefined) — the pipelines own Food/Recipes etc.
+  const desiredSub: string | null | undefined =
+    collection !== target ? collection
+    : fm.roost_category !== target ? null
+    : undefined;
+  const curSub = typeof fm.roost_subcategory === "string" ? fm.roost_subcategory : null;
+  const subOk = desiredSub === undefined || desiredSub === curSub;
+  // Idempotent: skip when category + provenance are already correct AND the subcategory
+  // already matches what we'd write.
+  if (fm.roost_category === target && fm.roost_assigned_by === "human" && subOk) return null;
+  const patch: { roost_category: string; roost_assigned_by: "human"; roost_subcategory?: string | null } = {
     roost_category: target,
     roost_assigned_by: "human",
   };
-  // A subcategory is a child of a specific category. When the resort MOVES the note to
-  // a different category, any subcategory assigned under the OLD category is orphaned —
-  // clear it so a stale subcategory isn't stranded under the new category. (When the
-  // category is unchanged and only provenance flips, the subcategory is still valid.)
-  if (fm.roost_category !== target && fm.roost_subcategory != null) {
-    patch.roost_subcategory = null;
-  }
+  if (desiredSub !== undefined && desiredSub !== curSub) patch.roost_subcategory = desiredSub;
   return patch;
 }
 
@@ -64,7 +70,10 @@ export async function resortByCollection(
       await app.fileManager.processFrontMatter(file as TFile, (front) => {
         front.roost_category = patch.roost_category;
         front.roost_assigned_by = patch.roost_assigned_by;
-        if (patch.roost_subcategory === null) delete front.roost_subcategory;
+        if ("roost_subcategory" in patch) {
+          if (patch.roost_subcategory === null) delete front.roost_subcategory;
+          else front.roost_subcategory = patch.roost_subcategory;
+        }
       });
       if (changed % 200 === 0) log(`  ...wrote ${changed} so far`);
     }
