@@ -10,14 +10,25 @@ const EMPTY = new Set(["", "undefined", "null"]);
 export function resortPatch(
   fm: Record<string, unknown>,
   aliases: CollectionAliasMap,
-): { roost_category: string; roost_assigned_by: "human" } | null {
+): { roost_category: string; roost_assigned_by: "human"; roost_subcategory?: null } | null {
   const collection = (fm.collection as string | undefined)?.trim();
   if (!collection || EMPTY.has(collection)) return null; // nothing to resort by
   const platform = (fm.platform as string | undefined) ?? "";
   const target = resolveCollectionAlias(aliases, platform, collection) ?? collection;
   // Idempotent: skip if already resolved to target by a human.
   if (fm.roost_category === target && fm.roost_assigned_by === "human") return null;
-  return { roost_category: target, roost_assigned_by: "human" };
+  const patch: { roost_category: string; roost_assigned_by: "human"; roost_subcategory?: null } = {
+    roost_category: target,
+    roost_assigned_by: "human",
+  };
+  // A subcategory is a child of a specific category. When the resort MOVES the note to
+  // a different category, any subcategory assigned under the OLD category is orphaned —
+  // clear it so a stale subcategory isn't stranded under the new category. (When the
+  // category is unchanged and only provenance flips, the subcategory is still valid.)
+  if (fm.roost_category !== target && fm.roost_subcategory != null) {
+    patch.roost_subcategory = null;
+  }
+  return patch;
 }
 
 export interface ResortResult {
@@ -53,6 +64,7 @@ export async function resortByCollection(
       await app.fileManager.processFrontMatter(file as TFile, (front) => {
         front.roost_category = patch.roost_category;
         front.roost_assigned_by = patch.roost_assigned_by;
+        if (patch.roost_subcategory === null) delete front.roost_subcategory;
       });
       if (changed % 200 === 0) log(`  ...wrote ${changed} so far`);
     }

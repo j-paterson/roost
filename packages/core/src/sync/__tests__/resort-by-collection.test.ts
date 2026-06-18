@@ -96,6 +96,43 @@ describe("resortPatch", () => {
     const result = resortPatch(fmNoPlatform, aliases);
     expect(result).toEqual({ roost_category: "Finance Tips", roost_assigned_by: "human" });
   });
+
+  it("clears an orphaned subcategory when the category CHANGES", () => {
+    // A subcategory is a child of a specific category; moving the note to a new
+    // category strands it, so the resort must clear it.
+    const fm = {
+      platform: "tiktok",
+      collection: "Finance Tips",
+      roost_category: "OldAuto",
+      roost_assigned_by: "auto",
+      roost_subcategory: "Web_Development",
+    };
+    expect(resortPatch(fm, aliases)).toEqual({
+      roost_category: "Finances",
+      roost_assigned_by: "human",
+      roost_subcategory: null,
+    });
+  });
+
+  it("does NOT touch the subcategory when only provenance flips (category unchanged)", () => {
+    // category already equals the target — the subcategory is still valid, keep it.
+    const fm = {
+      platform: "tiktok",
+      collection: "Finance Tips",
+      roost_category: "Finances",
+      roost_assigned_by: "auto",
+      roost_subcategory: "Budgeting",
+    };
+    expect(resortPatch(fm, aliases)).toEqual({
+      roost_category: "Finances",
+      roost_assigned_by: "human",
+    });
+  });
+
+  it("omits the subcategory clear when there is no subcategory to clear", () => {
+    const fm = { platform: "tiktok", collection: "Finance Tips", roost_category: "OldAuto", roost_assigned_by: "auto" };
+    expect(resortPatch(fm, aliases)).toEqual({ roost_category: "Finances", roost_assigned_by: "human" });
+  });
 });
 
 // ── resortByCollection ────────────────────────────────────────────────────
@@ -187,6 +224,21 @@ describe("resortByCollection", () => {
     expect(files[0].fm.roost_category).toBe("OldAuto");
     expect(files[0].fm.roost_assigned_by).toBe("auto");
     expect(files[2].fm.roost_category).toBeUndefined();
+  });
+
+  it("deletes the orphaned subcategory key from a note whose category changes", async () => {
+    const files = [
+      { path: "Bookmarks/a.md", fm: { platform: "tiktok", collection: "Finance Tips", roost_category: "OldAuto", roost_assigned_by: "auto", roost_subcategory: "Web_Development" } },
+    ];
+    const app = stubApp(files);
+    await resortByCollection(app, "Bookmarks", aliases, { dryRun: false });
+    expect(files[0].fm).toEqual({
+      platform: "tiktok",
+      collection: "Finance Tips",
+      roost_category: "Finances",
+      roost_assigned_by: "human",
+    });
+    expect("roost_subcategory" in files[0].fm).toBe(false);
   });
 
   it("files outside syncFolder are ignored", async () => {
