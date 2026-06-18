@@ -52,11 +52,11 @@ def _is_likely_music_noise(subtitle: str) -> bool:
 _FM_RE = re.compile(r"^---\n(.*?)\n---", re.S)
 _BODY_AFTER_FM = re.compile(r"^---\n.*?\n---\n?(.*)", re.S)
 
-# Fields that appear in Roost frontmatter
+# Fields that appear in Roost frontmatter. NOTE: title/subtitle live in frontmatter;
+# summary/vision/category live in the EMBEDDING CACHE (joined by roost_id), not here.
 _ROOST_FIELDS = {
     "roost_id", "platform", "collection", "roost_category",
-    "roost_assigned_by", "roost_title", "roost_subtitle",
-    "roost_summary", "roost_vision", "roost_embed_text",
+    "roost_assigned_by", "title", "subtitle",
 }
 
 
@@ -83,20 +83,21 @@ def _parse_fm(path: str) -> dict:
 
 # ── Per-note characterizer ─────────────────────────────────────────────────────
 
-def _note_fields(fm: dict) -> dict:
-    """Derive presence flags for embed-text fields from a frontmatter dict."""
-    subtitle = fm.get("roost_subtitle", "")
-    vision = fm.get("roost_vision", "")
-    summary = fm.get("roost_summary", "")
-    title = fm.get("roost_title", "")
-    # 'embed_text' is the fused string Roost passes to the embedding model
-    embed_text = fm.get("roost_embed_text", "")
+def _note_fields(fm: dict, entry: dict) -> dict:
+    """Derive presence flags for embed-text fields. title/subtitle from frontmatter;
+    summary/vision from the embedding-cache entry (the real embed-text sources)."""
+    entry = entry if isinstance(entry, dict) else {}
+    subtitle = fm.get("subtitle", "") or ""
+    title = fm.get("title", "") or ""
+    vision = entry.get("vision", "") or ""
+    summary = entry.get("summary", "") or ""
 
-    has_subtitle = bool(subtitle)
-    has_vision = bool(vision)
-    has_summary = bool(summary)
-    has_title = bool(title)
-    has_embed_text = bool(embed_text)
+    has_subtitle = bool(subtitle.strip())
+    has_vision = bool(vision.strip())
+    has_summary = bool(summary.strip())
+    has_title = bool(title.strip())
+    # embed_text presence ≈ any field that feeds the fused string is present
+    has_embed_text = bool(has_summary or has_title or has_subtitle or has_vision)
     music_noise = _is_likely_music_noise(subtitle) if has_subtitle else False
 
     return {
@@ -181,6 +182,17 @@ def main():
         sys.exit("ERROR: embedding cache empty or not found — run the sidecar first")
     print(f"Cache: {len(cache)} embeddings loaded")
 
+    # The .bin holds vectors only; the text fields (vision/summary/category) that feed
+    # the embed string live in embedding-cache.json — load it for field-presence stats.
+    text_cache: dict = {}
+    _tc_path = os.path.join(vault, ".roost", "cache", "embedding-cache.json")
+    if os.path.exists(_tc_path):
+        try:
+            with open(_tc_path, encoding="utf-8") as fh:
+                text_cache = json.load(fh)
+        except (OSError, ValueError):
+            text_cache = {}
+
     # ── Load honest labels (collection field, non-auto) ───────────────────────
     labels, _negatives = L.load_honest_labels(vault, sync_folder=args.sync_folder)
     print(f"Honest labels: {len(labels)} items")
@@ -219,7 +231,7 @@ def main():
         if rid not in cache:
             continue  # skip notes without an embedding
         plat = fm.get("platform", "unknown").lower()
-        fields = _note_fields(fm)
+        fields = _note_fields(fm, text_cache.get(rid))
         fields["roost_id"] = rid
         by_platform[plat].append(fields)
 
