@@ -1,27 +1,24 @@
 #!/usr/bin/env python3
-"""Classifier head diagnostic on Phase F v2 embeddings.
+"""Classifier head diagnostic (M0) on v2 embeddings.
 
-Trains a logreg (and optionally a small MLP) directly on the v2 cached
-embeddings and evaluates on the same 119 positive test items used by
-llm-rerank-sweep.py. LOO: for each test item, retrain the classifier
-without it, then predict.
+Trains LogReg/kNN/MLP directly on v2 cached embeddings and evaluates on the
+honest eval fixture (eval-fixture-{split}.json) against the 19 consolidated
+categories. LOO: for each test item, retrain without it, then predict.
 
-Purpose: separate "embedding quality" from "LLM ranker quality" as the
-bottleneck on this task.
-  - If classifier ≥ 88/119 (current LLM ensemble SOTA) → LLM rerank is
-    not adding much value beyond linear separability on v2 embeddings.
-    Future effort should go to better training data / relabeling / a
-    cross-encoder, not fancier rerankers.
-  - If classifier ≪ 88   → LLM is genuinely helping with ambiguous
-    cases the linear classifier can't untangle. Cross-encoder + better
-    LLM ranker work is justified.
+Purpose: is embedding geometry the cap on the 4,320-item cross-platform fixture?
+  - If classifier top-1 >> embedding-top-1 baseline → geometry is separable;
+    classifiers add value over nearest-centroid. Future: cross-encoder or better
+    LLM ranker justified.
+  - If classifier ≈ embedding-top-1 → geometry is the bottleneck (M6 fine-tune
+    or better input text via M7 is the next lever).
 
-Runs on the SAME 119-item invariant as every other sweep. Pulls labels
-via the same load_labels() logic as llm-rerank-sweep.py so the training
-pool is identical (collection: frontmatter on vault .md files).
+Run:
+  ROOST_VAULT=<vault> python scripts/classifier-head-diagnostic.py [--split dev|holdout|large]
 """
+import argparse
 import json
-import re
+import os
+import sys
 import time
 from collections import Counter, defaultdict
 from pathlib import Path
@@ -32,40 +29,15 @@ from sklearn.neighbors import KNeighborsClassifier
 from sklearn.neural_network import MLPClassifier
 from sklearn.preprocessing import LabelEncoder
 
-VAULT = Path.home() / "ObsidianBookmarks"
-ROOST = VAULT / ".roost"
-CACHE_PATH = ROOST / "embedding-cache.json"
-RESULTS_PATH = ROOST / "strategy-results.json"
-OUT_PATH = ROOST / "classifier-head-results.json"
+sys.path.insert(0, str(Path(__file__).parent))
+import honest_eval_lib as L
 
-
-def load_labels():
-    """Same logic as llm-rerank-sweep.py::load_labels()."""
-    labels = {}
-    for md in (VAULT / "Bookmarks").rglob("*.md"):
-        try:
-            content = md.read_text(encoding="utf-8")
-        except Exception:
-            continue
-        if not content.startswith("---\n"):
-            continue
-        end = content.find("\n---", 4)
-        if end < 0:
-            continue
-        fm = content[4:end]
-        id_match = re.search(r'^roost_id:\s*"?([^"\n]+)"?', fm, re.MULTILINE)
-        if not id_match:
-            continue
-        rid = id_match.group(1).strip()
-        coll_match = re.search(r'^collection:\s*(.+)', fm, re.MULTILINE)
-        cat_match = re.search(r'^roost_category:\s*(.+)', fm, re.MULTILINE)
-        cat = cat_match.group(1) if cat_match else (coll_match.group(1) if coll_match else None)
-        if not cat:
-            continue
-        cat = cat.strip().strip('"')
-        if cat and cat not in ("undefined", "null"):
-            labels[rid] = cat
-    return labels
+# 19 consolidated canonical categories (taxonomy governance 2026-06-18).
+CANONICAL_CATS = {
+    "Art", "Content Creation", "Crafts", "Design", "Fashion", "Fitness",
+    "Food", "Growth", "Humor", "Lifestyle", "Media", "Money", "Other",
+    "Places & Travel", "Products", "Quotes", "Relationships", "Spicy", "Tech",
+}
 
 
 def l2_normalize(X):
@@ -115,24 +87,59 @@ def eval_classifier(name, X_train, y_train, X_test, y_test,
 
 
 def main():
-    print("Classifier head diagnostic on v2 embeddings")
+    ap = argparse.ArgumentParser(
+        description="Classifier head diagnostic (M0) — embedding geometry cap test."
+    )
+    ap.add_argument("--split", default="large", choices=["dev", "holdout", "large"],
+                    help="Fixture split to use as test set (default: large = dev ∪ holdout).")
+    args = ap.parse_args()
+
+    vault_env = os.environ.get("ROOST_VAULT")
+    if vault_env:
+        VAULT = Path(vault_env)
+    else:
+        VAULT = Path.home() / "ObsidianBookmarks"
+    ROOST = VAULT / ".roost"
+    BUILD_DIR = ROOST / "build"
+    BIN_CACHE = ROOST / "cache" / "embedding-vectors.bin"
+    OUT_PATH = ROOST / "classifier-head-results.json"
+
+    print("Classifier head diagnostic (M0) on v2 embeddings")
     print("=" * 70)
-    print(f"Cache:   {CACHE_PATH}")
+    print(f"Vault:   {VAULT}")
+    print(f"Split:   {args.split}")
+    print(f"Cache:   {BIN_CACHE}")
 
     t0 = time.time()
-    cache = json.load(open(CACHE_PATH))
-    results_json = json.load(open(RESULTS_PATH))
-    labels = load_labels()
+    # Load v2 binary cache (same path as honest-eval.py uses).
+    cache = L.load_cache(bin_path=str(BIN_CACHE))
+    # Load honest labels (collection: only, not roost_category; aliases applied).
+    labels, _ = L.load_honest_labels(str(VAULT))
+    # Restrict training labels to the 19 canonical categories.
+    labels = {k: v for k, v in labels.items() if v in CANONICAL_CATS}
     print(f"Loaded cache ({len(cache)} items), labels ({len(labels)} items) "
           f"in {time.time() - t0:.1f}s")
 
-    positive = [ti for ti in results_json["testItems"] if not ti["isNegative"]]
+    # Load test items from the honest fixture (dev/holdout/large).
+    # Positives only for classification; negatives (isNegative=True) are OOD items,
+    # not relevant to the LogReg/kNN geometry question.
+    fixture_items = L.load_fixture(str(BUILD_DIR), args.split)
+    positive = [ti for ti in fixture_items if not ti.get("isNegative")]
+    # Filter to canonical categories only (fixture may include pre-consolidation labels).
+    positive = [ti for ti in positive if ti.get("groundTruth") in CANONICAL_CATS]
     test_ids = [ti["id"] for ti in positive]
     test_gts = {ti["id"]: ti["groundTruth"] for ti in positive}
     test_id_set = set(test_ids)
 
-    # Training pool = all labeled items WITH a cached vector, EXCLUDING test items.
-    # For strict holdout eval; LOO below re-adds test items minus-self.
+    # Contamination guard: no fixture item (dev ∪ holdout) may be in the training pool.
+    # Load the full (large) fixture id set regardless of the split argument.
+    all_fixture_ids = {t["id"] for t in L.load_fixture(str(BUILD_DIR), "large")}
+    L.assert_disjoint([t["id"] for t in L.load_fixture(str(BUILD_DIR), "dev")],
+                      [t["id"] for t in L.load_fixture(str(BUILD_DIR), "holdout")])
+
+    # Training pool = all labeled items WITH a cached vector, EXCLUDING the ENTIRE
+    # large fixture (dev ∪ holdout) to prevent contamination — not just the current
+    # split's test items. LOO below re-adds test items minus-self within this pool.
     # Filters any vector that contains NaN / inf or is all-zero.
     train_ids_all = []
     X_all = []
@@ -140,10 +147,13 @@ def main():
     skipped_nan = 0
     skipped_zero = 0
     for iid, coll in labels.items():
-        entry = cache.get(iid)
-        if not entry or not entry.get("vec"):
+        if iid in all_fixture_ids:
+            continue  # strict exclusion of all fixture items from training pool
+        v = cache.get(iid)
+        if v is None:
             continue
-        v = np.asarray(entry["vec"], dtype=np.float32)
+        # v is already an np.ndarray from load_cache
+        v = np.asarray(v, dtype=np.float32)
         if not np.all(np.isfinite(v)):
             skipped_nan += 1
             continue
@@ -158,18 +168,18 @@ def main():
     X_all = l2_normalize(np.array(X_all, dtype=np.float32))
     y_all = np.array(y_all)
     assert np.all(np.isfinite(X_all)), "X_all has non-finite values after normalize"
+    # Verify no fixture leak in the pool we just built.
+    L.assert_no_fixture_leak(train_ids_all, all_fixture_ids)
 
-    # Build test matrix — use ground-truth from strategy-results.json (post-Phase-4 fixes)
-    # NOT from vault frontmatter (which is also post-Phase-4 but may diverge).
-    # For the 119 items, these are identical after Phase 4 patched strategy-results.
+    # Build test matrix — ground truth comes from the honest fixture (not vault frontmatter).
     X_test_rows = []
     y_test_ordered = []
     test_ids_with_vec = []
     for tid in test_ids:
-        entry = cache.get(tid)
-        if not entry or not entry.get("vec"):
+        v = cache.get(tid)
+        if v is None:
             continue
-        v = np.asarray(entry["vec"], dtype=np.float32)
+        v = np.asarray(v, dtype=np.float32)
         if not np.all(np.isfinite(v)) or float(np.linalg.norm(v)) == 0.0:
             print(f"  skipping degenerate test vector: {tid}")
             continue
@@ -180,19 +190,19 @@ def main():
     y_test_ordered = np.array(y_test_ordered)
     assert np.all(np.isfinite(X_test)), "X_test has non-finite values after normalize"
     N = len(test_ids_with_vec)
-    print(f"Test items: {N}/119 with cached vectors")
+    print(f"Test items: {N}/{len(test_ids)} with cached vectors (split={args.split})")
 
-    # Global class order = every collection that appears in training pool
+    # Global class order = every canonical category that appears in the data.
     classes = sorted(set(y_all.tolist()) | set(y_test_ordered.tolist()))
     print(f"Classes: {len(classes)}")
-    print(f"Training pool size: {len(train_ids_all)} (all labeled items in cache)")
+    print(f"Training pool size (fixture excluded): {len(train_ids_all)}")
     print()
 
-    # Strict-holdout training set (remove all test items, train once)
-    holdout_mask = np.array([tid not in test_id_set for tid in train_ids_all])
-    X_tr_strict = X_all[holdout_mask]
-    y_tr_strict = y_all[holdout_mask]
-    print(f"Strict holdout training set: {len(X_tr_strict)} items")
+    # Strict-holdout training set = the training pool as-is (fixture already excluded).
+    # LOO adds back individual test items for the LOO passes below.
+    X_tr_strict = X_all
+    y_tr_strict = y_all
+    print(f"Strict holdout training set: {len(X_tr_strict)} items (fixture fully excluded)")
 
     all_results = {}
 
@@ -212,19 +222,18 @@ def main():
     }
 
     # ── Baseline 2: Centroid cosine with LOO ──
-    # For each test item, if its GT class has ≥ 2 items in the TRAINING POOL
-    # (which already excludes test items — so LOO is only relevant if the test
-    # item itself is ALSO in the labeled pool via vault frontmatter). In our
-    # setup, all test items ARE in the labeled pool. So LOO here means: for
-    # each test item, train pool = labeled pool \ {that test item}. This
-    # re-adds the OTHER 118 test items to training, matching sweep behavior.
-    print("\n[2] Centroid cosine with LOO (sweep-matching)")
+    # For each test item i, train pool = (strict pool) ∪ (all test items except i).
+    # This gives each item the benefit of the others' labels while keeping i out.
+    # Precompute label array for fast LOO slicing.
+    _test_y_arr = np.array([test_gts[t] for t in test_ids_with_vec])
+    print("\n[2] Centroid cosine with LOO (n-1 test items added back)")
     hits_at = {1: 0, 3: 0, 5: 0, 7: 0}
     predictions_loo = []
     for i, tid in enumerate(test_ids_with_vec):
-        mask = np.array([j_id != tid for j_id in train_ids_all])
-        X_loo = X_all[mask]
-        y_loo = y_all[mask]
+        # All test rows except i.
+        mask = np.ones(N, dtype=bool); mask[i] = False
+        X_loo = np.vstack([X_tr_strict, X_test[mask]])
+        y_loo = np.concatenate([y_tr_strict, _test_y_arr[mask]])
         sims_i, cls_i = centroid_baseline(X_loo, y_loo, X_test[i:i + 1], classes)
         row = sims_i[0]
         idx_sorted = np.argsort(-row)
@@ -254,14 +263,17 @@ def main():
     all_results["logreg_strict"] = res
 
     # ── Classifier 2: LogReg, LOO ──
-    print("\n[4] LogReg with LOO (119 retrainings)")
+    # For each test item i, train pool = (strict pool) ∪ (all test items except i).
+    print(f"\n[4] LogReg with LOO ({N} retrainings)")
     t = time.time()
     hits_at = {1: 0, 3: 0, 5: 0, 7: 0}
     predictions_loo_lr = []
     for i, tid in enumerate(test_ids_with_vec):
-        mask = np.array([j_id != tid for j_id in train_ids_all])
+        mask = np.ones(N, dtype=bool); mask[i] = False
+        X_loo = np.vstack([X_tr_strict, X_test[mask]])
+        y_loo = np.concatenate([y_tr_strict, _test_y_arr[mask]])
         clf = LogisticRegression(max_iter=2000, C=1.0, solver="lbfgs", n_jobs=-1)
-        clf.fit(X_all[mask], y_all[mask])
+        clf.fit(X_loo, y_loo)
         # Restrict to classes the classifier actually saw (LOO may drop a singleton class)
         cls = list(clf.classes_)
         proba = clf.predict_proba(X_test[i:i + 1])[0]
@@ -367,82 +379,19 @@ def main():
 
     print(f"\nLogReg LOO wrong items: {len(wrong_items)}")
     gt_counter = Counter(w["gt"] for w in wrong_items)
-    print("  by GT collection:")
-    for coll, n in gt_counter.most_common():
-        print(f"    {coll}: {n}")
-
-    # Compare classifier predictions to LLM ensemble picks if available
-    llm_path = ROOST / "llm-rerank-results.json"
-    if llm_path.exists():
-        llm = json.load(open(llm_path))
-        # Use the deployed Phase 4 cells (post-label-fix)
-        t1_cell = llm.get("gemma4:e4b/T1_letter/phase4-t1k5-fixed", {})
-        t2_cell = llm.get("gemma4:e4b/T2_json/phase4-t2k7-fixed", {})
-        if t1_cell and t2_cell:
-            t1_picks = {p["id"]: p["picked_coll"] for p in t1_cell["picks"]}
-            t2_picks = {p["id"]: p["picked_coll"] for p in t2_cell["picks"]}
-            # Apply Phase 3 tiebreak: lower index in top-7 wins on disagree
-            t1_topk = {p["id"]: p["topk"] for p in t1_cell["picks"]}
-            t2_topk = {p["id"]: p["topk"] for p in t2_cell["picks"]}
-            ensemble_correct = 0
-            classifier_correct = 0
-            both_correct = 0
-            only_classifier = 0
-            only_ensemble = 0
-            neither = 0
-            for i, tid in enumerate(test_ids_with_vec):
-                gt = str(y_test_ordered[i])
-                clf_pred = best_preds[i]
-                a = t1_picks.get(tid)
-                b = t2_picks.get(tid)
-                topk_a = t1_topk.get(tid, [])
-                topk_b = t2_topk.get(tid, [])
-                if a is None and b is None:
-                    ens = None
-                elif a == b:
-                    ens = a
-                elif a is None:
-                    ens = b
-                elif b is None:
-                    ens = a
-                else:
-                    ai = topk_b.index(a) if a in topk_b else 99
-                    bi = topk_b.index(b) if b in topk_b else 99
-                    ens = a if ai < bi else b
-                ens_ok = ens == gt
-                clf_ok = clf_pred == gt
-                if ens_ok: ensemble_correct += 1
-                if clf_ok: classifier_correct += 1
-                if ens_ok and clf_ok: both_correct += 1
-                elif clf_ok: only_classifier += 1
-                elif ens_ok: only_ensemble += 1
-                else: neither += 1
-            print("\nClassifier vs LLM ensemble:")
-            print(f"  both correct:        {both_correct}")
-            print(f"  only classifier:     {only_classifier}")
-            print(f"  only ensemble:       {only_ensemble}")
-            print(f"  neither:             {neither}")
-            print(f"  classifier total:    {classifier_correct}")
-            print(f"  ensemble total:      {ensemble_correct}")
-            print(f"  union ceiling:       {both_correct + only_classifier + only_ensemble}")
-            all_results["comparison"] = {
-                "both": both_correct,
-                "only_classifier": only_classifier,
-                "only_ensemble": only_ensemble,
-                "neither": neither,
-                "classifier_total": classifier_correct,
-                "ensemble_total": ensemble_correct,
-            }
+    print("  by GT category:")
+    for cat, n in gt_counter.most_common():
+        print(f"    {cat}: {n}")
 
     print(f"\n{'='*70}")
-    print("SUMMARY (top-1 / top-7)")
+    print(f"SUMMARY (top-1 / top-7)  split={args.split}  N={N}")
     print(f"{'='*70}")
-    print(f"  LLM ensemble SOTA (deployed):         88/119 (73.9%)  top-7 n/a")
+    print(f"  (M0 goal: is LogReg/kNN top-1 >> centroid top-1?)")
     def fmt(key, label):
         r = all_results[key]
         t1 = r.get("top1", 0); t7 = r.get("top7", 0)
-        return (f"  {label:<40} {t1:>3}/{N} ({t1/N*100:>5.1f}%)  "
-                f"top-7 {t7:>3}/{N} ({t7/N*100:>5.1f}%)")
+        return (f"  {label:<42} {t1:>4}/{N} ({t1/N*100:>5.1f}%)  "
+                f"top-7 {t7:>4}/{N} ({t7/N*100:>5.1f}%)")
     if "centroid_loo" in all_results:
         print(fmt("centroid_loo", "Centroid cosine (LOO):"))
     if "centroid_strict" in all_results:
@@ -455,7 +404,15 @@ def main():
     print(fmt("knn5_strict", "kNN k=5 cosine (strict):"))
     print(fmt("mlp_strict", "MLP [256,128] (strict):"))
 
-    json.dump(all_results, open(OUT_PATH, "w"), default=str, indent=2)
+    out_meta = {
+        "split": args.split,
+        "N": N,
+        "categories": sorted(classes),
+        "training_pool_size": len(train_ids_all),
+        **all_results,
+    }
+    with open(OUT_PATH, "w") as fh:
+        json.dump(out_meta, fh, default=str, indent=2)
     print(f"\nSaved to {OUT_PATH}")
 
 

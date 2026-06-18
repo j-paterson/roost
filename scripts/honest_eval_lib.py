@@ -82,6 +82,67 @@ def risk_coverage(items):
     return area, curve
 
 
+def auroc(knowns, unknowns):
+    """AUROC separating in-distribution (knowns) from OOD (unknowns) by score
+    (higher = more in-set). Positive class = knowns (in-distribution).
+    Area under the ROC curve via the trapezoidal rule on sorted thresholds.
+    Returns a float ∈[0,1]; 1.0 = perfect separation, 0.5 = random.
+    Shape: knowns list[(correct:bool, score:float)]; unknowns list[float].
+    Correct/incorrect distinction is ignored here — only knowns vs unknowns."""
+    K, U = len(knowns), len(unknowns)
+    if K == 0 or U == 0:
+        raise ValueError("auroc needs both knowns and unknowns")
+    # Build (score, label) pairs: 1 for in-dist (known), 0 for OOD (unknown).
+    pairs = [(s, 1) for _, s in knowns] + [(s, 0) for s in unknowns]
+    # Sort descending by score; ties: unknown (0) before known (1) → conservative.
+    pairs.sort(key=lambda t: (-t[0], t[1]))
+    # Accumulate TP and FP as we lower the threshold.
+    tp, fp = 0, 0
+    prev_tp, prev_fp = 0, 0
+    area = 0.0
+    prev_score = None
+    for score, label in pairs:
+        if score != prev_score and prev_score is not None:
+            # Trapezoid from (prev_fp/U, prev_tp/K) to (fp/U, tp/K).
+            area += (fp - prev_fp) / U * (prev_tp + tp) / (2.0 * K)
+            prev_tp, prev_fp = tp, fp
+        if label == 1:
+            tp += 1
+        else:
+            fp += 1
+        prev_score = score
+    # Final segment to (fp/U, tp/K).
+    area += (fp - prev_fp) / U * (prev_tp + tp) / (2.0 * K)
+    return float(area)
+
+
+def aupr(knowns, unknowns):
+    """Area under the Precision-Recall curve with in-distribution (knowns) as
+    positive class. Sort by descending score; at each threshold compute
+    precision = TP/(TP+FP) and recall = TP/K; integrate via trapezoid.
+    Returns a float ∈[0,1]; higher is better. Shape same as auroc()."""
+    K, U = len(knowns), len(unknowns)
+    if K == 0 or U == 0:
+        raise ValueError("aupr needs both knowns and unknowns")
+    pairs = [(s, 1) for _, s in knowns] + [(s, 0) for s in unknowns]
+    # Sort descending by score; ties: OOD (0) before known (1) → pessimistic.
+    pairs.sort(key=lambda t: (-t[0], t[1]))
+    tp, fp = 0, 0
+    area = 0.0
+    prev_prec, prev_rec = 1.0, 0.0  # conventional starting point (0 items accepted)
+    for score, label in pairs:
+        if label == 1:
+            tp += 1
+        else:
+            fp += 1
+        prec = tp / (tp + fp)
+        rec = tp / K
+        # Trapezoid in recall direction.
+        area += (rec - prev_rec) * (prec + prev_prec) / 2.0
+        prev_prec, prev_rec = prec, rec
+    return float(area)
+
+
 def operating_point(knowns, unknowns, tau, r, lam):
     """Secondary 'deployment view' (NOT the headline). Base-rate-weighted correct-
     action utility at a single accept threshold tau. Accept iff score >= tau.

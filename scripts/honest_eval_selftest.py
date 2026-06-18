@@ -91,6 +91,84 @@ def test_apply_alias_resolves_and_falls_back():
     # empty map -> raw collection
     assert L.apply_alias({}, "twitter", "Cooking ideas") == "Cooking ideas"
 
+def test_auroc_perfect_separation():
+    """When knowns score higher than unknowns, AUROC should be ≈1.0."""
+    knowns = [(True, 0.9), (False, 0.85), (True, 0.8)]
+    unknowns = [0.1, 0.2, 0.15]
+    v = L.auroc(knowns, unknowns)
+    assert abs(v - 1.0) < 1e-9, f"expected ≈1.0 for perfect separation, got {v}"
+
+def test_auroc_inseparable():
+    """When knowns and unknowns have identical scores, AUROC should be ≈0.5."""
+    # Interleaved identical scores → random performance
+    knowns = [(True, 0.5), (True, 0.5), (True, 0.5)]
+    unknowns = [0.5, 0.5, 0.5]
+    v = L.auroc(knowns, unknowns)
+    assert abs(v - 0.5) < 0.05, f"expected ≈0.5 for inseparable inputs, got {v}"
+
+def test_auroc_reversed():
+    """When unknowns score higher than knowns, AUROC should be ≈0.0."""
+    knowns = [(True, 0.1), (True, 0.2), (True, 0.15)]
+    unknowns = [0.9, 0.8, 0.85]
+    v = L.auroc(knowns, unknowns)
+    assert v < 0.05, f"expected ≈0.0 for fully reversed scores, got {v}"
+
+def test_auroc_needs_both_sides():
+    try:
+        L.auroc([], [0.5]); assert False, "should raise"
+    except ValueError:
+        pass
+    try:
+        L.auroc([(True, 0.5)], []); assert False, "should raise"
+    except ValueError:
+        pass
+
+def test_aupr_perfect_separation():
+    """When knowns score strictly above unknowns, AUPR should be ≈1.0."""
+    knowns = [(True, 0.9), (True, 0.85), (True, 0.8)]
+    unknowns = [0.1, 0.2, 0.15]
+    v = L.aupr(knowns, unknowns)
+    assert abs(v - 1.0) < 1e-9, f"expected ≈1.0 for perfect separation, got {v}"
+
+def test_aupr_inseparable():
+    """When all scores are equal, AUPR is bounded above by K/(K+U) (pessimistic tie-breaking
+    places all OOD items before knowns at the same threshold, depressing early precision).
+    Assert it is strictly below 1.0 and below the perfect-separation score."""
+    K, U = 3, 3
+    knowns_tied = [(True, 0.5)] * K
+    unknowns_tied = [0.5] * U
+    tied_aupr = L.aupr(knowns_tied, unknowns_tied)
+    # Inseparable must be strictly worse than perfect separation
+    perfect_knowns = [(True, 0.9 - i * 0.1) for i in range(K)]
+    perfect_unknowns = [0.1 + i * 0.01 for i in range(U)]
+    perfect_aupr = L.aupr(perfect_knowns, perfect_unknowns)
+    assert tied_aupr < perfect_aupr, (
+        f"inseparable AUPR {tied_aupr:.4f} should be < perfect AUPR {perfect_aupr:.4f}"
+    )
+    # Must be in [0, 1]
+    assert 0.0 <= tied_aupr <= 1.0, f"AUPR out of range: {tied_aupr}"
+
+def test_aupr_better_than_inseparable_when_separated():
+    """A separated classifier must score strictly above the random baseline."""
+    K, U = 5, 5
+    knowns = [(True, 0.9 - i * 0.01) for i in range(K)]
+    unknowns = [0.1 + i * 0.01 for i in range(U)]
+    good = L.aupr(knowns, unknowns)
+    bad_knowns = [(True, 0.1 + i * 0.01) for i in range(K)]
+    bad_unknowns = [0.9 - i * 0.01 for i in range(U)]
+    bad = L.aupr(bad_knowns, bad_unknowns)
+    assert good > bad, f"separated AUPR {good} should exceed reversed AUPR {bad}"
+
+def test_aupr_needs_both_sides():
+    try:
+        L.aupr([], [0.5]); assert False, "should raise"
+    except ValueError:
+        pass
+    try:
+        L.aupr([(True, 0.5)], []); assert False, "should raise"
+    except ValueError:
+        pass
+
 TESTS = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
 
 def main():

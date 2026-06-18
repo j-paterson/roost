@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Test embedding text configurations with fair centroids.
+ * M7 input-text ablation — test embedding text configurations with fair centroids.
  *
  * Matches the actual pipeline's data path exactly:
  *   text = fm.title
@@ -8,21 +8,60 @@
  *   tags = fm.tags (filtered same as describe-items.ts)
  *   vision, summary, category = embedding cache
  *
- * For each config: re-embeds all collection members + test items,
- * builds fresh centroids, scores top-1/top-5 vs ground truth.
+ * For each variant: re-embeds all collection members + fixture items,
+ * builds fresh centroids (fixture items excluded), writes a named cache at
+ * <vault>/.roost/build/<variant>.json so honest-eval.py --cache <variant>.json
+ * can score it.
+ *
+ * Variant set (pre-registered, spec 2026-06-18):
+ *   full            — vision + summary + category + title + subtitle  (current formula)
+ *   minus-vision    — summary + category + title + subtitle  (drop vision field)
+ *   minus-subtitle  — vision + summary + category + title    (drop subtitle/transcript)
+ *   text-only       — title only  (raw bookmark text, no LLM-derived fields)
+ *   summary-only    — summary only
+ *   modality-flag   — full formula but replace absent/noisy subtitle with a flag token
+ *                     rather than omitting it; marks "transcript absent/noise"
+ *
+ * Usage:
+ *   ROOST_VAULT=<vault> node scripts/test-embed-configs.mjs [--split dev|holdout|large]
+ * The fixture split controls which items are held out from centroids (default: large).
  */
 import fs from "fs";
 import path from "path";
 
-const VAULT_PATH = path.join(process.env.HOME, "ObsidianBookmarks");
+const VAULT_PATH = process.env.ROOST_VAULT || path.join(process.env.HOME, "ObsidianBookmarks");
 const ROOST_DIR = path.join(VAULT_PATH, ".roost");
+const BUILD_DIR = path.join(ROOST_DIR, "build");
 const OLLAMA_URL = "http://localhost:11434";
 const EMBED_MODEL = "nomic-embed-text";
-const SEED = 42;
 
-// ── Load embedding cache ──
+// ── Parse --split arg ──
 
-const cache = JSON.parse(fs.readFileSync(path.join(ROOST_DIR, "embedding-cache.json"), "utf8"));
+const splitArg = (() => {
+  const i = process.argv.indexOf("--split");
+  if (i >= 0 && process.argv[i + 1]) return process.argv[i + 1];
+  return "large";
+})();
+if (!["dev", "holdout", "large"].includes(splitArg)) {
+  console.error(`--split must be dev|holdout|large, got: ${splitArg}`);
+  process.exit(1);
+}
+
+// ── Load embedding cache (v2 JSON or inline cache) ──
+// Prefer inline embedding-cache.json if present; the v2 binary is read by honest-eval.py.
+// Here we only need the per-item metadata fields (vision, summary, category) — the vec
+// field from the cache is used only for the baseline display, not re-emitted to output.
+
+let cache = {};
+const cacheJsonPath = path.join(ROOST_DIR, "embedding-cache.json");
+const cacheAltPath  = path.join(ROOST_DIR, "cache", "embedding-cache.json");
+if (fs.existsSync(cacheJsonPath)) {
+  cache = JSON.parse(fs.readFileSync(cacheJsonPath, "utf8"));
+} else if (fs.existsSync(cacheAltPath)) {
+  cache = JSON.parse(fs.readFileSync(cacheAltPath, "utf8"));
+} else {
+  console.warn("Warning: embedding-cache.json not found; vision/summary/category fields will be absent.");
+}
 
 // ── Math helpers ──
 
@@ -35,14 +74,6 @@ function computeCentroid(vecs) {
   for (const v of vecs) for (let i = 0; i < d; i++) c[i] += v[i];
   for (let i = 0; i < d; i++) c[i] /= vecs.length;
   return c;
-}
-function mulberry32(seed) {
-  return function() {
-    seed |= 0; seed = seed + 0x6D2B79F5 | 0;
-    let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
-    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
-    return ((t ^ t >>> 14) >>> 0) / 4294967296;
-  };
 }
 
 // ── filterTags: exact match with describe-items.ts lines 305-312 ──
@@ -88,12 +119,12 @@ function parseFrontmatter(content) {
     }
   }
 
-  // Extract collection/category
+  // Extract collection (human label) — collection: only, not roost_category.
+  // GT contamination guard: we never use roost_category to build centroids here.
   const collMatch = fm.match(/^collection:\s*(.+)/m);
-  const catMatch = fm.match(/^roost_category:\s*(.+)/m);
-  const cat = (catMatch?.[1] || collMatch?.[1])?.trim()?.replace(/^"|"$/g, "") || null;
+  const collection = collMatch?.[1]?.trim()?.replace(/^"|"$/g, "") || null;
 
-  return { roost_id, title, subtitle, tags, category: cat };
+  return { roost_id, title, subtitle, tags, collection };
 }
 
 // ── Scan vault ──
@@ -118,16 +149,17 @@ function scanDir(dir) {
         tags: fm.tags,
       });
 
-      if (fm.category && fm.category !== "undefined" && fm.category !== "null") {
-        if (!collectionItems.has(fm.category)) collectionItems.set(fm.category, []);
-        collectionItems.get(fm.category).push(fm.roost_id);
+      // Use collection: only (honest labels) for centroid building.
+      if (fm.collection && fm.collection !== "undefined" && fm.collection !== "null") {
+        if (!collectionItems.has(fm.collection)) collectionItems.set(fm.collection, []);
+        collectionItems.get(fm.collection).push(fm.roost_id);
       }
     } catch {}
   }
 }
 scanDir(syncFolder);
 
-// Filter collections
+// Filter collections to those with ≥3 cached items.
 const collectionNames = [];
 for (const [name, ids] of collectionItems) {
   const withCache = ids.filter(id => cache[id]);
@@ -138,46 +170,117 @@ let totalItems = 0;
 for (const name of collectionNames) totalItems += collectionItems.get(name).filter(id => cache[id]).length;
 console.log(`${collectionNames.length} collections, ${totalItems} items to embed per config`);
 
-// Verify: check that our extraction matches the pipeline for a sample item
-const sampleId = collectionItems.get(collectionNames[0])?.find(id => cache[id] && itemMeta.get(id)?.title);
-if (sampleId) {
-  const meta = itemMeta.get(sampleId);
-  const entry = cache[sampleId];
-  // Build current formula text
-  const parts = [entry.vision, entry.summary, entry.category, meta.title, meta.subtitle].filter(Boolean);
-  const embedText = parts.join(" ").slice(0, 2000);
-  console.log(`\nSample verification (${sampleId}):`);
-  console.log(`  title: ${(meta.title || "").slice(0, 80)}...`);
-  console.log(`  subtitle: ${meta.subtitle ? meta.subtitle.slice(0, 60) + "..." : "(none)"}`);
-  console.log(`  tags: ${meta.tags.slice(0, 5).join(", ")}`);
-  console.log(`  embed text length: ${embedText.length}`);
+// ── Load honest fixture ──
+// Source test items from the honest fixture, NOT from a random sampler.
+// The fixture items are held out from centroid building (contamination guard).
+
+if (!fs.existsSync(BUILD_DIR)) {
+  console.error(`Build dir not found: ${BUILD_DIR}\nRun build-honest-fixture.py first.`);
+  process.exit(1);
 }
 
-// ── Pick test items (identical seed/logic to test-strategies.mjs) ──
-
-const TEST_SIZE = parseInt(process.argv[2] || "50");
-const rng = mulberry32(SEED);
-const testPool = [];
-for (const [name, ids] of collectionItems) {
-  const withVec = ids.filter(id => cache[id]?.vec);
-  if (withVec.length < 3) continue;
-  const shuffled = [...withVec];
-  for (let i = shuffled.length - 1; i > 0; i--) {
-    const j = Math.floor(rng() * (i + 1));
-    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-  }
-  const take = Math.max(1, Math.min(3, Math.ceil(TEST_SIZE / collectionNames.length)));
-  for (const id of shuffled.slice(0, take)) {
-    testPool.push({ id, groundTruth: name });
-  }
+const fixturePath = path.join(BUILD_DIR, `eval-fixture-${splitArg}.json`);
+if (!fs.existsSync(fixturePath)) {
+  console.error(`Fixture not found: ${fixturePath}\nRun build-honest-fixture.py first.`);
+  process.exit(1);
 }
-for (let i = testPool.length - 1; i > 0; i--) {
-  const j = Math.floor(rng() * (i + 1));
-  [testPool[i], testPool[j]] = [testPool[j], testPool[i]];
-}
-const testEntries = testPool.slice(0, TEST_SIZE);
+const fixtureData = JSON.parse(fs.readFileSync(fixturePath, "utf8"));
+// All fixture items (positives + negatives) must be held out from centroids.
+// Positives have a groundTruth category; negatives have isNegative=true.
+const testEntries = fixtureData.testItems;
 const testIdSet = new Set(testEntries.map(e => e.id));
-console.log(`\nTest set: ${testEntries.length} labeled items from ${new Set(testEntries.map(e => e.groundTruth)).size} collections\n`);
+console.log(`\nFixture split=${splitArg}: ${testEntries.length} items `
+  + `(${testEntries.filter(e => !e.isNegative).length} positives, `
+  + `${testEntries.filter(e => e.isNegative).length} negatives)`);
+
+// Verify: fixture items should have metadata in itemMeta (vault must be scanned first).
+const fixtureWithMeta = testEntries.filter(e => itemMeta.has(e.id));
+console.log(`  fixture items with vault metadata: ${fixtureWithMeta.length}/${testEntries.length}`);
+
+// ── Subtitle noise detection (for modality-flag variant) ──
+// A subtitle is considered "noise/absent" when:
+//  - it is empty or very short (< 20 chars), OR
+//  - it consists mostly of common music-noise tokens (♪, ♬, ellipsis, generic filler).
+// We flag these rather than dropping them so the embedding model sees a signal about
+// the *absence* of useful transcript, rather than interpreting pure silence as normal.
+
+const MUSIC_NOISE_RE = /^[\s♪♬\.…\[\]()]+$|^\[music\]$|^\[applause\]$|^\[laughter\]$/i;
+const NOISE_TOKENS_RE = /\b(um+|uh+|hmm+|yeah+|okay+|alright)\b/gi;
+
+function isNoisySubtitle(subtitle) {
+  if (!subtitle || subtitle.length < 20) return true;
+  const cleaned = subtitle.replace(NOISE_TOKENS_RE, "").trim();
+  if (cleaned.length < 15) return true;
+  if (MUSIC_NOISE_RE.test(subtitle.trim())) return true;
+  // High ratio of non-word characters suggests music transcription noise.
+  const wordChars = (subtitle.match(/[a-zA-Z]/g) || []).length;
+  if (wordChars / subtitle.length < 0.3 && subtitle.length > 30) return true;
+  return false;
+}
+
+// ── Build embed text for an item, given a config ──
+
+function buildText(config, id) {
+  const entry = cache[id] || {};
+  const meta = itemMeta.get(id) || { title: "", subtitle: "", tags: [] };
+  return config.build(entry, meta);
+}
+
+// ── Variant configs (pre-registered, spec 2026-06-18) ──
+// Output cache key names must be stable — used as filenames for honest-eval.py.
+
+const configs = [
+  {
+    name: "full",
+    label: "full (vision + summary + category + title + subtitle)",
+    build(entry, meta) {
+      // Exact match of describe-items.ts line 251 — the current production formula.
+      return [entry.vision, entry.summary, entry.category, meta.title, meta.subtitle]
+        .filter(Boolean).join(" ").slice(0, 2000);
+    },
+  },
+  {
+    name: "minus-vision",
+    label: "minus-vision (summary + category + title + subtitle)",
+    build(entry, meta) {
+      return [entry.summary, entry.category, meta.title, meta.subtitle]
+        .filter(Boolean).join(" ").slice(0, 2000);
+    },
+  },
+  {
+    name: "minus-subtitle",
+    label: "minus-subtitle (vision + summary + category + title)",
+    build(entry, meta) {
+      return [entry.vision, entry.summary, entry.category, meta.title]
+        .filter(Boolean).join(" ").slice(0, 2000);
+    },
+  },
+  {
+    name: "text-only",
+    label: "text-only (title only — raw bookmark text)",
+    build(_entry, meta) {
+      return (meta.title || "").slice(0, 2000);
+    },
+  },
+  {
+    name: "summary-only",
+    label: "summary-only (LLM summary only)",
+    build(entry, _meta) {
+      return (entry.summary || "").slice(0, 2000);
+    },
+  },
+  {
+    name: "modality-flag",
+    label: "modality-flag (full formula; noisy/absent subtitle → [no transcript])",
+    build(entry, meta) {
+      const subtitle = isNoisySubtitle(meta.subtitle)
+        ? "[no transcript]"
+        : meta.subtitle;
+      return [entry.vision, entry.summary, entry.category, meta.title, subtitle]
+        .filter(Boolean).join(" ").slice(0, 2000);
+    },
+  },
+];
 
 // ── Embedding helper (concurrent) ──
 
@@ -206,181 +309,74 @@ async function embedBatch(texts, concurrency = 20) {
   return results;
 }
 
-// ── Location extraction ──
+// ── Score (for console summary only — honest-eval.py is the canonical scorer) ──
 
-const LOCATION_PATTERNS = [
-  /\b(austin|atx|do512|austintx|austintexas|austincreatives)\b/i,
-  /\b(dallas|houston|san\s?antonio|fort\s?worth|dfw)\b/i,
-  /\b(new\s?york|nyc|brooklyn|manhattan|los\s?angeles|chicago|miami|seattle|portland|denver|nashville|atlanta|boston|philly|philadelphia|san\s?francisco|sf|bay\s?area)\b/i,
-  /\b(london|paris|tokyo|seoul|bangkok|bali|palawan|barcelona|rome|berlin|dubai|singapore|sydney|melbourne)\b/i,
-];
-
-const LOCATION_NAMES = {
-  austin: "Austin, TX", atx: "Austin, TX", do512: "Austin, TX",
-  austintx: "Austin, TX", austintexas: "Austin, TX", austincreatives: "Austin, TX",
-  dallas: "Dallas, TX", houston: "Houston, TX", "san antonio": "San Antonio, TX",
-  "fort worth": "Fort Worth, TX", dfw: "Dallas-Fort Worth, TX",
-  "new york": "New York, NY", nyc: "New York, NY", brooklyn: "Brooklyn, NY",
-  manhattan: "Manhattan, NY", "los angeles": "Los Angeles, CA",
-  chicago: "Chicago, IL", miami: "Miami, FL", seattle: "Seattle, WA",
-  portland: "Portland, OR", denver: "Denver, CO", nashville: "Nashville, TN",
-  atlanta: "Atlanta, GA", boston: "Boston, MA", philly: "Philadelphia, PA",
-  philadelphia: "Philadelphia, PA", "san francisco": "San Francisco, CA",
-  sf: "San Francisco, CA", "bay area": "Bay Area, CA",
-  london: "London, UK", paris: "Paris, France", tokyo: "Tokyo, Japan",
-  seoul: "Seoul, South Korea", bangkok: "Bangkok, Thailand", bali: "Bali, Indonesia",
-  palawan: "Palawan, Philippines", barcelona: "Barcelona, Spain", rome: "Rome, Italy",
-  berlin: "Berlin, Germany", dubai: "Dubai, UAE", singapore: "Singapore",
-  sydney: "Sydney, Australia", melbourne: "Melbourne, Australia",
-};
-
-function extractLocation(meta) {
-  const sources = [
-    (meta.tags || []).join(" "),
-    meta.title || "",
-    (meta.subtitle || "").slice(0, 500),
-  ].join(" ");
-  for (const pattern of LOCATION_PATTERNS) {
-    const match = sources.match(pattern);
-    if (match) {
-      const key = match[1].toLowerCase();
-      return LOCATION_NAMES[key] || match[1];
-    }
-  }
-  return null;
-}
-
-// ── Build embed text for an item, given a config ──
-
-function buildText(config, id) {
-  const entry = cache[id] || {};
-  const meta = itemMeta.get(id) || { title: "", subtitle: "", tags: [] };
-  return config.build(entry, meta);
-}
-
-// ── Configs ──
-
-const configs = [
-  {
-    name: "A: Current (vision+summary+cat+title+sub)",
-    build(entry, meta) {
-      // Exact match of describe-items.ts line 251
-      return [entry.vision, entry.summary, entry.category, meta.title, meta.subtitle].filter(Boolean).join(" ").slice(0, 2000);
-    },
-  },
-  {
-    name: "B: Reordered (summary+cat+title+sub+tags+vision)",
-    build(entry, meta) {
-      const tags = filterTags(meta.tags).join(", ");
-      return [entry.summary, entry.category, meta.title, meta.subtitle, tags, entry.vision].filter(Boolean).join(" ").slice(0, 2000);
-    },
-  },
-  {
-    name: "C: No vision (summary+cat+tags+title+sub)",
-    build(entry, meta) {
-      const tags = filterTags(meta.tags).join(", ");
-      return [entry.summary, entry.category, tags, meta.title, meta.subtitle].filter(Boolean).join(" ").slice(0, 2000);
-    },
-  },
-  {
-    name: "H: Current + tags",
-    build(entry, meta) {
-      const tags = filterTags(meta.tags).join(", ");
-      return [entry.vision, entry.summary, entry.category, meta.title, meta.subtitle, tags].filter(Boolean).join(" ").slice(0, 2000);
-    },
-  },
-  {
-    name: "I: Current + location",
-    build(entry, meta) {
-      const loc = extractLocation(meta);
-      return [entry.vision, entry.summary, entry.category, meta.title, meta.subtitle, loc ? `Location: ${loc}` : null].filter(Boolean).join(" ").slice(0, 2000);
-    },
-  },
-  {
-    name: "K: Current + location + tags",
-    build(entry, meta) {
-      const tags = filterTags(meta.tags).join(", ");
-      const loc = extractLocation(meta);
-      return [entry.vision, entry.summary, entry.category, meta.title, meta.subtitle, loc ? `Location: ${loc}` : null, tags].filter(Boolean).join(" ").slice(0, 2000);
-    },
-  },
-  {
-    name: "M: Loc-first + summary-first + trunc vision",
-    build(entry, meta) {
-      const loc = extractLocation(meta);
-      const shortVision = entry.vision ? entry.vision.slice(0, 200) : null;
-      return [loc ? `Location: ${loc}.` : null, entry.summary, entry.category, meta.title, meta.subtitle, shortVision].filter(Boolean).join(" ").slice(0, 2000);
-    },
-  },
-  {
-    name: "N: Summary + loc + cat + trunc vision + title + sub",
-    build(entry, meta) {
-      const loc = extractLocation(meta);
-      const shortVision = entry.vision ? entry.vision.slice(0, 200) : null;
-      return [entry.summary, loc ? `Location: ${loc}` : null, entry.category, meta.title, meta.subtitle, shortVision].filter(Boolean).join(" ").slice(0, 2000);
-    },
-  },
-];
-
-// ── Score ──
-
-function scoreVectors(testVecs, centroids) {
+function scoreVectors(testVecs, centroids, entries) {
   let top1Correct = 0, top5Correct = 0;
   const details = [];
 
-  for (let i = 0; i < testEntries.length; i++) {
-    const { groundTruth } = testEntries[i];
+  for (let i = 0; i < entries.length; i++) {
+    const entry = entries[i];
+    if (entry.isNegative) { details.push({ id: entry.id, gt: null, top1: null, correct: null }); continue; }
     const vec = testVecs[i];
-    if (!vec) { details.push({ gt: groundTruth, top1: "NO VEC", correct: false }); continue; }
+    if (!vec) { details.push({ id: entry.id, gt: entry.groundTruth, top1: "NO VEC", correct: false }); continue; }
 
     const scores = centroids.map(c => ({
       name: c.name,
       sim: cosineSim(vec, c.centroid),
     })).sort((a, b) => b.sim - a.sim);
 
-    const top1Match = scores[0].name === groundTruth;
-    const top5Match = scores.slice(0, 5).some(s => s.name === groundTruth);
+    const top1Match = scores[0].name === entry.groundTruth;
+    const top5Match = scores.slice(0, 5).some(s => s.name === entry.groundTruth);
     if (top1Match) top1Correct++;
     if (top5Match) top5Correct++;
 
-    details.push({ gt: groundTruth, top1: scores[0].name, correct: top1Match });
+    details.push({ id: entry.id, gt: entry.groundTruth, top1: scores[0].name, correct: top1Match });
   }
-  return { top1Correct, top5Correct, details };
+  const positives = entries.filter(e => !e.isNegative).length;
+  return { top1Correct, top5Correct, positives, details };
 }
 
 // ── Main ──
 
 async function main() {
-  const N = testEntries.length;
+  fs.mkdirSync(BUILD_DIR, { recursive: true });
 
-  // Baseline: cached vectors
-  const baselineCentroids = collectionNames.map(name => {
-    const ids = collectionItems.get(name).filter(id => cache[id]?.vec);
-    return { name, centroid: computeCentroid(ids.map(id => cache[id].vec)) };
-  });
-  const baselineVecs = testEntries.map(e => cache[e.id]?.vec || null);
-  const baseline = scoreVectors(baselineVecs, baselineCentroids);
-
-  console.log("═".repeat(100));
-  console.log("EMBEDDING CONFIG COMPARISON (fair centroids per config)");
-  console.log("═".repeat(100));
-  console.log("");
-  console.log(`${"Configuration".padEnd(55)}  Top-1    Top-5    Δ Top-1    Time`);
-  console.log("─".repeat(100));
-  console.log(`${"Baseline (cached vectors)".padEnd(55)}  ${String(baseline.top1Correct).padStart(2)}/${N} ${(baseline.top1Correct / N * 100).toFixed(0).padStart(3)}%   ${String(baseline.top5Correct).padStart(2)}/${N} ${(baseline.top5Correct / N * 100).toFixed(0).padStart(3)}%        —     0.0s`);
-
-  const allResults = [{ name: "Baseline", ...baseline }];
-
-  // Pre-build the list of all IDs per collection (for centroid building)
+  // Pre-build the list of all IDs per collection (for centroid building), excluding fixture.
   const collectionIdLists = new Map();
   for (const name of collectionNames) {
-    collectionIdLists.set(name, collectionItems.get(name).filter(id => cache[id]));
+    collectionIdLists.set(name, collectionItems.get(name).filter(id => cache[id] && !testIdSet.has(id)));
   }
+
+  // Sample verification — show the current formula text for one item.
+  const sampleEntry = testEntries.find(e => !e.isNegative && cache[e.id] && itemMeta.get(e.id)?.title);
+  if (sampleEntry) {
+    const meta = itemMeta.get(sampleEntry.id);
+    const entry = cache[sampleEntry.id] || {};
+    const parts = [entry.vision, entry.summary, entry.category, meta.title, meta.subtitle].filter(Boolean);
+    const embedText = parts.join(" ").slice(0, 2000);
+    console.log(`\nSample verification (${sampleEntry.id}):`);
+    console.log(`  gt: ${sampleEntry.groundTruth}`);
+    console.log(`  title: ${(meta.title || "").slice(0, 80)}...`);
+    console.log(`  subtitle: ${meta.subtitle ? meta.subtitle.slice(0, 60) + "..." : "(none)"}`);
+    console.log(`  embed text length: ${embedText.length}`);
+  }
+
+  const N = testEntries.length;
+  const Npos = testEntries.filter(e => !e.isNegative).length;
+
+  console.log("\n");
+  console.log("═".repeat(100));
+  console.log(`M7 EMBEDDING INPUT ABLATION  split=${splitArg}  N=${Npos} positives`);
+  console.log("═".repeat(100));
+  console.log(`${"Variant".padEnd(60)}  Top-1    Top-5    Time   Cache written`);
+  console.log("─".repeat(100));
 
   for (const config of configs) {
     const start = Date.now();
+    const outPath = path.join(BUILD_DIR, `${config.name}.json`);
 
-    // Build embed text for every item
+    // Build embed text for every collection item (excluding fixture).
     const allIds = [];
     const allTexts = [];
     for (const name of collectionNames) {
@@ -389,22 +385,23 @@ async function main() {
         allTexts.push(buildText(config, id));
       }
     }
-    // Also add test items (in case they're not in the lists above — they should be)
+
+    // Also build embed text for fixture items (test set).
     const testTexts = testEntries.map(e => buildText(config, e.id));
 
-    process.stdout.write(`  ${config.name.slice(0, 50).padEnd(50)} embedding ${allTexts.length} items...`);
+    process.stdout.write(`  ${config.label.slice(0, 55).padEnd(55)} embedding ${allTexts.length + testTexts.length} items...`);
 
-    // Embed all collection items
+    // Embed all collection items (for centroids).
     const allVecs = await embedBatch(allTexts, 20);
-    // Embed test items
+    // Embed fixture items (for scoring + cache output).
     const testVecs = await embedBatch(testTexts, 20);
 
-    // Build centroids (excluding test items)
-    const centroidVecsMap = new Map(); // name → [vecs]
+    // Build centroids (fixture items already excluded from allIds above).
+    const centroidVecsMap = new Map();
     for (const name of collectionNames) centroidVecsMap.set(name, []);
     for (let i = 0; i < allIds.length; i++) {
-      const { id, collection } = allIds[i];
-      if (allVecs[i] && !testIdSet.has(id)) {
+      const { collection } = allIds[i];
+      if (allVecs[i]) {
         centroidVecsMap.get(collection).push(allVecs[i]);
       }
     }
@@ -414,40 +411,37 @@ async function main() {
       if (vecs.length > 0) centroids.push({ name, centroid: computeCentroid(vecs) });
     }
 
-    const result = scoreVectors(testVecs, centroids);
+    // Score (console summary only; canonical scoring is honest-eval.py).
+    const result = scoreVectors(testVecs, centroids, testEntries);
+
+    // Write named cache: { <roost_id>: { vec: [...] } } for fixture items.
+    // This is the format L.load_cache(json_path=...) expects in honest-eval.py.
+    const cacheOut = {};
+    for (let i = 0; i < testEntries.length; i++) {
+      if (testVecs[i]) {
+        cacheOut[testEntries[i].id] = { vec: testVecs[i] };
+      }
+    }
+    fs.writeFileSync(outPath, JSON.stringify(cacheOut));
+
     const elapsed = ((Date.now() - start) / 1000).toFixed(1);
-    const delta = result.top1Correct - baseline.top1Correct;
-    const deltaStr = delta > 0 ? `+${delta}` : delta === 0 ? " 0" : String(delta);
+    const top1pct = result.positives > 0 ? (result.top1Correct / result.positives * 100).toFixed(0) : "?";
+    const top5pct = result.positives > 0 ? (result.top5Correct / result.positives * 100).toFixed(0) : "?";
 
     process.stdout.write(`\r`);
-    console.log(`${config.name.padEnd(55)}  ${String(result.top1Correct).padStart(2)}/${N} ${(result.top1Correct / N * 100).toFixed(0).padStart(3)}%   ${String(result.top5Correct).padStart(2)}/${N} ${(result.top5Correct / N * 100).toFixed(0).padStart(3)}%   ${deltaStr.padStart(5)}   ${elapsed.padStart(6)}s`);
-
-    allResults.push({ name: config.name, ...result });
+    console.log(
+      `${config.label.padEnd(60)}  ` +
+      `${String(result.top1Correct).padStart(3)}/${result.positives} ${top1pct.padStart(3)}%   ` +
+      `${String(result.top5Correct).padStart(3)}/${result.positives} ${top5pct.padStart(3)}%  ` +
+      `${elapsed.padStart(6)}s   ${path.basename(outPath)}`
+    );
   }
 
   console.log("─".repeat(100));
-
-  // ── Per-item detail ──
-  console.log("\n");
-  console.log("═".repeat(100));
-  console.log("PER-ITEM CHANGES vs BASELINE");
-  console.log("═".repeat(100));
-  console.log("");
-
-  const labels = ["Base", ...configs.map(c => c.name.split(":")[0].trim())];
-  const hdr = `${"#".padStart(4)}  ${"GT".padEnd(18)}  ${labels.map(n => n.padEnd(5)).join(" ")}  Summary`;
-  console.log(hdr);
-  console.log("─".repeat(hdr.length + 20));
-
-  for (let i = 0; i < N; i++) {
-    const results = allResults.map(r => r.details[i]);
-    const anyDiffers = results.some(r => r.correct !== results[0].correct);
-    if (!anyDiffers) continue;
-
-    const entry = cache[testEntries[i].id];
-    const marks = results.map(r => r.correct ? "  ✓  " : `✗${(r.top1 || "?").slice(0, 4)}`);
-    console.log(`${String(i + 1).padStart(4)}  ${results[0].gt.padEnd(18)}  ${marks.join(" ")}  ${(entry?.summary || "").slice(0, 50)}`);
-  }
+  console.log(`\nCaches written to: ${BUILD_DIR}/`);
+  console.log("Score with: ROOST_VAULT=<vault> python scripts/honest-eval.py --cache <variant>.json --split <split> --by-platform");
+  console.log("\nNote: top-1/top-5 above use plain-mean centroids from `collection:` labels.");
+  console.log("Use honest-eval.py for the canonical OSCR+AUROC+AUPR+AURC metrics with production centroids.");
 }
 
 main().catch(err => { console.error(err); process.exit(1); });
