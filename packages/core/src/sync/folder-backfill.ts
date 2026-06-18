@@ -97,6 +97,15 @@ export async function runFolderBackfill(plugin: IRoostPlugin): Promise<void> {
     const execPage = async (script: string): Promise<unknown> => {
       try { return JSON.parse((await wc.executeJavaScript(script)) as string); } catch { return null; }
     };
+    /** execPage with up to 3 retries on error/null (transient 503s / rate limits). */
+    const execPageR = async (script: string): Promise<unknown> => {
+      let r = await execPage(script);
+      for (let i = 0; (r === null || (r as { error?: string } | null)?.error) && i < 3; i++) {
+        await sleep(3000);
+        r = await execPage(script);
+      }
+      return r;
+    };
     /** Mirrors the e2e injectProbeAndNavigate: reinject (seed) → loadURL → settle.
      *  The probe is (re)injected via dom-ready on the new page; we never reinject after. */
     const navigate = async (url: string): Promise<boolean> => {
@@ -121,7 +130,7 @@ export async function runFolderBackfill(plugin: IRoostPlugin): Promise<void> {
       const folders = new Map<string, string>(); // id -> name
       let lcursor: string | null = null;
       for (let page = 0; page < 40; page++) {
-        const res = (await execPage(folderListPageScript(lcursor))) as { folders?: Record<string, string>; nextCursor?: string | null; error?: string } | null;
+        const res = (await execPageR(folderListPageScript(lcursor))) as { folders?: Record<string, string>; nextCursor?: string | null; error?: string } | null;
         if (!res || res.error) { log(`folder-list page ${page + 1} error: ${res?.error ?? "no result"}`); break; }
         const before = folders.size;
         for (const [id, name] of Object.entries(res.folders ?? {})) folders.set(id, name);
@@ -147,7 +156,7 @@ export async function runFolderBackfill(plugin: IRoostPlugin): Promise<void> {
         fi++;
         let tcursor: string | null = null; let n = 0;
         for (let page = 0; page < 80; page++) {
-          const res = (await execPage(folderTimelinePageScript(fid, tcursor))) as { ids?: string[]; nextCursor?: string | null; error?: string } | null;
+          const res = (await execPageR(folderTimelinePageScript(fid, tcursor))) as { ids?: string[]; nextCursor?: string | null; error?: string } | null;
           if (!res || res.error) { log(`  [${fi}/${folders.size}] "${fname}" page ${page + 1} error: ${res?.error ?? "no result"}`); break; }
           const ids = res.ids ?? [];
           for (const tid of ids) { if (!folderByTweet.has(tid)) folderByTweet.set(tid, fname); n += 1; }
@@ -187,13 +196,16 @@ export async function applyFolderMapToNotes(
     if (!fm || fm.platform !== "twitter") continue;
     const id = fm.roost_id as string | undefined;
     if (!id) continue;
-    const intended = folderByTweet.get(id) ?? null;
+    // roost_id is platform-prefixed ("twitter:<rest_id>"); folderByTweet keys are
+    // the bare rest_id from the GraphQL response — strip the prefix before lookup.
+    const restId = id.includes(":") ? id.slice(id.indexOf(":") + 1) : id;
+    const intended = folderByTweet.get(restId) ?? null;
     const current = (fm.collection as string | undefined) ?? null;
     // Skip only if already stamped at this version AND the collection already matches
     // what we'd write — so notes mis-stamped by an earlier run (stamped but never
     // tagged) get corrected, while correctly-tagged notes are left untouched.
     if (fm[FOLDER_STAMP] === FOLDER_SCHEMA_VERSION && intended === current) continue;
-    const inFolder = folderByTweet.has(id);
+    const inFolder = folderByTweet.has(restId);
     const patch = folderFrontmatterPatch(inFolder, intended, fm, FOLDER_SCHEMA_VERSION);
     await app.fileManager.processFrontMatter(file, (front) => {
       for (const [k, v] of Object.entries(patch)) { if (v === null) delete front[k]; else front[k] = v; }

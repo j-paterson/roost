@@ -500,6 +500,7 @@ describe("X bookmark folders — live (real x.com, cookie injection)", function 
         try {
             const ex = fs.existsSync(CAPTURE_PATH) ? JSON.parse(fs.readFileSync(CAPTURE_PATH, "utf-8")) : {};
             ex.fullScanReplay = { folderCount: fids.length, tweetCount, perFolder };
+            ex.folderByTweet = folderByTweet; // tweetId -> folderName, for vault cross-check
             fs.writeFileSync(CAPTURE_PATH, JSON.stringify(ex, null, 2));
         } catch { /* best-effort */ }
         expect(tweetCount).toBeGreaterThan(100);
