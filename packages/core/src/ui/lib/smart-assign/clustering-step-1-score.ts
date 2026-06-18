@@ -12,6 +12,9 @@ import {
   scoreAgainstCategories,
   generateClusterDescriptions,
   buildCategoryDefs,
+  loadClassifierHead,
+  headClassesMatch,
+  type ClassifierHead,
 } from "@/pipeline/evaluate";
 import { scoreWithSubcategories } from "@/pipeline/score-with-subcategories";
 
@@ -98,6 +101,24 @@ export async function runClusteringStep1ScoreKnown(
   );
   host.log(`${knownCategoryDefs.length} collections with centroids`);
 
+  // Load classifier head when the feature flag is on. headClassesMatch is
+  // validated inside scoreAgainstCategories; a null head triggers fallback.
+  let classifierHead: ClassifierHead | null = null;
+  if (host.plugin.settings.smartAssignClassifierHead && host.plugin.settings.smartAssignEmbeddingOnly) {
+    classifierHead = loadClassifierHead(host.app.vault);
+    if (classifierHead !== null) {
+      const categoryNames = knownCategoryDefs.map(c => c.name);
+      if (!headClassesMatch(classifierHead, categoryNames)) {
+        host.log(`[warn] classifier-head classes don't match current collections — falling back to nearest-centroid`);
+        classifierHead = null;
+      } else {
+        host.log(`Classifier head loaded (${classifierHead.classes.length} classes, will use for Step 1)`);
+      }
+    } else {
+      host.log(`[info] smartAssignClassifierHead=true but classifier-head.json not found — falling back to nearest-centroid`);
+    }
+  }
+
   const isFilterMode = ctx.input.write.into === "category";
   let phase1Assignments: Map<string, string>;
   let phase1Unmatched: string[];
@@ -145,6 +166,7 @@ export async function runClusteringStep1ScoreKnown(
       stopSignal: signal,
       clipFusionAlpha: host.plugin.settings.clipFusionAlpha,
       embeddingOnly: host.plugin.settings.smartAssignEmbeddingOnly,
+      classifierHead,
     });
     phase1Assignments = phase1.assignments;
     phase1Unmatched = phase1.unmatched;

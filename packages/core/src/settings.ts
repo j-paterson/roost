@@ -49,6 +49,13 @@ export interface RoostSettings {
    *  see docs/superpowers/specs/2026-06-16-honest-eval-results.md). Set false to
    *  restore the LLM rerank. */
   smartAssignEmbeddingOnly: boolean;
+  /** When true, Smart Assign Step 1 uses the trained LogReg classifier head
+   *  (<vault>/.roost/cache/classifier-head.json) instead of nearest-centroid.
+   *  Default false — flip only after the validation gate passes (top-1 ≈ 0.68,
+   *  rejection AUROC > 0.52 on holdout). Falls back to nearest-centroid when the
+   *  weights file is absent or its classes don't match the current category set.
+   *  See docs/superpowers/specs/2026-06-18-classifier-head-design.md. */
+  smartAssignClassifierHead: boolean;
   /** Anthropic API key. Only used when llmBackend === "cloud". Stored in
    *  plain text in data.json — same security model as every other Obsidian
    *  plugin. Empty string when not set. */
@@ -119,6 +126,7 @@ export const DEFAULT_SETTINGS: RoostSettings = {
   embeddingBackend: "auto",
   llmBackend: "local",
   smartAssignEmbeddingOnly: true,
+  smartAssignClassifierHead: false,
   anthropicApiKey: "",
   anthropicModel: "claude-haiku-4-5-20251001",
   tmdbApiKey: "",

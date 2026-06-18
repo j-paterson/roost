@@ -18,6 +18,16 @@ import type { AssignedBy } from "@/lib/vault-utils";
 import { resolveTaxonomy, type CategoryTaxonomy } from "@/pipeline/taxonomy";
 import * as fs from "fs";
 import * as crypto from "crypto";
+import {
+  loadClassifierHead,
+  classifyWithHead,
+  headClassesMatch,
+  type ClassifierHead,
+} from "@/pipeline/classifier-head";
+
+// Re-export so callers wiring the head never need a direct import of classifier-head.ts.
+export { loadClassifierHead, classifyWithHead, headClassesMatch };
+export type { ClassifierHead };
 
 // Ensemble rerank (Phase 3): T1_letter on top-5 + T2_json on top-7, fused
 // by an embedding-rank tiebreak. Sweep on v2 cache reproduces 85/119 (71.4%).
@@ -173,6 +183,15 @@ interface ScoreOpts {
    * docs/superpowers/specs/2026-06-16-honest-eval-results.md.
    */
   embeddingOnly?: boolean;
+  /**
+   * Pre-loaded classifier head (settings.smartAssignClassifierHead=true).
+   * When provided AND its classes match the current category set, the head's
+   * softmax argmax replaces nearest-centroid in the embedding-only path.
+   * Ignored when embeddingOnly is false (LLM rerank path is unchanged).
+   * Falls back to nearest-centroid when null (file absent) or when
+   * headClassesMatch() returns false (stale classes after collection edits).
+   */
+  classifierHead?: ClassifierHead | null;
 }
 
 interface ScoreResult {
@@ -388,7 +407,18 @@ export async function scoreAgainstCategories(opts: ScoreOpts): Promise<ScoreResu
   const embeddingOnly = opts.embeddingOnly === true;
   const alpha = opts.clipFusionAlpha ?? DEFAULT_CLIP_FUSION_ALPHA;
 
-  if (desc) log(`[${tag}] ${desc} (concurrency=${concurrency}${embeddingOnly ? ", embedding-only" : ""})`);
+  // Resolve classifier head: use it only when provided AND classes match live categories.
+  const rawHead = opts.classifierHead ?? null;
+  const categoryNames = categories.map(c => c.name);
+  const activeHead: ClassifierHead | null =
+    rawHead !== null && headClassesMatch(rawHead, categoryNames)
+      ? rawHead
+      : null;
+  if (rawHead !== null && activeHead === null) {
+    log(`[${tag}] classifier-head class mismatch — falling back to nearest-centroid`);
+  }
+
+  if (desc) log(`[${tag}] ${desc} (concurrency=${concurrency}${embeddingOnly ? (activeHead ? ", classifier-head" : ", embedding-only") : ""})`);
 
   if (categories.length === 0) {
     log(`[${tag}] 0 categories with centroids — skipping LLM scoring, all items unmatched`);
@@ -399,9 +429,11 @@ export async function scoreAgainstCategories(opts: ScoreOpts): Promise<ScoreResu
     };
   }
 
-  // Embedding-only fast path: assign each item to its top-1 nearest centroid,
-  // no LLM. Validated to beat the dual-LLM ensemble on honest labels (+11.7pp,
-  // adversary could-not-refute). See the embeddingOnly JSDoc on ScoreOpts.
+  // Embedding-only fast path: assign each item using either the trained classifier
+  // head (when activeHead is non-null) or the top-1 nearest centroid (default).
+  // No LLM calls in either sub-path. Validated to beat the dual-LLM ensemble on
+  // honest labels (+11.7pp, adversary could-not-refute). See the embeddingOnly
+  // JSDoc on ScoreOpts.
   if (embeddingOnly) {
     const assignments = new Map<string, string>();
     const matchDetails = new Map<string, MatchDetail>();
@@ -410,33 +442,58 @@ export async function scoreAgainstCategories(opts: ScoreOpts): Promise<ScoreResu
       const id = itemIds[idx];
       const entry = cache[id];
       if (!entry?.vec) { unmatched.push(id); continue; }
-      const ranked = categories
-        .map(cat => ({
-          name: cat.name,
-          sim: fusedSimilarity(entry.vec!, cat.centroid, entry.clipVec, cat.clipCentroid, alpha),
-        }))
-        .sort((a, b) => b.sim - a.sim);
-      if (ranked.length === 0) { unmatched.push(id); continue; }
-      const top = ranked[0];
-      // simThreshold floor still applies (default 0 = pure argmax).
-      if (top.sim < simThreshold) { unmatched.push(id); continue; }
-      const scoreInt = Math.max(0, Math.min(10, Math.round(top.sim * 10)));
-      const summary = stripPreamble((entry.summary || entry.vision?.slice(0, 100) || id)).slice(0, 120);
-      assignments.set(id, top.name);
-      matchDetails.set(id, {
-        collection: top.name,
-        score: scoreInt,
-        sim: top.sim,
-        reason: `emb-top1 sim=${top.sim.toFixed(3)}`,
-        t1Pick: null, t2Pick: null, decision: "agree",
-        topCentroids: ranked.slice(0, 5).map(c => ({ name: c.name, sim: c.sim })),
-        ollamaCategory: entry.category || undefined,
-        summarySnippet: summary,
-        cached: false,
-      });
+
+      if (activeHead !== null) {
+        // ── Classifier-head sub-path ──────────────────────────────────────────
+        // Forward: L2-normalize vec → W·x + b → softmax → argmax + max-prob.
+        // confidence replaces sim as the rejection signal; simThreshold floor is
+        // applied against confidence for API consistency (default 0 = pure argmax).
+        const result = classifyWithHead(entry.vec!, activeHead);
+        if (result.confidence < simThreshold) { unmatched.push(id); continue; }
+        const scoreInt = Math.max(0, Math.min(10, Math.round(result.confidence * 10)));
+        const summary = stripPreamble((entry.summary || entry.vision?.slice(0, 100) || id)).slice(0, 120);
+        assignments.set(id, result.category);
+        matchDetails.set(id, {
+          collection: result.category,
+          score: scoreInt,
+          sim: result.confidence,
+          reason: `head conf=${result.confidence.toFixed(3)}`,
+          t1Pick: null, t2Pick: null, decision: "agree",
+          topCentroids: [{ name: result.category, sim: result.confidence }],
+          ollamaCategory: entry.category || undefined,
+          summarySnippet: summary,
+          cached: false,
+        });
+      } else {
+        // ── Nearest-centroid sub-path ─────────────────────────────────────────
+        const ranked = categories
+          .map(cat => ({
+            name: cat.name,
+            sim: fusedSimilarity(entry.vec!, cat.centroid, entry.clipVec, cat.clipCentroid, alpha),
+          }))
+          .sort((a, b) => b.sim - a.sim);
+        if (ranked.length === 0) { unmatched.push(id); continue; }
+        const top = ranked[0];
+        // simThreshold floor still applies (default 0 = pure argmax).
+        if (top.sim < simThreshold) { unmatched.push(id); continue; }
+        const scoreInt = Math.max(0, Math.min(10, Math.round(top.sim * 10)));
+        const summary = stripPreamble((entry.summary || entry.vision?.slice(0, 100) || id)).slice(0, 120);
+        assignments.set(id, top.name);
+        matchDetails.set(id, {
+          collection: top.name,
+          score: scoreInt,
+          sim: top.sim,
+          reason: `emb-top1 sim=${top.sim.toFixed(3)}`,
+          t1Pick: null, t2Pick: null, decision: "agree",
+          topCentroids: ranked.slice(0, 5).map(c => ({ name: c.name, sim: c.sim })),
+          ollamaCategory: entry.category || undefined,
+          summarySnippet: summary,
+          cached: false,
+        });
+      }
       if (idx % 10 === 0 || idx === itemIds.length - 1) onProgress?.(idx + 1, itemIds.length);
     }
-    log(`[${tag}] embedding-only: ${assignments.size} assigned, ${unmatched.length} unmatched (no LLM)`);
+    log(`[${tag}] ${activeHead ? "classifier-head" : "embedding-only"}: ${assignments.size} assigned, ${unmatched.length} unmatched (no LLM)`);
     return { assignments, unmatched, matchDetails };
   }
 
