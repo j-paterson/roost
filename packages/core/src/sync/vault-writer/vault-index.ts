@@ -33,6 +33,22 @@ export interface IncompleteByCategory {
   folder: Set<string>;
 }
 
+/**
+ * Tweet-body first-rollout predicate: a Twitter note whose body has never been
+ * rendered to markdown (no `enrichment_v_tweetBody` stamp). X Articles are excluded
+ * — they already render real markdown (plan 031 Decision 4). `isVersionStale` stays
+ * false for an absent field, so this explicit predicate is what surfaces the legacy
+ * corpus on first rollout. Pure so the three-branch gate (esp. the non-obvious
+ * `is_article` exclusion) is locked by a unit test independent of the scan harness.
+ */
+export function needsTweetBodyRender(fm: Record<string, unknown>): boolean {
+  return (
+    fm.platform === "twitter"
+    && fm.is_article !== true
+    && fm[enrichmentVersionField("tweetBody")] === undefined
+  );
+}
+
 export interface IncompleteIdsResult {
   /** Union of every byCategory bucket — the set sync uses for filtering
    *  "needs resync" work. An item appears here once even if it lands in
@@ -273,11 +289,7 @@ export class VaultIndex {
           // stamp yet). isVersionStale stays false for absent fields, so this
           // explicit predicate is what surfaces legacy tweets on first rollout.
           // X Articles are excluded (Decision 4 — they already render real md).
-          if (
-            fm.platform === "twitter"
-            && fm.is_article !== true
-            && fm[enrichmentVersionField("tweetBody")] === undefined
-          ) {
+          if (needsTweetBodyRender(fm)) {
             byCategory.tweetBody.add(id);
           }
           // Folder-membership first-rollout detection: any Twitter note with no

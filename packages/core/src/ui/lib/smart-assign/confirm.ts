@@ -31,6 +31,15 @@ export interface SmartAssignConfirmResult {
   tagged: number;
 }
 
+/**
+ * Provenance stamp for a confirmed item. A user reassignment (an explicit move in the
+ * Smart Assign review UI) is a HUMAN decision — it should up-weight the centroid
+ * (HUMAN_WEIGHT) and count as an honest label; an untouched proposal is the machine's.
+ */
+export function confirmAssignedBy(reassigned: Map<string, string>, id: string): "human" | "auto" {
+  return reassigned.has(id) ? "human" : "auto";
+}
+
 export async function confirmSmartAssign(
   host: SmartAssignConfirmHost,
   proposedFolders: { name: string; itemIds: string[] }[] | null,
@@ -78,20 +87,21 @@ export async function confirmSmartAssign(
     fileManager: host.fileManager,
     plugin: host.plugin,
     events: host.metadataCache,
-    patchFor: (_, value) => {
+    patchFor: (id, value) => {
+      const assignedBy = confirmAssignedBy(reassigned, id);
       if (isSubcat) {
-        return { [CATEGORY_FIELD]: parentName!, [SUBCATEGORY_FIELD]: value, [ASSIGNED_BY_FIELD]: "auto" };
+        return { [CATEGORY_FIELD]: parentName!, [SUBCATEGORY_FIELD]: value, [ASSIGNED_BY_FIELD]: assignedBy };
       }
       const sep = value.indexOf("\x00");
       if (sep < 0) {
-        return { [CATEGORY_FIELD]: value, [SUBCATEGORY_FIELD]: null, [ASSIGNED_BY_FIELD]: "auto" };
+        return { [CATEGORY_FIELD]: value, [SUBCATEGORY_FIELD]: null, [ASSIGNED_BY_FIELD]: assignedBy };
       }
       const category = value.slice(0, sep);
       const subcategory = value.slice(sep + 1);
       return {
         [CATEGORY_FIELD]: category,
         [SUBCATEGORY_FIELD]: subcategory || null,
-        [ASSIGNED_BY_FIELD]: "auto",
+        [ASSIGNED_BY_FIELD]: assignedBy,
       };
     },
     log: host.log,
