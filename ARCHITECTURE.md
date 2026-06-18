@@ -260,6 +260,22 @@ Before processing each API page, the probe checks every item ID against `__ROOST
 
 **Phase 3 — Bookmark folders** (full sync only): the probe intercepts X's `BookmarkFoldersSlice` op (folder list at `viewer.user_results.result.bookmark_collections_slice.items`); the sync then navigates each folder page (`x.com/i/bookmarks/<id>`), the `BookmarkFolderTimeline` op (keyed by the `bookmark_collection_id` variable) is parsed, and each tweet is stamped `_bookmark_folder`. The writer files that as `collection` + a `collection/<name>` tag — the same alias→`roost_category` path as TikTok collections. The probe matches on op *name* (not the rotating queryId), and the GraphQL contract is regression-guarded by the live spec `tests/e2e/87-x-bookmark-folders.live.spec.ts` (see `tests/e2e/LIVE-TESTING.md`).
 
+### Folder Enrichment — Backfill X Bookmark-Folder Membership
+
+The `folder` enrichment (`lib/enrichments.ts`, id `folder`) registers a **"Backfill X bookmark folders"** Cmd+P command and a health-panel backlog bucket (stamp-absent predicate on `enrichment_v_folder` in `vault-index.ts`). This is a **manual enrichment**, not wired into normal sync — normal sync only tags tweets seen on the first page of each folder (Step 4.5). The backfill covers historical tweets already in the vault.
+
+**Why not DOM scrolling.** X bookmark-folder timelines do not paginate via DOM scroll (verified by live e2e). Pagination requires replaying the real GraphQL cursors.
+
+**How it works:**
+
+1. `probes/twitter-probe.js` is extended to capture two ops:
+   - `bookmarkFoldersSliceReplay` — the `BookmarkFoldersSlice` response (full folder list + ids).
+   - `bookmarkFolderTimelineReplay` — the `BookmarkFolderTimeline` response for a given folder page (tweets + `bottom` cursor for the next page).
+2. `sync/folder-scan-script.ts` exports per-page in-page fetcher functions (`fetchFolderList`, `fetchFolderPage`) that replay the captured request with a swapped `bookmark_collection_id` and bottom cursor using `executeJavaScript`.
+3. `sync/folder-backfill.ts` is the Node-side driver: it paginates one folder at a time (one `executeJavaScript` per page), writes `collection` + `roost_assigned_by: human` to matching notes (clears a stale `auto` `roost_category`, preserves `human`), and logs per-folder progress.
+
+Live-verified: 32 folders, ~1844 tweets. e2e regression guard: `tests/e2e/87-x-bookmark-folders.live.spec.ts` (gated `E2E_RUN_LIVE=1`).
+
 ### Skip Layers
 
 | Layer | What it skips | How |
@@ -364,6 +380,7 @@ The 13 registered enrichments:
 | `workout` | pipeline extraction | `workout_*` frontmatter fields (target area, duration, equipment, type) |
 | `tutorial` | pipeline extraction | `tutorial_*` frontmatter fields (skill area, difficulty, time estimate, tools) |
 | `home` | pipeline extraction | `home_*` frontmatter fields (room, style, budget tier) |
+| `folder` | data fetch | Backfills `collection` + `roost_assigned_by: human` for X notes that belong to a bookmark folder — uses GraphQL cursor replay (not DOM scroll); see [Folder Enrichment](#folder-enrichment--backfill-x-bookmark-folder-membership) |
 
 Schema versioning uses `enrichment_v_<id>: <schemaVersion>` written to the note's frontmatter when enrichment completes. A missing version field is not treated as stale (legacy items don't auto-flag).
 
@@ -612,6 +629,75 @@ These shaped the final pipeline. Kept here so the next person touching this code
 The narrative arc (v1 k-means → v2 HDBSCAN → score-first pivot → Phase F fine-tune → phased deployment) is summarized in the sections above; internal journey notes were removed from the public repo during release cleanup.
 
 
+## Honest-Eval Suite (`scripts/`)
+
+An offline evaluation framework for Smart Assign, designed to be contamination-free. All scripts are dev-only (not bundled into the plugin).
+
+### Contamination invariants (enforced in code)
+
+- Ground truth is always the human `collection` field — **never `roost_category`** (which may have been written by Smart Assign and would leak the model's own predictions into labels).
+- All fixture items are excluded from centroid computation. Dev and holdout splits are disjoint (seed 1729).
+
+### Files
+
+| File | Role |
+|------|------|
+| `scripts/honest_eval_lib.py` | Loaders, metrics, contamination guards (shared library) |
+| `scripts/honest-eval.py` | Entry point — runs OSCR + AURC evaluation against the fixture |
+| `scripts/build-honest-fixture.py` | Builds seeded dev / holdout / large fixtures from the vault; output goes to `<vault>/.roost/build/` (gitignored) |
+| `scripts/honest_eval_selftest.py` | Unit tests for the library |
+| `export-production-centroids.test.ts` | Vitest exporter that calls the real `buildCategoryDefs` against the live vault and writes centroids for the Python harness; a research tool (hardcodes vault path) — keep gitignored or parameterize before committing |
+| `scripts/README-honest-eval.md` | Setup and usage guide |
+
+### Primary metrics
+
+- **OSCR** (open-set classification rate) — threshold-free classification rate; does not require choosing an operating point.
+- **AURC** (area under risk-coverage curve) — threshold-free; summarizes the accuracy/coverage trade-off across all possible rejection thresholds.
+
+A secondary deployment operating-point view is also computed (accuracy at a fixed coverage level) for practical tuning.
+
+### Label pool
+
+The fixture is drawn from items with a human `collection` label. After the folder enrichment backfill (2026-06-17), the honest-label pool grew: **1258 TikTok + 1825 X folder labels = 3083 items**.
+
+### Python harness resolves labels through the alias map
+
+`honest_eval_lib.py` resolves ground-truth labels through the same `lib/collection-aliases.ts` alias map (read from `.roost/cache/collection-aliases.json`) so the eval labels are consistent with what Smart Assign sees at inference time.
+
+## Collection Alias Map, Remapping, and Resort
+
+### Collection alias map (`lib/collection-aliases.ts`)
+
+The alias map (`platform:collection → category`) is the central lookup that bridges raw platform collection names to Roost category names. It is persisted as `.roost/cache/collection-aliases.json` and resolved at read time inside `gatherVaultCollections`.
+
+**Label precedence at read time:** `roost_category` (existing) > alias map match > raw `collection` field.
+
+The alias map is populated manually (or via the Reconcile command below). It does NOT rewrite frontmatter — resolution is purely at read time.
+
+### Cross-source category remapping — "Reconcile" (`lib/collection-remap.ts`)
+
+The reconcile flow suggests how collections from one platform (e.g. X bookmark folders) should map to existing Roost categories built from another platform (e.g. TikTok collections).
+
+Key pieces:
+
+| File | Role |
+|------|------|
+| `lib/collection-remap.ts` | Pure suggestion engine: computes member-centroid vs category centroids; produces `map` / `create` / `skip` decisions per collection; `applyResolvedMappings` writes results; `buildCategoryCentroids` assembles centroids |
+| `lib/collection-remap-inputs.ts` | Vault input assembly (reads vault collections + items for centroid building) |
+| `ui/components/remap-review.tsx` | Confirm UI — user reviews proposed mappings before they are applied |
+| `views/remap-confirm-modal.ts` | Modal wrapper for the review component |
+| `plugin/remap-commands.ts` | Registers `reconcile-collection-mappings` command (and the resort commands below) |
+
+**Known gap (RECONCILE-01):** the suggestion engine self-matches — a collection that already resolves to its own category via the alias map finds itself as the nearest centroid, so it never proposes cross-source merges (e.g. X "Immersive (AR/VR)" → TikTok "VR"). Fix: exclude a collection's own resolved category from candidates.
+
+### Resort-by-collection (`sync/resort-by-collection.ts`)
+
+Resort physically writes `roost_category` = alias-resolved(collection) + `roost_assigned_by: human` for collection-bearing notes. This is necessary because the alias map only resolves at read time — an existing `roost_category` value shadows it. Resort makes the mapping durable in frontmatter.
+
+- `resortPatch` — pure: given a note's frontmatter, computes the frontmatter diff (or `null` if no change needed).
+- `resortByCollection` — driver: walks vault notes, applies patches with optional dry-run.
+- Two commands registered in `plugin/remap-commands.ts`: **"Resort by collection mapping (preview / dry-run)"** (counts without writing) and **"(apply)"** (writes with progress logging).
+
 ## Component Architecture
 
 ### RoostView + useSmartAssign
@@ -778,3 +864,6 @@ Cache paths use `packages/core/src/lib/roost-paths.ts` — prefer `cachePath()` 
 | `npm run build` | Build only (does NOT deploy) |
 | `node scripts/reset-categories.mjs` | Preview category removal (dry run) |
 | `node scripts/reset-categories.mjs --run` | Strip all `roost_category` from frontmatter |
+| `python scripts/build-honest-fixture.py` | Build seeded dev/holdout/large eval fixtures (output → `<vault>/.roost/build/`, gitignored) |
+| `python scripts/honest-eval.py` | Run OSCR + AURC evaluation against the honest fixture |
+| `python scripts/honest_eval_selftest.py` | Unit-test the eval library |
