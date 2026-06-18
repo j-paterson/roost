@@ -44,6 +44,29 @@ describe("suggestCollectionMappings", () => {
     const out = suggestCollectionMappings(cols, [], {}, 0.8);
     expect(out[0]).toMatchObject({ action: "create", target: "Anything", sim: null });
   });
+
+  it("never self-matches: excludes the collection's own resolved category so cross-source merges surface", () => {
+    // The X folder "Immersive (AR/VR)" resolves (via the collection fallback) to a
+    // same-named category whose members ARE this collection's members -> cosine ~1.0.
+    // Without the self-match guard the engine maps it to itself and never proposes the
+    // real cross-source merge into TikTok's "VR".
+    const catsWithSelf: CategoryCentroid[] = [
+      { name: "Immersive (AR/VR)", centroid: [1, 0] }, // self (identical members)
+      { name: "VR", centroid: [0.9, 0.1] }, // genuine cross-source target, above threshold
+    ];
+    const cols: CollectionInput[] = [
+      { platform: "twitter", name: "Immersive (AR/VR)", memberVecs: [[1, 0]] },
+    ];
+    const out = suggestCollectionMappings(cols, catsWithSelf, {}, 0.8);
+    expect(out[0]).toMatchObject({ action: "map", target: "VR" });
+  });
+
+  it("creates (own name) when the only candidate is the collection's own category", () => {
+    const catsOnlySelf: CategoryCentroid[] = [{ name: "Loner", centroid: [1, 0] }];
+    const cols: CollectionInput[] = [{ platform: "twitter", name: "Loner", memberVecs: [[1, 0]] }];
+    const out = suggestCollectionMappings(cols, catsOnlySelf, {}, 0.8);
+    expect(out[0]).toMatchObject({ action: "create", target: "Loner" });
+  });
 });
 
 describe("applyResolvedMappings", () => {

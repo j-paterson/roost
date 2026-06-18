@@ -49,6 +49,12 @@ export function suggestCollectionMappings(
     const centroid = computeCentroid(c.memberVecs);
     let best = { name: c.name, sim: -Infinity };
     for (const cat of categories) {
+      // Never match a collection to its OWN resolved category. An un-aliased
+      // collection resolves (via the `collection` fallback) to a same-named category
+      // whose members ARE this collection's members, so its centroid is ~identical and
+      // would always "win" — burying real cross-source merges (X "Immersive (AR/VR)"
+      // -> TikTok "VR"). Aliased collections never reach here (they `skip` above).
+      if (cat.name === c.name) continue;
       const sim = cosineSimilarity(centroid, cat.centroid);
       if (sim > best.sim) best = { name: cat.name, sim };
     }
