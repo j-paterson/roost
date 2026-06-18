@@ -262,7 +262,7 @@ Before processing each API page, the probe checks every item ID against `__ROOST
 
 ### Folder Enrichment — Backfill X Bookmark-Folder Membership
 
-The `folder` enrichment (`lib/enrichments.ts`, id `folder`) registers a **"Backfill X bookmark folders"** Cmd+P command and a health-panel backlog bucket (stamp-absent predicate on `enrichment_v_folder` in `vault-index.ts`). This is a **manual enrichment**, not wired into normal sync — normal sync only tags tweets seen on the first page of each folder (Step 4.5). The backfill covers historical tweets already in the vault.
+Folder membership is a **plain "Backfill X bookmark folders" Cmd+P command** (`register-roost-commands.ts`, driver `sync/folder-backfill.ts`), run on demand. It is **not** a tracked enrichment: it has no `enrichment_v_folder` stamp, no `vault-index.ts` worklist bucket, and no health-panel row (removed 2026-06-17 — the stamp produced a "tagged-but-still-flagged-incomplete" contradiction and the backfill re-derives every folder from X each run, so it never needed per-note completeness tracking). Idempotency is by data: a note whose `collection` already equals the intended folder is skipped. Not wired into normal sync — normal sync only tags tweets seen on the first page of each folder (Step 4.5); re-running the backfill (now skip-by-data, cheap) refreshes membership for anything new. (Orphaned `enrichment_v_folder` keys from before the removal were stripped by the one-time `scripts/strip-folder-stamp.mjs`.)
 
 **Why not DOM scrolling.** X bookmark-folder timelines do not paginate via DOM scroll (verified by live e2e). Pagination requires replaying the real GraphQL cursors.
 
@@ -380,7 +380,8 @@ The 13 registered enrichments:
 | `workout` | pipeline extraction | `workout_*` frontmatter fields (target area, duration, equipment, type) |
 | `tutorial` | pipeline extraction | `tutorial_*` frontmatter fields (skill area, difficulty, time estimate, tools) |
 | `home` | pipeline extraction | `home_*` frontmatter fields (room, style, budget tier) |
-| `folder` | data fetch | Backfills `collection` + `roost_assigned_by: human` for X notes that belong to a bookmark folder — uses GraphQL cursor replay (not DOM scroll); see [Folder Enrichment](#folder-enrichment--backfill-x-bookmark-folder-membership) |
+
+(X bookmark-folder backfill is **not** in this registry — it's a standalone command with no completeness stamp; see [Folder Enrichment](#folder-enrichment--backfill-x-bookmark-folder-membership).)
 
 Schema versioning uses `enrichment_v_<id>: <schemaVersion>` written to the note's frontmatter when enrichment completes. A missing version field is not treated as stale (legacy items don't auto-flag).
 
