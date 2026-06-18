@@ -8,11 +8,14 @@ import { join } from "node:path";
 
 /** Pure: strip the single `enrichment_v_folder:` line from the leading `---` block. */
 export function stripFolderStampFromFrontmatter(content) {
-  if (!content.startsWith("---\n")) return { content, changed: false };
+  // Leading `---` fence, tolerating CRLF (`---\r\n`) as well as LF.
+  if (!/^---\r?\n/.test(content)) return { content, changed: false };
   const end = content.indexOf("\n---", 4);
   if (end === -1) return { content, changed: false };
   const head = content.slice(0, end);
   const rest = content.slice(end);
+  // Split on LF; a CRLF file leaves a trailing \r on each line, which the
+  // anchored regex ignores and the \n-join restores byte-for-byte.
   const kept = head.split("\n").filter((line) => !/^enrichment_v_folder\s*:/.test(line));
   const newHead = kept.join("\n");
   if (newHead === head) return { content, changed: false };

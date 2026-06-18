@@ -21,4 +21,11 @@ describe("stripFolderStampFromFrontmatter", () => {
     const tricky = `---\nroost_id: twitter:3\n---\n\nenrichment_v_folder: 1 in prose\n`;
     expect(stripFolderStampFromFrontmatter(tricky).changed).toBe(false);
   });
+
+  it("handles CRLF frontmatter (strips the line, preserves CRLF on the rest)", () => {
+    const crlf = `---\r\nroost_id: twitter:4\r\nenrichment_v_folder: 1\r\ncollection: AI\r\n---\r\n\r\nbody\r\n`;
+    const { content, changed } = stripFolderStampFromFrontmatter(crlf);
+    expect(changed).toBe(true);
+    expect(content).toBe(`---\r\nroost_id: twitter:4\r\ncollection: AI\r\n---\r\n\r\nbody\r\n`);
+  });
 });
