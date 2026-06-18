@@ -152,7 +152,6 @@ describe("deriveHubState — backlogs", () => {
         articleBody: new Set(),
         playback: new Set(),
         tweetBody: new Set(),
-        folder: new Set(),
       },
     });
     if (s.platforms.tiktok.kind === "connected-idle") {

@@ -1,6 +1,5 @@
 import { App, Notice } from "obsidian";
 import type { IRoostPlugin } from "@/types/plugin";
-import type { EnrichmentDef } from "@/lib/enrichments";
 import { getSyncFiles } from "@/lib/vault-utils";
 import { folderListPageScript, folderTimelinePageScript } from "@/sync/folder-scan-script";
 // @ts-ignore — raw probe loaded as string by esbuild plugin
@@ -43,8 +42,6 @@ export function parseFolderTweetMap(tweetCacheJson: string): Map<string, string>
   }
   return map;
 }
-
-export const FOLDER_SCHEMA_VERSION = 1;
 
 let folderBackfillRunning = false;
 
@@ -207,13 +204,3 @@ export async function applyFolderMapToNotes(
   return { tagged, clearedAuto };
 }
 
-export const FOLDER_ENRICHMENT: EnrichmentDef = {
-  id: "folder",
-  displayName: "Bookmark folder",
-  schemaVersion: FOLDER_SCHEMA_VERSION,
-  commandId: "backfill-x-folders",
-  commandName: "Backfill X bookmark folders",
-  fieldsWritten: ["collection"],
-  runBackfill: (plugin) => runFolderBackfill(plugin),
-  panelDetail: "Already-synced X bookmarks with no folder tag yet. Backfill navigates your bookmark folders and records each tweet's folder in `collection` (human-assigned), superseding stale auto categories.",
-};
