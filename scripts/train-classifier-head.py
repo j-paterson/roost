@@ -134,11 +134,13 @@ def build_matrix_from_fixture(build_dir, split, cache):
     return X, ys, skipped
 
 
-def train_logreg(X, y):
+def train_logreg(X, y, balanced=False):
     """Fit multinomial LogReg C=1 (M0 winner) on pre-normalised X.
-    Returns (clf, classes list[str])."""
+    balanced=True upweights rare classes (class_weight='balanced') to curb
+    majority-class over-prediction. Returns (clf, classes list[str])."""
     clf = LogisticRegression(
-        max_iter=2000, C=1.0, solver="lbfgs", n_jobs=-1
+        max_iter=2000, C=1.0, solver="lbfgs", n_jobs=-1,
+        class_weight="balanced" if balanced else None,
     )
     clf.fit(X, y)
     # clf.classes_ is sorted by sklearn; cast to str for safety
@@ -186,6 +188,9 @@ def main():
             "all  = train on ALL honest collection-labelled items (production mode)."
         ),
     )
+    ap.add_argument("--balanced", action="store_true",
+                    help="class_weight='balanced' — upweight rare classes to curb majority-class over-prediction")
+    ap.add_argument("--out", default=None, help="output weights path (default .roost/cache/classifier-head.json)")
     args = ap.parse_args()
 
     vault_env = os.environ.get("ROOST_VAULT")
@@ -196,7 +201,7 @@ def main():
     ROOST = VAULT / ".roost"
     BUILD_DIR = ROOST / "build"
     BIN_CACHE = ROOST / "cache" / "embedding-vectors.bin"
-    OUT_PATH = ROOST / "cache" / "classifier-head.json"
+    OUT_PATH = Path(args.out) if args.out else ROOST / "cache" / "classifier-head.json"
 
     print("train-classifier-head.py")
     print("=" * 60)
@@ -248,7 +253,7 @@ def main():
     # ── Train ─────────────────────────────────────────────────────────────────
     print(f"\nTraining LogReg C=1 (multinomial, lbfgs, max_iter=2000)...")
     t1 = time.time()
-    clf, classes = train_logreg(X, y)
+    clf, classes = train_logreg(X, y, balanced=args.balanced)
     print(f"  Done in {time.time()-t1:.1f}s  —  {len(classes)} output classes")
 
     # Sanity: quick in-sample accuracy (training set, not a real eval metric).

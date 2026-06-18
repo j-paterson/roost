@@ -54,6 +54,8 @@ const LETTERS = "ABCDEFGHIJ";
 // catHash so swapping prompts invalidates stale score-cache entries.
 const PROMPT_VERSION = "v5-ensemble-t1k5-t2k7-not-desc";
 const PROMPT_VERSION_NONE = "v1-none";
+/** Full-canon per-category T2+NONE: all categories scored independently by name. */
+const PROMPT_VERSION_FULLCANON = "v1-fullcanon-t2-none";
 
 /** Default α for CLIP-text fusion in Smart Assign top-K candidate selection.
  *  Matches the +4pp top-1 lift measured in the 119-item LOO eval (clip-eval-results.json). */
@@ -192,6 +194,25 @@ interface ScoreOpts {
    * headClassesMatch() returns false (stale classes after collection edits).
    */
   classifierHead?: ClassifierHead | null;
+  /**
+   * Full-canon LLM-NONE: present ALL categories to the LLM (no embedding
+   * shortlist) using T2-style per-category independent scoring. Each of the N
+   * categories is scored 0-10 plus an explicit NONE key. The prediction is the
+   * category with the highest score, or "__none__" when NONE wins or all
+   * category scores are ≤ 0.  Score in predictions is max-category-score / 10.
+   *
+   * The LLM receives category names (not letters) as JSON keys, avoiding
+   * position-bias letter collapse on large candidate sets. The score-cache key
+   * uses PROMPT_VERSION_FULLCANON so entries never collide with other paths.
+   *
+   * This is the M5 full-canon path (Slice 3 in the method matrix). Requires
+   * topK: categories.length (passed explicitly by the caller) — this flag does
+   * NOT implicitly override topK.
+   *
+   * Incompatible with noneRefusal (which is the T1-NONE short-list path).
+   * Setting both is a no-op for noneRefusal; fullCanon takes precedence.
+   */
+  fullCanon?: boolean;
 }
 
 interface ScoreResult {
@@ -372,6 +393,107 @@ Respond with JSON only, like: ${example}`;
 }
 
 /**
+ * Build the full-canon T2+NONE prompt for all N categories.
+ * Uses category NAMES (not letters) as JSON keys to avoid position-bias
+ * letter collapse on large candidate sets (19+ categories). Includes an
+ * explicit "NONE" key scored the same way.
+ *
+ * The LLM is asked to score each category 0-10 independently, then return
+ * a JSON object with one key per category name plus "NONE".  The caller
+ * picks argmax to get the prediction.
+ */
+function buildT2FullCanonPrompt(
+  summary: string,
+  categories: { name: string; description: string }[],
+): string {
+  const catLines = categories.map(c => {
+    const short = (c.description || c.name).slice(0, 200);
+    return `- "${c.name}": ${short}`;
+  }).join("\n");
+  // Example JSON uses the first 3 category names + NONE so the LLM sees the format.
+  const exNames = categories.slice(0, 3).map(c => c.name);
+  const exBody = [...exNames.map((n, i) => `"${n}": ${5 + i}`), `"NONE": ${3}`].join(", ");
+  const example = `{${exBody}, ...}`;
+  return `Score how well this short video bookmark fits each collection on a scale of 0-10 (0=no fit, 10=perfect fit). Also score NONE if none fit.
+
+Video summary: ${summary}
+
+Collections:
+${catLines}
+
+Respond with JSON only, with one key per collection name and a "NONE" key. Like: ${example}`;
+}
+
+/**
+ * Parse the full-canon T2+NONE response: a JSON object mapping category names
+ * and "NONE" to numeric scores 0-10. Returns { category: string; score: number }
+ * where category is the name with the highest score (or "__none__" when NONE
+ * wins / all category scores are ≤ 0). score is the raw max score in [0,10].
+ *
+ * Falls back to regex scan for `"Name": N` patterns when strict JSON fails.
+ * Returns null only when nothing at all is parseable.
+ */
+function parseT2FullCanonPick(
+  raw: string,
+  categoryNames: string[],
+): { category: string; score: number } | null {
+  if (!raw) return null;
+
+  const nameSet = new Set(categoryNames);
+
+  const pickBest = (scores: Record<string, number>): { category: string; score: number } | null => {
+    let bestName: string | null = null;
+    let bestScore = -Infinity;
+    let noneScore = -Infinity;
+
+    for (const [k, v] of Object.entries(scores)) {
+      const n = Number(v);
+      if (Number.isNaN(n)) continue;
+      if (k === "NONE") { noneScore = Math.max(noneScore, n); continue; }
+      if (nameSet.has(k) && n > bestScore) { bestScore = n; bestName = k; }
+    }
+
+    // NONE wins if its score strictly beats the best category score.
+    if (noneScore > bestScore || bestName === null) {
+      return { category: "__none__", score: Math.max(0, noneScore) };
+    }
+    return { category: bestName, score: bestScore };
+  };
+
+  // Step 1: strict JSON.
+  const jsonMatch = raw.match(/\{[\s\S]*\}/);
+  if (jsonMatch) {
+    try {
+      const obj = JSON.parse(jsonMatch[0]);
+      if (obj && typeof obj === "object" && !Array.isArray(obj)) {
+        const scores: Record<string, number> = {};
+        for (const [k, v] of Object.entries(obj)) {
+          const kk = String(k).trim();
+          // Accept exact name match or NONE.
+          if (nameSet.has(kk) || kk === "NONE") {
+            const n = Number(v);
+            if (!Number.isNaN(n)) scores[kk] = n;
+          }
+        }
+        if (Object.keys(scores).length > 0) return pickBest(scores);
+      }
+    } catch { /* fall through */ }
+  }
+
+  // Step 2: regex fallback — match `"CategoryName": N` patterns.
+  const scores: Record<string, number> = {};
+  for (const name of [...categoryNames, "NONE"]) {
+    // Escape special regex chars in the name.
+    const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const re = new RegExp(`["']?${escaped}["']?\\s*:\\s*(\\d+(?:\\.\\d+)?)`);
+    const m = raw.match(re);
+    if (m) scores[name] = parseFloat(m[1]);
+  }
+  if (Object.keys(scores).length > 0) return pickBest(scores);
+  return null;
+}
+
+/**
  * Score items against category centroids using the Phase 3 ensemble reranker.
  *
  * Pipeline per item:
@@ -405,6 +527,7 @@ export async function scoreAgainstCategories(opts: ScoreOpts): Promise<ScoreResu
   const disableT2 = opts.disableT2Rerank === true;
   const noneRefusal = opts.noneRefusal === true;
   const embeddingOnly = opts.embeddingOnly === true;
+  const fullCanon = opts.fullCanon === true;
   const alpha = opts.clipFusionAlpha ?? DEFAULT_CLIP_FUSION_ALPHA;
 
   // Resolve classifier head: use it only when provided AND classes match live categories.
@@ -499,7 +622,8 @@ export async function scoreAgainstCategories(opts: ScoreOpts): Promise<ScoreResu
 
   if (opts.vault && !scoreCachePath) loadScoreCache(opts.vault);
 
-  const catHash = hashCategoryDefs(categories, EVAL_MODEL, noneRefusal ? PROMPT_VERSION_NONE : PROMPT_VERSION, alpha);
+  const promptVer = fullCanon ? PROMPT_VERSION_FULLCANON : (noneRefusal ? PROMPT_VERSION_NONE : PROMPT_VERSION);
+  const catHash = hashCategoryDefs(categories, EVAL_MODEL, promptVer, alpha);
 
   const assignments = new Map<string, string>();
   const matchDetails = new Map<string, MatchDetail>();
@@ -513,6 +637,8 @@ export async function scoreAgainstCategories(opts: ScoreOpts): Promise<ScoreResu
 
   const T1_NUM_PREDICT = 10;
   const T2_NUM_PREDICT = Math.max(80, 30 + kLarge * 20);
+  // Full-canon: budget for N category names + scores in JSON (each ~20 tokens, plus overhead).
+  const T2_FULLCANON_NUM_PREDICT = Math.max(256, categories.length * 25 + 64);
 
   const startMs = Date.now();
   let llmWorkMs = 0;
@@ -552,18 +678,80 @@ export async function scoreAgainstCategories(opts: ScoreOpts): Promise<ScoreResu
       return;
     }
 
-    const top7 = categories
+    // Pre-compute per-category cosine sims (used by all LLM paths for topCentroids + sim reporting).
+    const allRanked = categories
       .map(cat => ({
         ...cat,
         sim: fusedSimilarity(entry.vec!, cat.centroid, entry.clipVec, cat.clipCentroid, alpha),
       }))
-      .sort((a, b) => b.sim - a.sim)
-      .slice(0, kLarge);
+      .sort((a, b) => b.sim - a.sim);
+    const top7 = allRanked.slice(0, kLarge);
     const top5 = top7.slice(0, kSmall);
     const summary = stripPreamble((entry.summary || entry.vision?.slice(0, 100) || id)).slice(0, 500);
 
     const llmStart = Date.now();
     try {
+      if (fullCanon) {
+        // Full-canon T2+NONE path: present ALL categories by name, score independently.
+        // No embedding shortlist — position-bias letter collapse is avoided by using
+        // category names as JSON keys. Single LLM call per item.
+        const fcRes = await requestUrl({
+          url: `${ollama}/api/generate`,
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            model: EVAL_MODEL,
+            prompt: buildT2FullCanonPrompt(summary, categories),
+            stream: false, think: false,
+            options: { temperature: 0, num_predict: T2_FULLCANON_NUM_PREDICT, num_ctx: OLLAMA_NUM_CTX },
+          }),
+        });
+        const fcRaw = (fcRes.json?.response || "").trim();
+        const fcPicked = parseT2FullCanonPick(fcRaw, categoryNames);
+        if (fcPicked === null) {
+          parseFailures++;
+          unmatched.push(id);
+          llmWorkMs += Date.now() - llmStart;
+          llmItems++;
+          return;
+        }
+        if (fcPicked.category === "__none__") {
+          unmatched.push(id);
+          scoreCache[cKey] = { cat: "__none__", score: 0, sim: 0, reason: "fullcanon-NONE" };
+          scoreCacheDirty = true;
+          llmWorkMs += Date.now() - llmStart;
+          llmItems++;
+          return;
+        }
+        // Find the cosine sim of the picked category (for match detail + threshold check).
+        const pickedRanked = allRanked.find(c => c.name === fcPicked.category);
+        const pickedSim = pickedRanked?.sim ?? 0;
+        // score = max category score normalized to [0,1]; score field in cache/detail is 0-10.
+        const rawScore = fcPicked.score; // 0-10 from LLM
+        const scoreInt = Math.max(0, Math.min(10, Math.round(rawScore)));
+        const accepted = pickedSim >= simThreshold;
+        if (accepted) {
+          assignments.set(id, fcPicked.category);
+          matchDetails.set(id, {
+            collection: fcPicked.category,
+            score: scoreInt,
+            sim: rawScore / 10, // normalized [0,1] for predictions output
+            reason: `fullcanon-T2 llm-score=${rawScore.toFixed(1)} sim=${pickedSim.toFixed(3)}`,
+            t1Pick: null, t2Pick: fcPicked.category, decision: "b_only",
+            topCentroids: allRanked.slice(0, 5).map(c => ({ name: c.name, sim: c.sim })),
+            ollamaCategory: entry.category || undefined,
+            summarySnippet: summary.slice(0, 120),
+            cached: false,
+          });
+        } else {
+          unmatched.push(id);
+        }
+        scoreCache[cKey] = { cat: fcPicked.category, score: scoreInt, sim: rawScore / 10, reason: "fullcanon-T2" };
+        scoreCacheDirty = true;
+        llmWorkMs += Date.now() - llmStart;
+        llmItems++;
+        return;
+      }
       if (noneRefusal) {
         // NONE mode: single LLM call with the T1-NONE prompt. On "N" → unmatched.
         const noneRes = await requestUrl({
