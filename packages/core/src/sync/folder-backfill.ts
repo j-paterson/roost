@@ -1,34 +1,22 @@
 import { App, Notice } from "obsidian";
 import type { IRoostPlugin } from "@/types/plugin";
-import type { EnrichmentDef } from "@/lib/enrichments";
 import { getSyncFiles } from "@/lib/vault-utils";
 import { folderListPageScript, folderTimelinePageScript } from "@/sync/folder-scan-script";
 // @ts-ignore — raw probe loaded as string by esbuild plugin
 import twitterProbeSource from "@/probes/twitter-probe.probe";
 
-// Inlined to match the sibling backfills (they import only the EnrichmentDef *type*
-// from enrichments.ts and inline their stamp string — importing the value here would
-// create a runtime cycle: enrichments.ts → this file → enrichments.ts).
-// Mirrors enrichmentVersionField("folder").
-const FOLDER_STAMP = "enrichment_v_folder";
-
 /** Frontmatter patch (passed to processFrontMatter) for one note, given whether the
- * live folder scan found it in a folder. `null` values delete the key. Pure. */
+ * live folder scan found it in a folder. `null` values delete the key; an empty object
+ * means "no change". Pure. */
 export function folderFrontmatterPatch(
   inFolder: boolean,
   folderName: string | null,
   fm: Record<string, unknown>,
-  schemaVersion: number,
 ): Record<string, unknown> {
-  const stamp = FOLDER_STAMP;
-  if (!inFolder) {
-    // Mark checked so it doesn't re-scan forever; change nothing else.
-    return { [stamp]: schemaVersion };
-  }
+  if (!inFolder) return {}; // nothing to write
   const patch: Record<string, unknown> = {
     collection: folderName,
     roost_assigned_by: "human", // a human-curated grouping, not a roost guess
-    [stamp]: schemaVersion,
   };
   // The human folder supersedes a stale AUTO category; never clobber a HUMAN one.
   if (fm.roost_category != null && fm.roost_assigned_by === "auto") {
@@ -54,8 +42,6 @@ export function parseFolderTweetMap(tweetCacheJson: string): Map<string, string>
   }
   return map;
 }
-
-export const FOLDER_SCHEMA_VERSION = 1;
 
 let folderBackfillRunning = false;
 
@@ -170,7 +156,7 @@ export async function runFolderBackfill(plugin: IRoostPlugin): Promise<void> {
 
       // 5. Apply to existing notes.
       const r = await applyFolderMapToNotes(app, syncFolder, folderByTweet, log);
-      new Notice(`Folder backfill: ${r.tagged} tagged, ${r.clearedAuto} auto-categories cleared, ${r.stampedOnly} marked checked.`);
+      new Notice(`Folder backfill: ${r.tagged} tagged, ${r.clearedAuto} auto-categories cleared.`);
     } finally {
       webviewEl.removeEventListener("dom-ready", reinject);
     }
@@ -182,49 +168,39 @@ export async function runFolderBackfill(plugin: IRoostPlugin): Promise<void> {
   }
 }
 
-/** Apply the folder map to every existing Twitter note, stamping each (folder or not). */
+/** Apply the folder map to existing Twitter notes. Idempotent by data: a note whose
+ *  `collection` already equals the intended value is skipped (covers already-tagged and
+ *  not-in-a-folder), and an in-name-only change with nothing to write produces no I/O. */
 export async function applyFolderMapToNotes(
   app: App,
   syncFolder: string,
   folderByTweet: Map<string, string>,
   log: (m: string) => void = () => {},
-): Promise<{ tagged: number; clearedAuto: number; stampedOnly: number }> {
-  let tagged = 0, clearedAuto = 0, stampedOnly = 0, writes = 0;
-  const files = getSyncFiles(app.vault, syncFolder); // already TFile[]
+): Promise<{ tagged: number; clearedAuto: number }> {
+  let tagged = 0, clearedAuto = 0, writes = 0;
+  const files = getSyncFiles(app.vault, syncFolder);
   log(`writing folder tags to notes (cloud-synced vault writes can be slow)...`);
   for (const file of files) {
     const fm = app.metadataCache.getFileCache(file)?.frontmatter;
     if (!fm || fm.platform !== "twitter") continue;
     const id = fm.roost_id as string | undefined;
     if (!id) continue;
-    // roost_id is platform-prefixed ("twitter:<rest_id>"); folderByTweet keys are
-    // the bare rest_id from the GraphQL response — strip the prefix before lookup.
+    // roost_id is platform-prefixed ("twitter:<rest_id>"); folderByTweet keys are the
+    // bare rest_id from the GraphQL response — strip the prefix before lookup.
     const restId = id.includes(":") ? id.slice(id.indexOf(":") + 1) : id;
     const intended = folderByTweet.get(restId) ?? null;
     const current = (fm.collection as string | undefined) ?? null;
-    // Skip only if already stamped at this version AND the collection already matches
-    // what we'd write — so notes mis-stamped by an earlier run (stamped but never
-    // tagged) get corrected, while correctly-tagged notes are left untouched.
-    if (fm[FOLDER_STAMP] === FOLDER_SCHEMA_VERSION && intended === current) continue;
+    if (intended === current) continue; // already correct, or not in a folder
     const inFolder = folderByTweet.has(restId);
-    const patch = folderFrontmatterPatch(inFolder, intended, fm, FOLDER_SCHEMA_VERSION);
+    const patch = folderFrontmatterPatch(inFolder, intended, fm);
+    if (Object.keys(patch).length === 0) continue; // nothing to write
     await app.fileManager.processFrontMatter(file, (front) => {
       for (const [k, v] of Object.entries(patch)) { if (v === null) delete front[k]; else front[k] = v; }
     });
-    if (inFolder) { tagged++; if ("roost_category" in patch) clearedAuto++; } else { stampedOnly++; }
+    if (inFolder) { tagged++; if ("roost_category" in patch) clearedAuto++; }
     if (++writes % 200 === 0) log(`  ...wrote ${writes} notes so far (tagged ${tagged})`);
   }
-  log(`applied: ${tagged} tagged, ${clearedAuto} cleared-auto, ${stampedOnly} stamped-only`);
-  return { tagged, clearedAuto, stampedOnly };
+  log(`applied: ${tagged} tagged, ${clearedAuto} cleared-auto`);
+  return { tagged, clearedAuto };
 }
 
-export const FOLDER_ENRICHMENT: EnrichmentDef = {
-  id: "folder",
-  displayName: "Bookmark folder",
-  schemaVersion: FOLDER_SCHEMA_VERSION,
-  commandId: "backfill-x-folders",
-  commandName: "Backfill X bookmark folders",
-  fieldsWritten: ["collection"],
-  runBackfill: (plugin) => runFolderBackfill(plugin),
-  panelDetail: "Already-synced X bookmarks with no folder tag yet. Backfill navigates your bookmark folders and records each tweet's folder in `collection` (human-assigned), superseding stale auto categories.",
-};

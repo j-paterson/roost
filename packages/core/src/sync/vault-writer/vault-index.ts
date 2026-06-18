@@ -28,9 +28,6 @@ export interface IncompleteByCategory {
   playback: Set<string>;
   /** Twitter only. Tweet note whose body has not been rendered to markdown yet. */
   tweetBody: Set<string>;
-  /** Twitter only. Note that has never been checked for bookmark-folder membership
-   *  (no enrichment_v_folder stamp yet). */
-  folder: Set<string>;
 }
 
 /**
@@ -148,7 +145,6 @@ export class VaultIndex {
       articleBody: new Set<string>(),
       playback: new Set<string>(),
       tweetBody: new Set<string>(),
-      folder: new Set<string>(),
     };
     this.notePathMap.clear();
     const files = getSyncFiles(this.vault, this.syncFolder);
@@ -292,16 +288,6 @@ export class VaultIndex {
           if (needsTweetBodyRender(fm)) {
             byCategory.tweetBody.add(id);
           }
-          // Folder-membership first-rollout detection: any Twitter note with no
-          // enrichment_v_folder stamp has never been folder-checked. Stamp-absent
-          // is the completeness signal (the backfill stamps even not-in-a-folder
-          // tweets), so this surfaces the whole legacy corpus on first rollout.
-          if (
-            fm.platform === "twitter"
-            && fm[enrichmentVersionField("folder")] === undefined
-          ) {
-            byCategory.folder.add(id);
-          }
         }
       } catch { /* skip */ }
     };
@@ -324,7 +310,6 @@ export class VaultIndex {
     if (byCategory.mediaFiles.size) parts.push(`${byCategory.mediaFiles.size} media`);
     if (byCategory.thread.size) parts.push(`${byCategory.thread.size} thread`);
     if (byCategory.articleBody.size) parts.push(`${byCategory.articleBody.size} article-body`);
-    if (byCategory.folder.size) parts.push(`${byCategory.folder.size} folder`);
     if (missingVideo) parts.push(`${missingVideo} need video webview`);
     const breakdown = parts.length ? ` — ${parts.join(" · ")}` : "";
     this.log(`Scan done in ${elapsed}s: ${all.size} incomplete${breakdown}`);

@@ -16,6 +16,7 @@ import { getIntegration } from "@/integrations/registry";
 import { DEV_COMMANDS_ENABLED } from "@/config";
 import { isPipelineEnrichmentId } from "@/lib/enrichments";
 import { guardPipelineActive } from "@/lib/pipeline-gate-plugin";
+import { runFolderBackfill } from "@/sync/folder-backfill";
 import { loadEmbeddingCache, saveEmbeddingCache } from "@/pipeline/shared";
 // @ts-ignore — raw probe loaded as string by esbuild plugin
 import twitterProbeSource from "@/probes/twitter-probe.probe";
@@ -38,6 +39,13 @@ export function registerRoostCommands(plugin: RoostCommandHost): void {
   plugin.addCommand({ id: "sync-tiktok", name: "Sync TikTok", callback: () => plugin.activateView() });
   plugin.addCommand({ id: "sync-twitter", name: "Sync X/Twitter", callback: () => plugin.activateView() });
   plugin.addCommand({ id: "smart-assign", name: "Smart Assign", callback: () => plugin.activateView() });
+  plugin.addCommand({
+    id: "backfill-x-folders",
+    name: "Backfill X bookmark folders",
+    callback: async () => {
+      await plugin.runJob("Backfill X bookmark folders", () => runFolderBackfill(plugin));
+    },
+  });
   plugin.addCommand({
     id: "fetch-covers",
     name: "Fetch covers for current Base",
