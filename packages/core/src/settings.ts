@@ -126,7 +126,7 @@ export const DEFAULT_SETTINGS: RoostSettings = {
   embeddingBackend: "auto",
   llmBackend: "local",
   smartAssignEmbeddingOnly: true,
-  smartAssignClassifierHead: false,
+  smartAssignClassifierHead: true,
   anthropicApiKey: "",
   anthropicModel: "claude-haiku-4-5-20251001",
   tmdbApiKey: "",
