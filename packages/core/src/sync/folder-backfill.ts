@@ -1,4 +1,4 @@
-import { App, Notice, TFile } from "obsidian";
+import { App, Notice } from "obsidian";
 import type { IRoostPlugin } from "@/types/plugin";
 import type { EnrichmentDef } from "@/lib/enrichments";
 import { getSyncFiles } from "@/lib/vault-utils";
@@ -174,22 +174,27 @@ export async function runFolderBackfill(plugin: IRoostPlugin): Promise<void> {
 }
 
 /** Apply the folder map to every existing Twitter note, stamping each (folder or not). */
-async function applyFolderMapToNotes(
+export async function applyFolderMapToNotes(
   app: App,
   syncFolder: string,
   folderByTweet: Map<string, string>,
-  log: (m: string) => void,
+  log: (m: string) => void = () => {},
 ): Promise<{ tagged: number; clearedAuto: number; stampedOnly: number }> {
   let tagged = 0, clearedAuto = 0, stampedOnly = 0;
-  const files = getSyncFiles(app.vault, syncFolder).filter((f): f is TFile => f instanceof TFile);
+  const files = getSyncFiles(app.vault, syncFolder); // already TFile[]
   for (const file of files) {
     const fm = app.metadataCache.getFileCache(file)?.frontmatter;
     if (!fm || fm.platform !== "twitter") continue;
     const id = fm.roost_id as string | undefined;
     if (!id) continue;
-    if (fm[FOLDER_STAMP] === FOLDER_SCHEMA_VERSION) continue; // idempotent
+    const intended = folderByTweet.get(id) ?? null;
+    const current = (fm.collection as string | undefined) ?? null;
+    // Skip only if already stamped at this version AND the collection already matches
+    // what we'd write — so notes mis-stamped by an earlier run (stamped but never
+    // tagged) get corrected, while correctly-tagged notes are left untouched.
+    if (fm[FOLDER_STAMP] === FOLDER_SCHEMA_VERSION && intended === current) continue;
     const inFolder = folderByTweet.has(id);
-    const patch = folderFrontmatterPatch(inFolder, folderByTweet.get(id) ?? null, fm, FOLDER_SCHEMA_VERSION);
+    const patch = folderFrontmatterPatch(inFolder, intended, fm, FOLDER_SCHEMA_VERSION);
     await app.fileManager.processFrontMatter(file, (front) => {
       for (const [k, v] of Object.entries(patch)) { if (v === null) delete front[k]; else front[k] = v; }
     });

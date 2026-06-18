@@ -48,3 +48,40 @@ describe("parseFolderTweetMap", () => {
     expect(parseFolderTweetMap("[]").size).toBe(0);
   });
 });
+
+import { applyFolderMapToNotes } from "../folder-backfill";
+import type { App } from "obsidian";
+
+/** fs-free App stub: processFrontMatter mutates the same fm object getFileCache returns,
+ *  so we assert the post-run state directly on the `files` array. */
+function stubApp(files: { path: string; fm: Record<string, unknown> }[]): App {
+  const byPath = new Map(files.map((f) => [f.path, f.fm]));
+  return {
+    vault: { getMarkdownFiles: () => files.map((f) => ({ path: f.path })) },
+    metadataCache: { getFileCache: (file: { path: string }) => ({ frontmatter: byPath.get(file.path) }) },
+    fileManager: {
+      processFrontMatter: async (file: { path: string }, fn: (fm: Record<string, unknown>) => void) => { fn(byPath.get(file.path)!); },
+    },
+  } as unknown as App;
+}
+
+describe("applyFolderMapToNotes", () => {
+  it("recovers dirty state, preserves correct/human notes, stamps the rest", async () => {
+    const files = [
+      { path: "Bookmarks/a.md", fm: { platform: "twitter", roost_id: "a", enrichment_v_folder: 1 } },               // stamped by a prior run but never tagged + in folder
+      { path: "Bookmarks/b.md", fm: { platform: "twitter", roost_id: "b", collection: "Recipes", enrichment_v_folder: 1 } }, // already correct
+      { path: "Bookmarks/c.md", fm: { platform: "twitter", roost_id: "c" } },                                        // not in folder, unstamped
+      { path: "Bookmarks/d.md", fm: { platform: "twitter", roost_id: "d", roost_category: "Old", roost_assigned_by: "auto", enrichment_v_folder: 1 } }, // in folder, auto cat
+      { path: "Bookmarks/e.md", fm: { platform: "tiktok", roost_id: "e" } },                                         // non-twitter
+    ];
+    const folderByTweet = new Map([["a", "Recipes"], ["b", "Recipes"], ["d", "AI"]]);
+    const res = await applyFolderMapToNotes(stubApp(files), "Bookmarks", folderByTweet);
+
+    expect(res).toEqual({ tagged: 2, clearedAuto: 1, stampedOnly: 1 });
+    expect(files[0].fm).toEqual({ platform: "twitter", roost_id: "a", collection: "Recipes", roost_assigned_by: "human", enrichment_v_folder: 1 });
+    expect(files[1].fm).toEqual({ platform: "twitter", roost_id: "b", collection: "Recipes", enrichment_v_folder: 1 }); // untouched
+    expect(files[2].fm).toEqual({ platform: "twitter", roost_id: "c", enrichment_v_folder: 1 });                       // stamp only
+    expect(files[3].fm).toEqual({ platform: "twitter", roost_id: "d", roost_assigned_by: "human", collection: "AI", enrichment_v_folder: 1 }); // auto cat cleared
+    expect(files[4].fm).toEqual({ platform: "tiktok", roost_id: "e" });                                               // skipped
+  });
+});
