@@ -2,6 +2,7 @@ import { App, Notice, TFile } from "obsidian";
 import type { IRoostPlugin } from "@/types/plugin";
 import type { EnrichmentDef } from "@/lib/enrichments";
 import { getSyncFiles } from "@/lib/vault-utils";
+import { folderListPageScript, folderTimelinePageScript } from "@/sync/folder-scan-script";
 // @ts-ignore — raw probe loaded as string by esbuild plugin
 import twitterProbeSource from "@/probes/twitter-probe.probe";
 
@@ -81,39 +82,84 @@ export async function runFolderBackfill(plugin: IRoostPlugin): Promise<void> {
     const reinject = (): void => {
       wc.executeJavaScript(`try{delete window.__TWITTER_BOOKMARK_SPIKE__;}catch(e){} try{${twitterProbeSource}}catch(e){} void 0;`).catch(() => {});
     };
-    // The dom-ready listener re-injects the probe on EVERY navigation (each full
-    // page load clears the JS context). This is the only reinjection mechanism —
-    // a manual reinject() would `delete` the store and wipe what was just captured.
+    // dom-ready re-injects the probe on every navigation (each full page load
+    // clears the JS context). Combined with a reinject() BEFORE each loadURL, this
+    // mirrors the proven e2e `injectProbeAndNavigate`. We must NOT reinject AFTER a
+    // load: the slice/timeline ops fire during the load and a post-load reinject
+    // would `delete` the store and wipe what was just captured (verified via the
+    // live e2e — folder nav correctly tags tweets without a post-load reinject).
     webviewEl.addEventListener("dom-ready", reinject);
-    const readTweetCache = () =>
-      wc.executeJavaScript(`(function(){try{return JSON.stringify(window.__TWITTER_BOOKMARK_SPIKE__.tweetCache||{});}catch(e){return '{}';}})();`).catch(() => "{}");
+    const STORE = "window.__TWITTER_BOOKMARK_SPIKE__";
+    const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
+    const readObservedOps = (): Promise<number> =>
+      wc.executeJavaScript(`(function(){try{return (${STORE}.observedOperations||[]).length;}catch(e){return 0;}})();`).then((n) => Number(n) || 0).catch(() => 0);
+    /** Run an in-page page-fetcher and parse its JSON ({...} or {error}); null on hard failure. */
+    const execPage = async (script: string): Promise<unknown> => {
+      try { return JSON.parse((await wc.executeJavaScript(script)) as string); } catch { return null; }
+    };
+    /** Mirrors the e2e injectProbeAndNavigate: reinject (seed) → loadURL → settle.
+     *  The probe is (re)injected via dom-ready on the new page; we never reinject after. */
+    const navigate = async (url: string): Promise<boolean> => {
+      reinject();
+      const ok = await new Promise<boolean>((res) => { const t = setTimeout(() => res(false), 15000); const h = () => { clearTimeout(t); res(true); }; webviewEl.addEventListener("did-finish-load", h, { once: true }); webviewEl.loadURL(url); });
+      await sleep(4000); // SPA boot + GraphQL (matches the live spec)
+      return ok;
+    };
     try {
-      // 1. Load bookmarks home; dom-ready injects the probe before the
-      //    BookmarkFoldersSlice op fires, so the folder list is captured.
-      await new Promise<void>((res) => { const h = () => res(); webviewEl.addEventListener("did-finish-load", h, { once: true }); webviewEl.loadURL("https://x.com/i/bookmarks"); });
-      await new Promise(r => setTimeout(r, 3000)); // let BookmarkFoldersSlice fire + be captured
-
-      // 2. Folder list from the probe store (no reinject here — it would wipe it).
-      const rawFolders = await wc.executeJavaScript(`(function(){try{var s=window.__TWITTER_BOOKMARK_SPIKE__;return JSON.stringify(Object.entries(s.bookmarkFolders||{}).map(function(e){return {id:e[0],name:e[1]};}));}catch(e){return '[]';}})();`).catch(() => "[]");
-      const folders: { id: string; name: string }[] = JSON.parse(rawFolders);
-      log(`Found ${folders.length} bookmark folders`);
-
-      // 3. Navigate each folder; read its tweets IMMEDIATELY — the next
-      //    navigation clears the context and the dom-ready reinject resets the
-      //    store, so a single read at the end would only see the last folder.
-      const folderByTweet = new Map<string, string>();
-      for (const folder of folders) {
-        log(`Loading folder: ${folder.name}...`);
-        const loaded = await new Promise<boolean>((res) => { const t = setTimeout(() => res(false), 15000); const h = () => { clearTimeout(t); res(true); }; webviewEl.addEventListener("did-finish-load", h, { once: true }); webviewEl.loadURL(`https://x.com/i/bookmarks/${folder.id}`); });
-        if (!loaded) { log(`[WARN] Folder "${folder.name}" failed to load — skipping`); continue; }
-        await new Promise(r => setTimeout(r, 3000)); // BookmarkFolderTimeline fires; probe tags tweets
-        const thisFolder = parseFolderTweetMap(await readTweetCache());
-        for (const [id, name] of thisFolder) folderByTweet.set(id, name);
-        log(`  "${folder.name}": ${thisFolder.size} tweets`);
+      // 1. Load bookmarks; BookmarkFoldersSlice fires → probe captures the
+      //    folder-LIST replay template. Confirm the probe is alive + logged in.
+      await navigate("https://x.com/i/bookmarks");
+      const ops = await readObservedOps();
+      if (ops === 0) {
+        log("probe observed 0 graphql ops — not logged into X, or the webview is blocked");
+        new Notice("Folder backfill: the X webview saw no traffic — open Roost and confirm you're logged into X.");
+        return;
       }
-      log(`${folderByTweet.size} tweets are in folders`);
+      log(`probe alive (${ops} ops observed); paging the folder list...`);
 
-      // 4. Apply to existing notes.
+      // 2. Page the folder LIST via cursor replay (DOM scroll does NOT paginate it).
+      const folders = new Map<string, string>(); // id -> name
+      let lcursor: string | null = null;
+      for (let page = 0; page < 40; page++) {
+        const res = (await execPage(folderListPageScript(lcursor))) as { folders?: Record<string, string>; nextCursor?: string | null; error?: string } | null;
+        if (!res || res.error) { log(`folder-list page ${page + 1} error: ${res?.error ?? "no result"}`); break; }
+        const before = folders.size;
+        for (const [id, name] of Object.entries(res.folders ?? {})) folders.set(id, name);
+        log(`folder list: +${folders.size - before} (total ${folders.size})`);
+        lcursor = res.nextCursor ?? null;
+        if (!lcursor || folders.size === before) break;
+        await sleep(400);
+      }
+      if (folders.size === 0) {
+        new Notice("Folder backfill: no bookmark folders found.");
+        return;
+      }
+      log(`Found ${folders.size} bookmark folders`);
+
+      // 3. Navigate ONE folder so the probe captures the folder-TIMELINE replay template.
+      const firstId = folders.keys().next().value as string;
+      await navigate(`https://x.com/i/bookmarks/${firstId}`);
+
+      // 4. Page EACH folder's timeline via cursor replay; log per folder as we go.
+      const folderByTweet = new Map<string, string>(); // tweetId -> folder name (first wins)
+      let fi = 0;
+      for (const [fid, fname] of folders) {
+        fi++;
+        let tcursor: string | null = null; let n = 0;
+        for (let page = 0; page < 80; page++) {
+          const res = (await execPage(folderTimelinePageScript(fid, tcursor))) as { ids?: string[]; nextCursor?: string | null; error?: string } | null;
+          if (!res || res.error) { log(`  [${fi}/${folders.size}] "${fname}" page ${page + 1} error: ${res?.error ?? "no result"}`); break; }
+          const ids = res.ids ?? [];
+          for (const tid of ids) { if (!folderByTweet.has(tid)) folderByTweet.set(tid, fname); n += 1; }
+          tcursor = res.nextCursor ?? null;
+          if (ids.length === 0 || !tcursor) break;
+          await sleep(400);
+        }
+        log(`  [${fi}/${folders.size}] "${fname}": ${n} tweets`);
+      }
+      log(`${folderByTweet.size} tweets across ${folders.size} folders`);
+
+      // 5. Apply to existing notes.
       const r = await applyFolderMapToNotes(app, syncFolder, folderByTweet, log);
       new Notice(`Folder backfill: ${r.tagged} tagged, ${r.clearedAuto} auto-categories cleared, ${r.stampedOnly} marked checked.`);
     } finally {

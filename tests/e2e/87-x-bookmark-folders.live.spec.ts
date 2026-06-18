@@ -46,6 +46,7 @@ import { browser } from "@wdio/globals";
 import * as fs from "fs";
 import * as path from "path";
 import { fileURLToPath } from "url";
+import { folderListPageScript, folderTimelinePageScript } from "../../packages/core/src/sync/folder-scan-script";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -446,4 +447,62 @@ describe("X bookmark folders — live (real x.com, cookie injection)", function 
         }
         expect(tagged).toBeGreaterThan(0);
     });
+
+    it("full scan via cursor replay (Node-paginated, per-folder logs)", async function () {
+        // 1. Load bookmarks -> capture folder-LIST replay template.
+        await injectProbeAndNavigate("https://x.com/i/bookmarks", probeSource);
+        await browser.pause(4_000);
+
+        // 2. Page the folder list from Node (one fetch per page; log each page).
+        const folders: Record<string, string> = {};
+        let lcursor: string | null = null;
+        for (let p = 0; p < 40; p++) {
+            const raw = await runInWebview<string>(folderListPageScript(lcursor));
+            const res = JSON.parse(raw || "{}");
+            if (res.error) { console.log(`[diag] folder-list page ${p + 1} error: ${res.error}`); break; }
+            const before = Object.keys(folders).length;
+            Object.assign(folders, res.folders || {});
+            const total = Object.keys(folders).length;
+            console.log(`[diag] folder-list page ${p + 1}: +${total - before} (total ${total})`);
+            lcursor = res.nextCursor || null;
+            if (!lcursor || total === before) break;
+            await browser.pause(400);
+        }
+        const fids = Object.keys(folders);
+        console.log(`[diag] FOLDERS: ${fids.length}`);
+        if (!fids.length) { this.skip(); return; }
+
+        // 3. Navigate ONE folder -> capture folder-TIMELINE replay template.
+        await injectProbeAndNavigate(`https://x.com/i/bookmarks/${fids[0]}`, probeSource);
+        await browser.pause(3_000);
+
+        // 4. Page each folder's timeline from Node; log per folder as we go.
+        const folderByTweet: Record<string, string> = {};
+        const perFolder: Record<string, number> = {};
+        for (let i = 0; i < fids.length; i++) {
+            const fid = fids[i], fname = folders[fid];
+            let tcursor: string | null = null, n = 0;
+            for (let p = 0; p < 80; p++) {
+                const raw = await runInWebview<string>(folderTimelinePageScript(fid, tcursor));
+                const res = JSON.parse(raw || "{}");
+                if (res.error) { console.log(`[diag] "${fname}" page ${p + 1} error: ${res.error}`); break; }
+                const ids: string[] = res.ids || [];
+                for (const tid of ids) { if (!folderByTweet[tid]) folderByTweet[tid] = fname; n++; }
+                tcursor = res.nextCursor || null;
+                if (!ids.length || !tcursor) break;
+                await browser.pause(400);
+            }
+            perFolder[fname] = n;
+            console.log(`[diag] [${i + 1}/${fids.length}] "${fname}": ${n} tweets`);
+        }
+        const tweetCount = Object.keys(folderByTweet).length;
+        console.log(`[diag] TOTAL: ${tweetCount} tweets across ${fids.length} folders`);
+        try {
+            const ex = fs.existsSync(CAPTURE_PATH) ? JSON.parse(fs.readFileSync(CAPTURE_PATH, "utf-8")) : {};
+            ex.fullScanReplay = { folderCount: fids.length, tweetCount, perFolder };
+            fs.writeFileSync(CAPTURE_PATH, JSON.stringify(ex, null, 2));
+        } catch { /* best-effort */ }
+        expect(tweetCount).toBeGreaterThan(100);
+    });
+
 });

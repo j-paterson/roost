@@ -114,6 +114,17 @@
     };
   }
 
+  // Capture the real folder-timeline + folder-list requests so the folder backfill
+  // can replay them with a swapped folder-id/cursor (DOM scroll does not paginate
+  // folder timelines — replay-with-cursor is the only way to page past the first ~20).
+  // Always overwrite with the latest (no TTL): we want a fresh template per run.
+  function recordBookmarkFolderTimeline(url, headers) {
+    store.bookmarkFolderTimelineReplay = { url, headers: headersToObject(headers), recordedAt: Date.now() };
+  }
+  function recordBookmarkFoldersSlice(url, headers) {
+    store.bookmarkFoldersSliceReplay = { url, headers: headersToObject(headers), recordedAt: Date.now() };
+  }
+
   /** Capture URL+headers from ANY successful authenticated GraphQL request as
    *  a fallback header source. Used by the article-fetcher's queryId-extraction
    *  bootstrap when neither articleResultReplay nor tweetDetailReplay are
@@ -445,6 +456,8 @@
         const reqHeaders = init.headers || (req instanceof Request ? req.headers : null);
         if (TWEET_DETAIL_RE.test(url)) recordTweetDetail(url, reqHeaders);
         if (TWEET_RESULT_BY_REST_ID_RE.test(url)) recordArticleReplay(url, reqHeaders);
+        if (BOOKMARK_FOLDER_TIMELINE_RE.test(url)) recordBookmarkFolderTimeline(url, reqHeaders);
+        if (BOOKMARK_FOLDERS_LIST_RE.test(url)) recordBookmarkFoldersSlice(url, reqHeaders);
         if (GRAPHQL_RE.test(url)) recordAnyAuthGraphqlReplay(url, reqHeaders);
       }
     }
@@ -498,6 +511,8 @@
           if (this.status >= 200 && this.status < 400) {
             if (TWEET_DETAIL_RE.test(meta.url)) recordTweetDetail(meta.url, meta.headers);
             if (TWEET_RESULT_BY_REST_ID_RE.test(meta.url)) recordArticleReplay(meta.url, meta.headers);
+            if (BOOKMARK_FOLDER_TIMELINE_RE.test(meta.url)) recordBookmarkFolderTimeline(meta.url, meta.headers);
+            if (BOOKMARK_FOLDERS_LIST_RE.test(meta.url)) recordBookmarkFoldersSlice(meta.url, meta.headers);
             if (GRAPHQL_RE.test(meta.url)) recordAnyAuthGraphqlReplay(meta.url, meta.headers);
           }
           if (this.status >= 200 && this.status < 400 && isBookmarkOp(meta.url, meta.method)) {
