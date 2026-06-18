@@ -126,8 +126,8 @@ done
 
 # ── M0 — Classifier head diagnostic ─────────────────────────────────────────────
 section "M0 — Classifier head diagnostic (LogReg/kNN on honest fixture)"
-log "Running classifier-head-diagnostic.py (19-cat honest fixture, strict-holdout + LOO) …"
-ROOST_VAULT="${ROOST_VAULT}" ${PYTHON} classifier-head-diagnostic.py
+log "Running classifier-head-diagnostic.py on --split ${SPLIT} (LOO is O(N^2); dev keeps it tractable) …"
+ROOST_VAULT="${ROOST_VAULT}" ${PYTHON} classifier-head-diagnostic.py --split "${SPLIT}"
 
 # ── M1 + M2 — Embedding top-1 baseline + threshold rejection ────────────────────
 section "M1 + M2 — Embedding top-1 + maxsim rejection (FINAL REPORT on holdout)"

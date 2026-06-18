@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * M7 input-text ablation — test embedding text configurations with fair centroids.
+ * M7 input-text ablation — test embedding text configurations with production-style centroids.
  *
  * Matches the actual pipeline's data path exactly:
  *   text = fm.title
@@ -8,10 +8,23 @@
  *   tags = fm.tags (filtered same as describe-items.ts)
  *   vision, summary, category = embedding cache
  *
- * For each variant: re-embeds all collection members + fixture items,
- * builds fresh centroids (fixture items excluded), writes a named cache at
- * <vault>/.roost/build/<variant>.json so honest-eval.py --cache <variant>.json
- * can score it.
+ * For each variant:
+ *   1. Gather ALL vault items that have a roost_category (auto OR human) and are NOT fixture ids.
+ *      This is the production pool (~13K items × 6 variants).
+ *   2. Build the variant's embed text for each pool item, embed via the sidecar, centroid by
+ *      roost_category — producing production-style variant centroids (19 cats).
+ *   3. Re-embed the fixture items per variant and score them against those centroids (top-1,
+ *      per-platform tiktok/twitter split).
+ *   4. Write the per-variant fixture-vector cache to .roost/build/<variant>.json so
+ *      honest-eval.py --cache <variant>.json --by-platform can score it.
+ *
+ * ROOT CAUSE of old crash: the honest fixture covers ~100% of human `collection` labels, so
+ * any pool built from collection-labeled members MINUS fixture was EMPTY → centroids empty →
+ * scores[0].name on undefined. FIX: build centroids from the production pool (roost_category,
+ * auto OR human), NOT from collection-minus-fixture.
+ *
+ * Contamination guard: fixture ids (dev ∪ holdout, all 4320) are EXCLUDED from the centroid
+ * pool regardless of whether they have roost_category. GT for scoring is human collection only.
  *
  * Variant set (pre-registered, spec 2026-06-18):
  *   full            — vision + summary + category + title + subtitle  (current formula)
@@ -29,10 +42,13 @@
 import fs from "fs";
 import path from "path";
 
-const VAULT_PATH = process.env.ROOST_VAULT || path.join(process.env.HOME, "ObsidianBookmarks");
+const VAULT_PATH = process.env.ROOST_VAULT
+  || path.join(process.env.HOME, "SynologyDrive", "SynologyDrive", "ObsidianBookmarks");
 const ROOST_DIR = path.join(VAULT_PATH, ".roost");
 const BUILD_DIR = path.join(ROOST_DIR, "build");
-const OLLAMA_URL = "http://localhost:11434";
+// Sidecar (fine-tuned, port 11435) matches production. Falls back to Ollama (11434).
+const SIDECAR_URL = process.env.ROOST_EMBED_URL || "http://localhost:11435";
+const OLLAMA_URL  = "http://localhost:11434";
 const EMBED_MODEL = "nomic-embed-text";
 
 // ── Parse --split arg ──
@@ -47,10 +63,20 @@ if (!["dev", "holdout", "large"].includes(splitArg)) {
   process.exit(1);
 }
 
-// ── Load embedding cache (v2 JSON or inline cache) ──
-// Prefer inline embedding-cache.json if present; the v2 binary is read by honest-eval.py.
-// Here we only need the per-item metadata fields (vision, summary, category) — the vec
-// field from the cache is used only for the baseline display, not re-emitted to output.
+// ── Resolve embed URL (sidecar first, fall back to Ollama) ──
+
+let EMBED_URL = SIDECAR_URL;
+try {
+  const probe = await fetch(`${SIDECAR_URL}/health`);
+  if (!probe.ok) throw new Error();
+  console.log(`Embedding backend: sidecar at ${SIDECAR_URL}`);
+} catch {
+  EMBED_URL = OLLAMA_URL;
+  console.log(`Sidecar not available; falling back to Ollama at ${OLLAMA_URL}`);
+}
+
+// ── Load embedding cache (v2 JSON) for LLM-derived fields only ──
+// Only used for vision/summary/category text fields — NOT the vec, which we recompute.
 
 let cache = {};
 const cacheJsonPath = path.join(ROOST_DIR, "embedding-cache.json");
@@ -87,8 +113,8 @@ function filterTags(tags) {
   });
 }
 
-// ── Parse frontmatter with js-yaml-like approach ──
-// Obsidian's metadataCache parses YAML properly. We need to match that.
+// ── Parse frontmatter ──
+// Extracts roost_id, title, subtitle, tags, collection (GT, human only), roost_category (pool label).
 
 function parseFrontmatter(content) {
   const fmMatch = content.match(/^---\n([\s\S]*?)\n---/);
@@ -100,8 +126,7 @@ function parseFrontmatter(content) {
   if (!idMatch) return null;
   const roost_id = idMatch[1].trim();
 
-  // Extract title — Obsidian parses this as a string
-  // It may or may not be quoted in YAML
+  // Extract title
   const titleMatch = fm.match(/^title:\s*(?:"((?:[^"\\]|\\.)*)"|(.+))/m);
   const title = titleMatch ? (titleMatch[1] ?? titleMatch[2])?.trim() || "" : "";
 
@@ -119,19 +144,27 @@ function parseFrontmatter(content) {
     }
   }
 
-  // Extract collection (human label) — collection: only, not roost_category.
-  // GT contamination guard: we never use roost_category to build centroids here.
+  // GT contamination guard: collection = human label only (NEVER roost_category for GT).
   const collMatch = fm.match(/^collection:\s*(.+)/m);
   const collection = collMatch?.[1]?.trim()?.replace(/^"|"$/g, "") || null;
 
-  return { roost_id, title, subtitle, tags, collection };
+  // roost_category = production auto or human category — used ONLY for centroid pool grouping.
+  const rcMatch = fm.match(/^roost_category:\s*(.+)/m);
+  const roost_category = rcMatch?.[1]?.trim()?.replace(/^"|"$/g, "") || null;
+
+  return { roost_id, title, subtitle, tags, collection, roost_category };
 }
 
 // ── Scan vault ──
+// Collects:
+//   itemMeta:   id → { title, subtitle, tags }   (all items)
+//   poolByCategory: category → [id]              (production pool: has roost_category, not in fixture)
+// Fixture ids are excluded from poolByCategory AFTER the fixture is loaded.
 
 console.log("Scanning vault...");
-const collectionItems = new Map(); // collection name → [id]
-const itemMeta = new Map();        // id → { title, subtitle, tags }
+const itemMeta = new Map();    // id → { title, subtitle, tags }
+// Temporarily store roost_category per id; we'll filter by fixture after loading it.
+const itemRoostCategory = new Map(); // id → roost_category
 
 const syncFolder = path.join(VAULT_PATH, "Bookmarks");
 function scanDir(dir) {
@@ -149,30 +182,16 @@ function scanDir(dir) {
         tags: fm.tags,
       });
 
-      // Use collection: only (honest labels) for centroid building.
-      if (fm.collection && fm.collection !== "undefined" && fm.collection !== "null") {
-        if (!collectionItems.has(fm.collection)) collectionItems.set(fm.collection, []);
-        collectionItems.get(fm.collection).push(fm.roost_id);
+      if (fm.roost_category) {
+        itemRoostCategory.set(fm.roost_id, fm.roost_category);
       }
     } catch {}
   }
 }
 scanDir(syncFolder);
-
-// Filter collections to those with ≥3 cached items.
-const collectionNames = [];
-for (const [name, ids] of collectionItems) {
-  const withCache = ids.filter(id => cache[id]);
-  if (withCache.length >= 3) collectionNames.push(name);
-}
-
-let totalItems = 0;
-for (const name of collectionNames) totalItems += collectionItems.get(name).filter(id => cache[id]).length;
-console.log(`${collectionNames.length} collections, ${totalItems} items to embed per config`);
+console.log(`Vault: ${itemMeta.size} items; ${itemRoostCategory.size} with roost_category`);
 
 // ── Load honest fixture ──
-// Source test items from the honest fixture, NOT from a random sampler.
-// The fixture items are held out from centroid building (contamination guard).
 
 if (!fs.existsSync(BUILD_DIR)) {
   console.error(`Build dir not found: ${BUILD_DIR}\nRun build-honest-fixture.py first.`);
@@ -186,23 +205,40 @@ if (!fs.existsSync(fixturePath)) {
 }
 const fixtureData = JSON.parse(fs.readFileSync(fixturePath, "utf8"));
 // All fixture items (positives + negatives) must be held out from centroids.
-// Positives have a groundTruth category; negatives have isNegative=true.
 const testEntries = fixtureData.testItems;
 const testIdSet = new Set(testEntries.map(e => e.id));
 console.log(`\nFixture split=${splitArg}: ${testEntries.length} items `
   + `(${testEntries.filter(e => !e.isNegative).length} positives, `
   + `${testEntries.filter(e => e.isNegative).length} negatives)`);
 
-// Verify: fixture items should have metadata in itemMeta (vault must be scanned first).
 const fixtureWithMeta = testEntries.filter(e => itemMeta.has(e.id));
 console.log(`  fixture items with vault metadata: ${fixtureWithMeta.length}/${testEntries.length}`);
 
+// ── Build production pool (contamination-free) ──
+// Pool = items with roost_category AND NOT in fixture.
+// Grouped by roost_category (the 19 canonical categories).
+
+const poolByCategory = new Map(); // category → [id]
+for (const [id, cat] of itemRoostCategory) {
+  if (testIdSet.has(id)) continue;           // contamination guard: exclude all fixture ids
+  if (!poolByCategory.has(cat)) poolByCategory.set(cat, []);
+  poolByCategory.get(cat).push(id);
+}
+
+const poolCategories = [...poolByCategory.keys()].sort();
+let totalPoolItems = 0;
+for (const ids of poolByCategory.values()) totalPoolItems += ids.length;
+console.log(`\nProduction pool (roost_category, fixture excluded): ${totalPoolItems} items across ${poolCategories.length} categories`);
+for (const cat of poolCategories) {
+  console.log(`  ${cat}: ${poolByCategory.get(cat).length}`);
+}
+
+if (totalPoolItems === 0) {
+  console.error("ERROR: Production pool is empty. This should not happen — vault scan found no items with roost_category outside the fixture.");
+  process.exit(1);
+}
+
 // ── Subtitle noise detection (for modality-flag variant) ──
-// A subtitle is considered "noise/absent" when:
-//  - it is empty or very short (< 20 chars), OR
-//  - it consists mostly of common music-noise tokens (♪, ♬, ellipsis, generic filler).
-// We flag these rather than dropping them so the embedding model sees a signal about
-// the *absence* of useful transcript, rather than interpreting pure silence as normal.
 
 const MUSIC_NOISE_RE = /^[\s♪♬\.…\[\]()]+$|^\[music\]$|^\[applause\]$|^\[laughter\]$/i;
 const NOISE_TOKENS_RE = /\b(um+|uh+|hmm+|yeah+|okay+|alright)\b/gi;
@@ -212,7 +248,6 @@ function isNoisySubtitle(subtitle) {
   const cleaned = subtitle.replace(NOISE_TOKENS_RE, "").trim();
   if (cleaned.length < 15) return true;
   if (MUSIC_NOISE_RE.test(subtitle.trim())) return true;
-  // High ratio of non-word characters suggests music transcription noise.
   const wordChars = (subtitle.match(/[a-zA-Z]/g) || []).length;
   if (wordChars / subtitle.length < 0.3 && subtitle.length > 30) return true;
   return false;
@@ -227,14 +262,12 @@ function buildText(config, id) {
 }
 
 // ── Variant configs (pre-registered, spec 2026-06-18) ──
-// Output cache key names must be stable — used as filenames for honest-eval.py.
 
 const configs = [
   {
     name: "full",
     label: "full (vision + summary + category + title + subtitle)",
     build(entry, meta) {
-      // Exact match of describe-items.ts line 251 — the current production formula.
       return [entry.vision, entry.summary, entry.category, meta.title, meta.subtitle]
         .filter(Boolean).join(" ").slice(0, 2000);
     },
@@ -283,8 +316,9 @@ const configs = [
 ];
 
 // ── Embedding helper (concurrent) ──
+// Concurrency kept at 12 to stay reasonable for 13K-item batches.
 
-async function embedBatch(texts, concurrency = 20) {
+async function embedBatch(texts, concurrency = 12) {
   const results = new Array(texts.length);
   let idx = 0;
 
@@ -294,7 +328,7 @@ async function embedBatch(texts, concurrency = 20) {
       const text = texts[i];
       if (!text || text.length < 10) { results[i] = null; continue; }
       try {
-        const res = await fetch(`${OLLAMA_URL}/api/embed`, {
+        const res = await fetch(`${EMBED_URL}/api/embed`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ model: EMBED_MODEL, input: text }),
@@ -309,11 +343,17 @@ async function embedBatch(texts, concurrency = 20) {
   return results;
 }
 
-// ── Score (for console summary only — honest-eval.py is the canonical scorer) ──
+// ── Score fixture against variant centroids (console summary; canonical scorer = honest-eval.py) ──
 
 function scoreVectors(testVecs, centroids, entries) {
   let top1Correct = 0, top5Correct = 0;
+  const perPlatform = { tiktok: { top1: 0, n: 0 }, twitter: { top1: 0, n: 0 } };
   const details = [];
+
+  if (centroids.length === 0) {
+    console.error("  ERROR: centroids are empty — cannot score. Check pool construction.");
+    return { top1Correct: 0, top5Correct: 0, positives: entries.filter(e => !e.isNegative).length, details, perPlatform };
+  }
 
   for (let i = 0; i < entries.length; i++) {
     const entry = entries[i];
@@ -326,27 +366,32 @@ function scoreVectors(testVecs, centroids, entries) {
       sim: cosineSim(vec, c.centroid),
     })).sort((a, b) => b.sim - a.sim);
 
-    const top1Match = scores[0].name === entry.groundTruth;
+    // Guard: scores array must be non-empty (centroids.length check above handles this).
+    const top1Name = scores[0].name;
+    const top1Match = top1Name === entry.groundTruth;
     const top5Match = scores.slice(0, 5).some(s => s.name === entry.groundTruth);
     if (top1Match) top1Correct++;
     if (top5Match) top5Correct++;
 
-    details.push({ id: entry.id, gt: entry.groundTruth, top1: scores[0].name, correct: top1Match });
+    // Per-platform tracking
+    const platform = entry.id.startsWith("tiktok:") ? "tiktok"
+      : entry.id.startsWith("twitter:") || entry.id.startsWith("x:") ? "twitter"
+      : null;
+    if (platform) {
+      perPlatform[platform].n++;
+      if (top1Match) perPlatform[platform].top1++;
+    }
+
+    details.push({ id: entry.id, gt: entry.groundTruth, top1: top1Name, correct: top1Match });
   }
   const positives = entries.filter(e => !e.isNegative).length;
-  return { top1Correct, top5Correct, positives, details };
+  return { top1Correct, top5Correct, positives, details, perPlatform };
 }
 
 // ── Main ──
 
 async function main() {
   fs.mkdirSync(BUILD_DIR, { recursive: true });
-
-  // Pre-build the list of all IDs per collection (for centroid building), excluding fixture.
-  const collectionIdLists = new Map();
-  for (const name of collectionNames) {
-    collectionIdLists.set(name, collectionItems.get(name).filter(id => cache[id] && !testIdSet.has(id)));
-  }
 
   // Sample verification — show the current formula text for one item.
   const sampleEntry = testEntries.find(e => !e.isNegative && cache[e.id] && itemMeta.get(e.id)?.title);
@@ -362,60 +407,67 @@ async function main() {
     console.log(`  embed text length: ${embedText.length}`);
   }
 
-  const N = testEntries.length;
   const Npos = testEntries.filter(e => !e.isNegative).length;
 
   console.log("\n");
-  console.log("═".repeat(100));
+  console.log("═".repeat(110));
   console.log(`M7 EMBEDDING INPUT ABLATION  split=${splitArg}  N=${Npos} positives`);
-  console.log("═".repeat(100));
-  console.log(`${"Variant".padEnd(60)}  Top-1    Top-5    Time   Cache written`);
-  console.log("─".repeat(100));
+  console.log(`Pool: ${totalPoolItems} production items (roost_category, fixture excluded) → ${poolCategories.length} category centroids`);
+  console.log("═".repeat(110));
+  console.log(`${"Variant".padEnd(60)}  Top-1     TikTok   Twitter   Top-5    Time   Cache`);
+  console.log("─".repeat(110));
 
   for (const config of configs) {
     const start = Date.now();
     const outPath = path.join(BUILD_DIR, `${config.name}.json`);
 
-    // Build embed text for every collection item (excluding fixture).
-    const allIds = [];
-    const allTexts = [];
-    for (const name of collectionNames) {
-      for (const id of collectionIdLists.get(name)) {
-        allIds.push({ id, collection: name });
-        allTexts.push(buildText(config, id));
+    // Build embed text for every production pool item (grouped by category).
+    const poolIds = [];   // parallel arrays
+    const poolCats = [];
+    const poolTexts = [];
+    for (const cat of poolCategories) {
+      for (const id of poolByCategory.get(cat)) {
+        poolIds.push(id);
+        poolCats.push(cat);
+        poolTexts.push(buildText(config, id));
       }
     }
 
-    // Also build embed text for fixture items (test set).
+    // Build embed text for fixture items (test set).
     const testTexts = testEntries.map(e => buildText(config, e.id));
 
-    process.stdout.write(`  ${config.label.slice(0, 55).padEnd(55)} embedding ${allTexts.length + testTexts.length} items...`);
+    const totalToEmbed = poolTexts.length + testTexts.length;
+    process.stdout.write(`  ${config.label.slice(0, 55).padEnd(55)} embedding ${totalToEmbed} items...`);
 
-    // Embed all collection items (for centroids).
-    const allVecs = await embedBatch(allTexts, 20);
+    // Embed production pool items (for centroids). Concurrency=12 to be reasonable.
+    const poolVecs = await embedBatch(poolTexts, 12);
     // Embed fixture items (for scoring + cache output).
-    const testVecs = await embedBatch(testTexts, 20);
+    const testVecs = await embedBatch(testTexts, 12);
 
-    // Build centroids (fixture items already excluded from allIds above).
+    // Build centroids (fixture items already excluded from pool above).
     const centroidVecsMap = new Map();
-    for (const name of collectionNames) centroidVecsMap.set(name, []);
-    for (let i = 0; i < allIds.length; i++) {
-      const { collection } = allIds[i];
-      if (allVecs[i]) {
-        centroidVecsMap.get(collection).push(allVecs[i]);
+    for (const cat of poolCategories) centroidVecsMap.set(cat, []);
+    for (let i = 0; i < poolIds.length; i++) {
+      if (poolVecs[i]) {
+        centroidVecsMap.get(poolCats[i]).push(poolVecs[i]);
       }
     }
     const centroids = [];
-    for (const name of collectionNames) {
-      const vecs = centroidVecsMap.get(name);
-      if (vecs.length > 0) centroids.push({ name, centroid: computeCentroid(vecs) });
+    for (const cat of poolCategories) {
+      const vecs = centroidVecsMap.get(cat);
+      if (vecs.length > 0) centroids.push({ name: cat, centroid: computeCentroid(vecs) });
     }
 
-    // Score (console summary only; canonical scoring is honest-eval.py).
+    if (centroids.length === 0) {
+      console.error(`\nERROR: No centroids built for variant ${config.name}. Pool was empty after embedding.`);
+      continue;
+    }
+
+    // Score fixture against variant centroids (console summary only; honest-eval.py is canonical).
     const result = scoreVectors(testVecs, centroids, testEntries);
 
-    // Write named cache: { <roost_id>: { vec: [...] } } for fixture items.
-    // This is the format L.load_cache(json_path=...) expects in honest-eval.py.
+    // Write named cache: { <roost_id>: { vec: [...] } } for fixture items only.
+    // Format: honest-eval.py --cache <variant>.json reads this.
     const cacheOut = {};
     for (let i = 0; i < testEntries.length; i++) {
       if (testVecs[i]) {
@@ -427,20 +479,26 @@ async function main() {
     const elapsed = ((Date.now() - start) / 1000).toFixed(1);
     const top1pct = result.positives > 0 ? (result.top1Correct / result.positives * 100).toFixed(0) : "?";
     const top5pct = result.positives > 0 ? (result.top5Correct / result.positives * 100).toFixed(0) : "?";
+    const ttk = result.perPlatform.tiktok;
+    const ttw = result.perPlatform.twitter;
+    const ttkPct = ttk.n > 0 ? (ttk.top1 / ttk.n * 100).toFixed(0) : "?";
+    const ttwPct = ttw.n > 0 ? (ttw.top1 / ttw.n * 100).toFixed(0) : "?";
 
     process.stdout.write(`\r`);
     console.log(
       `${config.label.padEnd(60)}  ` +
-      `${String(result.top1Correct).padStart(3)}/${result.positives} ${top1pct.padStart(3)}%   ` +
-      `${String(result.top5Correct).padStart(3)}/${result.positives} ${top5pct.padStart(3)}%  ` +
-      `${elapsed.padStart(6)}s   ${path.basename(outPath)}`
+      `${String(result.top1Correct).padStart(4)}/${result.positives} ${top1pct.padStart(3)}%  ` +
+      `${String(ttk.top1).padStart(4)}/${ttk.n} ${ttkPct.padStart(3)}%  ` +
+      `${String(ttw.top1).padStart(4)}/${ttw.n} ${ttwPct.padStart(3)}%  ` +
+      `${String(result.top5Correct).padStart(4)}/${result.positives} ${top5pct.padStart(3)}%  ` +
+      `${elapsed.padStart(6)}s  ${path.basename(outPath)}`
     );
   }
 
-  console.log("─".repeat(100));
+  console.log("─".repeat(110));
   console.log(`\nCaches written to: ${BUILD_DIR}/`);
   console.log("Score with: ROOST_VAULT=<vault> python scripts/honest-eval.py --cache <variant>.json --split <split> --by-platform");
-  console.log("\nNote: top-1/top-5 above use plain-mean centroids from `collection:` labels.");
+  console.log("\nNote: top-1/top-5 above use production-style centroids built from roost_category pool.");
   console.log("Use honest-eval.py for the canonical OSCR+AUROC+AUPR+AURC metrics with production centroids.");
 }
 

@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { foldNote } from "../../../../../scripts/fold-auto-categories.mjs";
 
 const MAP = { "code": "Tech", "Psychology": "Growth", "D & D": "Other" };
-function note(fm) {
+function note(fm: Record<string, unknown>) {
   return "---\n" + Object.entries(fm).map(([k, v]) => `${k}: ${v}`).join("\n") + "\n---\n\nbody\n";
 }
 

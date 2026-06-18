@@ -1,19 +1,35 @@
 #!/usr/bin/env python3
 """Classifier head diagnostic (M0) on v2 embeddings.
 
-Trains LogReg/kNN/MLP directly on v2 cached embeddings and evaluates on the
-honest eval fixture (eval-fixture-{split}.json) against the 19 consolidated
-categories. LOO: for each test item, retrain without it, then predict.
+Trains LogReg / kNN / centroid-cosine directly on v2 cached embeddings using
+one fixture split as the training set and the other as the held-out test set.
+Both splits are honest (human `collection` labels only) and already disjoint by
+construction (the fixture builder asserts this).
 
-Purpose: is embedding geometry the cap on the 4,320-item cross-platform fixture?
-  - If classifier top-1 >> embedding-top-1 baseline → geometry is separable;
-    classifiers add value over nearest-centroid. Future: cross-encoder or better
-    LLM ranker justified.
-  - If classifier ≈ embedding-top-1 → geometry is the bottleneck (M6 fine-tune
-    or better input text via M7 is the next lever).
+Question: is embedding geometry the cap on the 4,320-item cross-platform fixture?
+  - If classifier top-1 >> centroid top-1 → geometry is separable; classifiers add
+    value over nearest-centroid.
+  - If classifier ≈ centroid top-1 → geometry is the bottleneck (M6 fine-tune or
+    better input text via M7 is the next lever).
+
+Key design choices (vs old approach):
+  - TRAIN on one fixture split (default: dev), TEST on the other (default: holdout).
+    Both splits are honest human-collection labels; already disjoint.
+  - NO strict-exclusion pool of non-fixture items — that pool is empty because all
+    honest-labeled items are inside the fixture.  Using such a pool is the root cause
+    of the crash (empty X_all → np.array([]) is 1-D → l2_normalize axis=1 fails).
+  - NO O(N^2) LOO — replaced by a single train/test split (fast, standard diagnostic).
+  - GT is ALWAYS the fixture's groundTruth field (human collection, aliases applied
+    by the fixture builder) — never roost_category.
+  - Filter both splits to the 19 CANONICAL_CATS.
+  - Guard empty arrays before any matrix operation.
 
 Run:
-  ROOST_VAULT=<vault> python scripts/classifier-head-diagnostic.py [--split dev|holdout|large]
+  ROOST_VAULT=<vault> python scripts/classifier-head-diagnostic.py [options]
+
+Options:
+  --train-split  dev|holdout|large  (default: dev)
+  --test-split   dev|holdout|large  (default: holdout)
 """
 import argparse
 import json
@@ -26,7 +42,6 @@ from pathlib import Path
 import numpy as np
 from sklearn.linear_model import LogisticRegression
 from sklearn.neighbors import KNeighborsClassifier
-from sklearn.neural_network import MLPClassifier
 from sklearn.preprocessing import LabelEncoder
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -41,58 +56,127 @@ CANONICAL_CATS = {
 
 
 def l2_normalize(X):
+    """Row-wise L2 normalization.  X must be 2-D (N, D); crashes gracefully when
+    N == 0 so callers see a clear message rather than a cryptic axis error."""
+    if X.ndim != 2 or X.shape[0] == 0:
+        raise ValueError(
+            f"l2_normalize: expected 2-D array with at least one row, got shape {X.shape}"
+        )
     n = np.linalg.norm(X, axis=1, keepdims=True)
     n[n == 0] = 1.0
     return X / n
 
 
-def centroid_baseline(X_train, y_train, X_test, classes):
-    """Reproduce the LOO centroid baseline (cosine) from llm-rerank-sweep.py.
+def _load_split(build_dir, split):
+    """Load fixture items for a given split, filter to CANONICAL_CATS positives,
+    and return (ids, gts) lists.  Raises ValueError when the result is empty."""
+    items = L.load_fixture(str(build_dir), split)
+    pos = [ti for ti in items
+           if not ti.get("isNegative") and ti.get("groundTruth") in CANONICAL_CATS]
+    if not pos:
+        raise ValueError(
+            f"No positive items in {split} split after filtering to CANONICAL_CATS. "
+            "Check fixture file and category names."
+        )
+    ids = [ti["id"] for ti in pos]
+    gts = {ti["id"]: ti["groundTruth"] for ti in pos}
+    return ids, gts
 
-    X_train/X_test are L2-normalized, so cosine == dot product. Returns
-    a (N_test, N_classes_seen) matrix and the list of classes actually
-    present in X_train (classes with no training items are dropped).
-    """
+
+def _build_matrix(ids, gts, cache, split_name):
+    """Resolve embeddings for a list of ids.  Returns (X_norm, y_arr, valid_ids).
+    Skips items with missing / degenerate vectors and prints a summary."""
+    rows, labels_out, valid_ids = [], [], []
+    skipped = {"missing": 0, "nan": 0, "zero": 0}
+    for iid in ids:
+        v = cache.get(iid)
+        if v is None:
+            skipped["missing"] += 1
+            continue
+        v = np.asarray(v, dtype=np.float32)
+        if not np.all(np.isfinite(v)):
+            skipped["nan"] += 1
+            continue
+        if float(np.linalg.norm(v)) == 0.0:
+            skipped["zero"] += 1
+            continue
+        rows.append(v)
+        labels_out.append(gts[iid])
+        valid_ids.append(iid)
+    s = skipped
+    if any(s.values()):
+        print(f"  [{split_name}] skipped: {s['missing']} missing, "
+              f"{s['nan']} NaN/inf, {s['zero']} zero-norm vectors")
+    if not rows:
+        raise ValueError(
+            f"No usable embedding vectors found for {split_name} split. "
+            "Check embedding cache path and fixture ids."
+        )
+    X = l2_normalize(np.array(rows, dtype=np.float32))
+    assert np.all(np.isfinite(X)), f"{split_name} matrix has non-finite values after normalize"
+    return X, np.array(labels_out), valid_ids
+
+
+def centroid_top1(X_train, y_train, X_test, classes):
+    """Compute centroid-cosine top-1 predictions for X_test.
+
+    X_train and X_test must be L2-normalised (so cosine == dot product).
+    Returns (predictions_list, scores_matrix, present_classes) where scores_matrix
+    has shape (N_test, N_present) and present_classes is the ordered list of
+    categories that had at least one training example."""
     by_class = defaultdict(list)
     for x, y in zip(X_train, y_train):
         by_class[y].append(x)
     present = [c for c in classes if by_class[c]]
+    if not present:
+        raise ValueError("centroid_top1: no classes have training examples")
     centroids = [l2_normalize(np.mean(by_class[c], axis=0, keepdims=True))[0]
                  for c in present]
-    C = np.stack(centroids)
-    sims = X_test @ C.T
-    return sims, present
+    C = np.stack(centroids)          # (N_present, D)
+    sims = X_test @ C.T              # (N_test, N_present) — cosine sims
+    top_idx = np.argmax(sims, axis=1)
+    predictions = [present[int(i)] for i in top_idx]
+    return predictions, sims, present
 
 
-def eval_classifier(name, X_train, y_train, X_test, y_test,
-                    fit_fn, topk_list=(1, 3, 5, 7)):
-    """Train once on X_train, score X_test. Report top-k accuracies.
-    Encodes string labels to ints for classifiers that can't handle strings
-    in their validation score pathway (MLPClassifier in sklearn 1.6)."""
-    le = LabelEncoder()
-    y_train_int = le.fit_transform(y_train)
+def eval_classifier(X_train, y_train, X_test, fit_fn, le=None):
+    """Train fit_fn() on X_train/y_train (int-encoded via LabelEncoder) and return
+    (predictions_list, proba_matrix, classes_list) for X_test.
+
+    Accepts an optional pre-fit LabelEncoder (le) so that classes in the test set
+    that were not seen during training still resolve cleanly."""
+    if le is None:
+        le = LabelEncoder()
+        le.fit(y_train)
+    y_train_int = le.transform(y_train)
     clf = fit_fn()
     clf.fit(X_train, y_train_int)
-    scores = clf.predict_proba(X_test)
+    proba = clf.predict_proba(X_test)            # (N_test, N_train_classes)
     clf_classes = [str(c) for c in le.inverse_transform(clf.classes_)]
+    predictions = [clf_classes[int(np.argmax(row))] for row in proba]
+    return predictions, proba, clf_classes
 
-    results = {}
-    for k in topk_list:
-        topk_idx = np.argsort(-scores, axis=1)[:, :k]
-        topk_labels = [[clf_classes[j] for j in row] for row in topk_idx]
-        hits = sum(1 for preds, gt in zip(topk_labels, y_test) if gt in preds)
-        results[f"top{k}"] = hits
-    results["predictions"] = [clf_classes[int(np.argmax(row))] for row in scores]
-    return results
+
+def accuracy(predictions, y_test):
+    return sum(p == g for p, g in zip(predictions, y_test)) / len(y_test)
 
 
 def main():
     ap = argparse.ArgumentParser(
-        description="Classifier head diagnostic (M0) — embedding geometry cap test."
+        description="Classifier head diagnostic (M0) — train/test on fixture splits."
     )
-    ap.add_argument("--split", default="large", choices=["dev", "holdout", "large"],
-                    help="Fixture split to use as test set (default: large = dev ∪ holdout).")
+    ap.add_argument("--train-split", default="dev",
+                    choices=["dev", "holdout", "large"],
+                    help="Fixture split used for TRAINING (default: dev).")
+    ap.add_argument("--test-split", default="holdout",
+                    choices=["dev", "holdout", "large"],
+                    help="Fixture split used for TESTING (default: holdout).")
     args = ap.parse_args()
+
+    if args.train_split == args.test_split:
+        print(f"WARNING: train-split and test-split are both '{args.train_split}'. "
+              "Results will overfit (same data). Use different splits for a valid diagnostic.",
+              file=sys.stderr)
 
     vault_env = os.environ.get("ROOST_VAULT")
     if vault_env:
@@ -104,312 +188,186 @@ def main():
     BIN_CACHE = ROOST / "cache" / "embedding-vectors.bin"
     OUT_PATH = ROOST / "classifier-head-results.json"
 
-    print("Classifier head diagnostic (M0) on v2 embeddings")
+    print("Classifier head diagnostic (M0) — train/test on fixture splits")
     print("=" * 70)
-    print(f"Vault:   {VAULT}")
-    print(f"Split:   {args.split}")
-    print(f"Cache:   {BIN_CACHE}")
+    print(f"Vault:        {VAULT}")
+    print(f"Train split:  {args.train_split}")
+    print(f"Test split:   {args.test_split}")
+    print(f"Cache:        {BIN_CACHE}")
+    print(f"Categories:   {len(CANONICAL_CATS)} canonical")
 
     t0 = time.time()
-    # Load v2 binary cache (same path as honest-eval.py uses).
+
+    # ── Load embedding cache ──────────────────────────────────────────────────
     cache = L.load_cache(bin_path=str(BIN_CACHE))
-    # Load honest labels (collection: only, not roost_category; aliases applied).
-    labels, _ = L.load_honest_labels(str(VAULT))
-    # Restrict training labels to the 19 canonical categories.
-    labels = {k: v for k, v in labels.items() if v in CANONICAL_CATS}
-    print(f"Loaded cache ({len(cache)} items), labels ({len(labels)} items) "
-          f"in {time.time() - t0:.1f}s")
+    print(f"Loaded embedding cache: {len(cache)} items  ({time.time()-t0:.1f}s)")
 
-    # Load test items from the honest fixture (dev/holdout/large).
-    # Positives only for classification; negatives (isNegative=True) are OOD items,
-    # not relevant to the LogReg/kNN geometry question.
-    fixture_items = L.load_fixture(str(BUILD_DIR), args.split)
-    positive = [ti for ti in fixture_items if not ti.get("isNegative")]
-    # Filter to canonical categories only (fixture may include pre-consolidation labels).
-    positive = [ti for ti in positive if ti.get("groundTruth") in CANONICAL_CATS]
-    test_ids = [ti["id"] for ti in positive]
-    test_gts = {ti["id"]: ti["groundTruth"] for ti in positive}
-    test_id_set = set(test_ids)
+    # ── Contamination guard: assert dev ∩ holdout = ∅ ────────────────────────
+    dev_ids_all = [t["id"] for t in L.load_fixture(str(BUILD_DIR), "dev")]
+    hld_ids_all = [t["id"] for t in L.load_fixture(str(BUILD_DIR), "holdout")]
+    L.assert_disjoint(dev_ids_all, hld_ids_all)
 
-    # Contamination guard: no fixture item (dev ∪ holdout) may be in the training pool.
-    # Load the full (large) fixture id set regardless of the split argument.
-    all_fixture_ids = {t["id"] for t in L.load_fixture(str(BUILD_DIR), "large")}
-    L.assert_disjoint([t["id"] for t in L.load_fixture(str(BUILD_DIR), "dev")],
-                      [t["id"] for t in L.load_fixture(str(BUILD_DIR), "holdout")])
+    # ── Load train and test splits ────────────────────────────────────────────
+    # GT comes from the fixture's groundTruth field (human collection, aliases applied
+    # by the fixture builder).  We never touch roost_category.
+    L.assert_gt_not_roost_category("collection")   # tripwire
+    train_ids, train_gts = _load_split(BUILD_DIR, args.train_split)
+    test_ids, test_gts = _load_split(BUILD_DIR, args.test_split)
 
-    # Training pool = all labeled items WITH a cached vector, EXCLUDING the ENTIRE
-    # large fixture (dev ∪ holdout) to prevent contamination — not just the current
-    # split's test items. LOO below re-adds test items minus-self within this pool.
-    # Filters any vector that contains NaN / inf or is all-zero.
-    train_ids_all = []
-    X_all = []
-    y_all = []
-    skipped_nan = 0
-    skipped_zero = 0
-    for iid, coll in labels.items():
-        if iid in all_fixture_ids:
-            continue  # strict exclusion of all fixture items from training pool
-        v = cache.get(iid)
-        if v is None:
-            continue
-        # v is already an np.ndarray from load_cache
-        v = np.asarray(v, dtype=np.float32)
-        if not np.all(np.isfinite(v)):
-            skipped_nan += 1
-            continue
-        if float(np.linalg.norm(v)) == 0.0:
-            skipped_zero += 1
-            continue
-        train_ids_all.append(iid)
-        X_all.append(v)
-        y_all.append(coll)
-    if skipped_nan or skipped_zero:
-        print(f"  skipped {skipped_nan} NaN/inf vectors, {skipped_zero} zero vectors")
-    X_all = l2_normalize(np.array(X_all, dtype=np.float32))
-    y_all = np.array(y_all)
-    assert np.all(np.isfinite(X_all)), "X_all has non-finite values after normalize"
-    # Verify no fixture leak in the pool we just built.
-    L.assert_no_fixture_leak(train_ids_all, all_fixture_ids)
+    # When splits differ, assert no ID overlap between train and test.
+    if args.train_split != args.test_split:
+        overlap = set(train_ids) & set(test_ids)
+        if overlap:
+            raise AssertionError(
+                f"{len(overlap)} ids appear in both {args.train_split} and "
+                f"{args.test_split} fixture splits — fixture may be corrupted."
+            )
 
-    # Build test matrix — ground truth comes from the honest fixture (not vault frontmatter).
-    X_test_rows = []
-    y_test_ordered = []
-    test_ids_with_vec = []
-    for tid in test_ids:
-        v = cache.get(tid)
-        if v is None:
-            continue
-        v = np.asarray(v, dtype=np.float32)
-        if not np.all(np.isfinite(v)) or float(np.linalg.norm(v)) == 0.0:
-            print(f"  skipping degenerate test vector: {tid}")
-            continue
-        X_test_rows.append(v)
-        y_test_ordered.append(test_gts[tid])
-        test_ids_with_vec.append(tid)
-    X_test = l2_normalize(np.array(X_test_rows, dtype=np.float32))
-    y_test_ordered = np.array(y_test_ordered)
-    assert np.all(np.isfinite(X_test)), "X_test has non-finite values after normalize"
-    N = len(test_ids_with_vec)
-    print(f"Test items: {N}/{len(test_ids)} with cached vectors (split={args.split})")
+    print(f"Train items (fixture {args.train_split}, CANONICAL only): {len(train_ids)}")
+    print(f"Test  items (fixture {args.test_split}, CANONICAL only): {len(test_ids)}")
 
-    # Global class order = every canonical category that appears in the data.
-    classes = sorted(set(y_all.tolist()) | set(y_test_ordered.tolist()))
-    print(f"Classes: {len(classes)}")
-    print(f"Training pool size (fixture excluded): {len(train_ids_all)}")
+    # ── Build embedding matrices ──────────────────────────────────────────────
+    X_train, y_train, train_valid = _build_matrix(train_ids, train_gts, cache,
+                                                   args.train_split)
+    X_test,  y_test,  test_valid  = _build_matrix(test_ids,  test_gts,  cache,
+                                                   args.test_split)
+    N_train, N_test = len(train_valid), len(test_valid)
+    print(f"Vectors resolved — train: {N_train}/{len(train_ids)}, "
+          f"test: {N_test}/{len(test_ids)}")
+
+    # Classes present in the training data (used to align LabelEncoder).
+    train_classes = sorted(set(y_train.tolist()))
+    all_classes   = sorted(set(y_train.tolist()) | set(y_test.tolist()))
+    missing_in_train = set(y_test.tolist()) - set(y_train.tolist())
+    if missing_in_train:
+        print(f"  WARNING: {len(missing_in_train)} test categories absent from train: "
+              f"{sorted(missing_in_train)}")
+
+    # Shared LabelEncoder (fit on training classes only; test-only cats will be
+    # unknown to the classifier but the centroid baseline handles them if any vectors exist).
+    le = LabelEncoder()
+    le.fit(y_train)
+
+    print(f"\nTrain classes: {len(train_classes)}   All classes: {len(all_classes)}")
     print()
-
-    # Strict-holdout training set = the training pool as-is (fixture already excluded).
-    # LOO adds back individual test items for the LOO passes below.
-    X_tr_strict = X_all
-    y_tr_strict = y_all
-    print(f"Strict holdout training set: {len(X_tr_strict)} items (fixture fully excluded)")
 
     all_results = {}
 
-    # ── Baseline 1: Centroid cosine (no LOO) — should roughly match v2 top-1 ──
-    print("\n[1] Centroid cosine (strict holdout)")
-    sims, cls_present = centroid_baseline(X_tr_strict, y_tr_strict, X_test, classes)
-    topk_idx = np.argsort(-sims, axis=1)
-    hits_strict = {}
-    for k in (1, 3, 5, 7):
-        hits = sum(1 for i in range(N)
-                   if y_test_ordered[i] in [cls_present[j] for j in topk_idx[i, :k]])
-        hits_strict[f"top{k}"] = hits
-        print(f"  top-{k}: {hits}/{N} ({hits/N*100:.1f}%)")
-    all_results["centroid_strict"] = {
-        "predictions": [cls_present[int(topk_idx[i, 0])] for i in range(N)],
-        **hits_strict,
-    }
-
-    # ── Baseline 2: Centroid cosine with LOO ──
-    # For each test item i, train pool = (strict pool) ∪ (all test items except i).
-    # This gives each item the benefit of the others' labels while keeping i out.
-    # Precompute label array for fast LOO slicing.
-    _test_y_arr = np.array([test_gts[t] for t in test_ids_with_vec])
-    print("\n[2] Centroid cosine with LOO (n-1 test items added back)")
-    hits_at = {1: 0, 3: 0, 5: 0, 7: 0}
-    predictions_loo = []
-    for i, tid in enumerate(test_ids_with_vec):
-        # All test rows except i.
-        mask = np.ones(N, dtype=bool); mask[i] = False
-        X_loo = np.vstack([X_tr_strict, X_test[mask]])
-        y_loo = np.concatenate([y_tr_strict, _test_y_arr[mask]])
-        sims_i, cls_i = centroid_baseline(X_loo, y_loo, X_test[i:i + 1], classes)
-        row = sims_i[0]
-        idx_sorted = np.argsort(-row)
-        predictions_loo.append(cls_i[int(idx_sorted[0])])
-        for k in (1, 3, 5, 7):
-            if y_test_ordered[i] in [cls_i[j] for j in idx_sorted[:k]]:
-                hits_at[k] += 1
-    for k in (1, 3, 5, 7):
-        print(f"  top-{k}: {hits_at[k]}/{N} ({hits_at[k]/N*100:.1f}%)")
-    all_results["centroid_loo"] = {
-        "predictions": predictions_loo,
-        **{f"top{k}": v for k, v in hits_at.items()},
-    }
-
-    # ── Classifier 1: LogReg, strict holdout ──
-    print("\n[3] LogReg (strict holdout)")
+    # ── [1] Centroid cosine baseline ─────────────────────────────────────────
+    print("[1] Centroid cosine (train → test)")
     t = time.time()
-    res = eval_classifier(
-        "logreg_strict",
-        X_tr_strict, y_tr_strict, X_test, y_test_ordered,
+    cent_preds, sims, cent_classes = centroid_top1(X_train, y_train, X_test, all_classes)
+    acc_cent = accuracy(cent_preds, y_test)
+    print(f"  top-1: {sum(p==g for p,g in zip(cent_preds,y_test))}/{N_test} "
+          f"({acc_cent*100:.1f}%)  [{time.time()-t:.1f}s]")
+    all_results["centroid_cosine"] = {
+        "top1": int(sum(p == g for p, g in zip(cent_preds, y_test))),
+        "N": N_test,
+        "accuracy": round(acc_cent, 4),
+        "predictions": cent_preds,
+    }
+
+    # ── [2] LogReg C=1 ───────────────────────────────────────────────────────
+    print("\n[2] LogReg C=1 (train → test)")
+    t = time.time()
+    lr_preds, _, _ = eval_classifier(
+        X_train, y_train, X_test, le=le,
         fit_fn=lambda: LogisticRegression(
             max_iter=2000, C=1.0, solver="lbfgs", n_jobs=-1),
     )
-    for k in (1, 3, 5, 7):
-        print(f"  top-{k}: {res[f'top{k}']}/{N} ({res[f'top{k}']/N*100:.1f}%)")
-    print(f"  fit time: {time.time() - t:.1f}s")
-    all_results["logreg_strict"] = res
-
-    # ── Classifier 2: LogReg, LOO ──
-    # For each test item i, train pool = (strict pool) ∪ (all test items except i).
-    print(f"\n[4] LogReg with LOO ({N} retrainings)")
-    t = time.time()
-    hits_at = {1: 0, 3: 0, 5: 0, 7: 0}
-    predictions_loo_lr = []
-    for i, tid in enumerate(test_ids_with_vec):
-        mask = np.ones(N, dtype=bool); mask[i] = False
-        X_loo = np.vstack([X_tr_strict, X_test[mask]])
-        y_loo = np.concatenate([y_tr_strict, _test_y_arr[mask]])
-        clf = LogisticRegression(max_iter=2000, C=1.0, solver="lbfgs", n_jobs=-1)
-        clf.fit(X_loo, y_loo)
-        # Restrict to classes the classifier actually saw (LOO may drop a singleton class)
-        cls = list(clf.classes_)
-        proba = clf.predict_proba(X_test[i:i + 1])[0]
-        order = np.argsort(-proba)
-        ordered_classes = [cls[j] for j in order]
-        predictions_loo_lr.append(ordered_classes[0])
-        gt = y_test_ordered[i]
-        for k in (1, 3, 5, 7):
-            if gt in ordered_classes[:k]:
-                hits_at[k] += 1
-        if (i + 1) % 20 == 0:
-            print(f"  {i+1}/{N}  top-1 so far: {hits_at[1]}/{i+1}")
-    for k in (1, 3, 5, 7):
-        print(f"  top-{k}: {hits_at[k]}/{N} ({hits_at[k]/N*100:.1f}%)")
-    print(f"  total time: {time.time() - t:.1f}s")
-    all_results["logreg_loo"] = {
-        "predictions": predictions_loo_lr,
-        **{f"top{k}": v for k, v in hits_at.items()},
+    acc_lr = accuracy(lr_preds, y_test)
+    print(f"  top-1: {sum(p==g for p,g in zip(lr_preds,y_test))}/{N_test} "
+          f"({acc_lr*100:.1f}%)  [{time.time()-t:.1f}s]")
+    all_results["logreg_c1"] = {
+        "top1": int(sum(p == g for p, g in zip(lr_preds, y_test))),
+        "N": N_test,
+        "accuracy": round(acc_lr, 4),
+        "predictions": lr_preds,
     }
 
-    # ── Classifier 3: LogReg with class_weight=balanced (strict holdout) ──
-    print("\n[5] LogReg class_weight=balanced (strict holdout)")
+    # ── [3] LogReg class_weight=balanced ─────────────────────────────────────
+    print("\n[3] LogReg C=1 balanced (train → test)")
     t = time.time()
-    res = eval_classifier(
-        "logreg_balanced_strict",
-        X_tr_strict, y_tr_strict, X_test, y_test_ordered,
+    lr_bal_preds, _, _ = eval_classifier(
+        X_train, y_train, X_test, le=le,
         fit_fn=lambda: LogisticRegression(
             max_iter=2000, C=1.0, solver="lbfgs", n_jobs=-1,
             class_weight="balanced"),
     )
-    for k in (1, 3, 5, 7):
-        print(f"  top-{k}: {res[f'top{k}']}/{N} ({res[f'top{k}']/N*100:.1f}%)")
-    print(f"  fit time: {time.time() - t:.1f}s")
-    all_results["logreg_balanced_strict"] = res
+    acc_lr_bal = accuracy(lr_bal_preds, y_test)
+    print(f"  top-1: {sum(p==g for p,g in zip(lr_bal_preds,y_test))}/{N_test} "
+          f"({acc_lr_bal*100:.1f}%)  [{time.time()-t:.1f}s]")
+    all_results["logreg_balanced"] = {
+        "top1": int(sum(p == g for p, g in zip(lr_bal_preds, y_test))),
+        "N": N_test,
+        "accuracy": round(acc_lr_bal, 4),
+        "predictions": lr_bal_preds,
+    }
 
-    # ── Classifier 4: LogReg stronger regularization C=0.1 ──
-    print("\n[6] LogReg C=0.1 (strict holdout)")
+    # ── [4] kNN k=5 cosine ───────────────────────────────────────────────────
+    print("\n[4] kNN k=5 cosine (train → test)")
     t = time.time()
-    res = eval_classifier(
-        "logreg_c0p1_strict",
-        X_tr_strict, y_tr_strict, X_test, y_test_ordered,
-        fit_fn=lambda: LogisticRegression(
-            max_iter=2000, C=0.1, solver="lbfgs", n_jobs=-1),
-    )
-    for k in (1, 3, 5, 7):
-        print(f"  top-{k}: {res[f'top{k}']}/{N} ({res[f'top{k}']/N*100:.1f}%)")
-    print(f"  fit time: {time.time() - t:.1f}s")
-    all_results["logreg_c0p1_strict"] = res
-
-    # ── Classifier 5: LogReg C=10 (weaker regularization) ──
-    print("\n[7] LogReg C=10 (strict holdout)")
-    t = time.time()
-    res = eval_classifier(
-        "logreg_c10_strict",
-        X_tr_strict, y_tr_strict, X_test, y_test_ordered,
-        fit_fn=lambda: LogisticRegression(
-            max_iter=5000, C=10.0, solver="lbfgs", n_jobs=-1),
-    )
-    for k in (1, 3, 5, 7):
-        print(f"  top-{k}: {res[f'top{k}']}/{N} ({res[f'top{k}']/N*100:.1f}%)")
-    print(f"  fit time: {time.time() - t:.1f}s")
-    all_results["logreg_c10_strict"] = res
-
-    # ── Classifier 6: kNN k=5 on cosine (strict holdout) — parallel to centroid ──
-    print("\n[8] kNN k=5 cosine (strict holdout)")
-    t = time.time()
-    res = eval_classifier(
-        "knn5_strict",
-        X_tr_strict, y_tr_strict, X_test, y_test_ordered,
+    knn_preds, _, _ = eval_classifier(
+        X_train, y_train, X_test, le=le,
         fit_fn=lambda: KNeighborsClassifier(
             n_neighbors=5, metric="cosine", weights="distance", n_jobs=-1),
     )
-    for k in (1, 3, 5, 7):
-        print(f"  top-{k}: {res[f'top{k}']}/{N} ({res[f'top{k}']/N*100:.1f}%)")
-    print(f"  fit time: {time.time() - t:.1f}s")
-    all_results["knn5_strict"] = res
+    acc_knn = accuracy(knn_preds, y_test)
+    print(f"  top-1: {sum(p==g for p,g in zip(knn_preds,y_test))}/{N_test} "
+          f"({acc_knn*100:.1f}%)  [{time.time()-t:.1f}s]")
+    all_results["knn5_cosine"] = {
+        "top1": int(sum(p == g for p, g in zip(knn_preds, y_test))),
+        "N": N_test,
+        "accuracy": round(acc_knn, 4),
+        "predictions": knn_preds,
+    }
 
-    # ── Classifier 7: MLP [256, 128] strict holdout ──
-    print("\n[9] MLP [256, 128] (strict holdout, no LOO)")
-    t = time.time()
-    res = eval_classifier(
-        "mlp_strict",
-        X_tr_strict, y_tr_strict, X_test, y_test_ordered,
-        fit_fn=lambda: MLPClassifier(
-            hidden_layer_sizes=(256, 128),
-            max_iter=400,
-            early_stopping=True,
-            random_state=0,
-            alpha=1e-4,
-        ),
+    # ── Per-class breakdown (best classifier by top-1) ───────────────────────
+    best_key = max(
+        ["centroid_cosine", "logreg_c1", "logreg_balanced", "knn5_cosine"],
+        key=lambda k: all_results[k]["accuracy"],
     )
-    for k in (1, 3, 5, 7):
-        print(f"  top-{k}: {res[f'top{k}']}/{N} ({res[f'top{k}']/N*100:.1f}%)")
-    print(f"  fit time: {time.time() - t:.1f}s")
-    all_results["mlp_strict"] = res
-
-    # ── Per-class breakdown on the best classifier ──
-    best_preds = all_results["logreg_loo"]["predictions"]
-    wrong_items = []
-    for i, (tid, pred, gt) in enumerate(zip(test_ids_with_vec, best_preds, y_test_ordered)):
-        if pred != gt:
-            wrong_items.append({"id": tid, "gt": str(gt), "pred": pred})
-
-    print(f"\nLogReg LOO wrong items: {len(wrong_items)}")
+    best_preds = all_results[best_key]["predictions"]
+    wrong_items = [
+        {"id": tid, "gt": str(gt), "pred": pred}
+        for tid, pred, gt in zip(test_valid, best_preds, y_test)
+        if pred != gt
+    ]
+    print(f"\nBest model: {best_key}  —  wrong items: {len(wrong_items)}/{N_test}")
     gt_counter = Counter(w["gt"] for w in wrong_items)
-    print("  by GT category:")
-    for cat, n in gt_counter.most_common():
-        print(f"    {cat}: {n}")
+    print("  errors by GT category:")
+    for cat, n_err in gt_counter.most_common():
+        total_in_cat = sum(1 for g in y_test if g == cat)
+        print(f"    {cat:<22} {n_err:>3} / {total_in_cat:>3} errors")
 
+    # ── Summary ───────────────────────────────────────────────────────────────
     print(f"\n{'='*70}")
-    print(f"SUMMARY (top-1 / top-7)  split={args.split}  N={N}")
+    print(f"SUMMARY  train={args.train_split}  test={args.test_split}  N_test={N_test}")
     print(f"{'='*70}")
-    print(f"  (M0 goal: is LogReg/kNN top-1 >> centroid top-1?)")
-    def fmt(key, label):
+    print(f"  (M0 question: do classifiers beat the centroid-cosine baseline?)")
+    print(f"  {'Method':<42} {'top-1':>8}  {'acc':>7}")
+    print(f"  {'-'*60}")
+    for key, label in [
+        ("centroid_cosine",  "Centroid cosine (production-style):"),
+        ("logreg_c1",        "LogReg C=1:"),
+        ("logreg_balanced",  "LogReg C=1 balanced:"),
+        ("knn5_cosine",      "kNN k=5 cosine:"),
+    ]:
         r = all_results[key]
-        t1 = r.get("top1", 0); t7 = r.get("top7", 0)
-        return (f"  {label:<42} {t1:>4}/{N} ({t1/N*100:>5.1f}%)  "
-                f"top-7 {t7:>4}/{N} ({t7/N*100:>5.1f}%)")
-    if "centroid_loo" in all_results:
-        print(fmt("centroid_loo", "Centroid cosine (LOO):"))
-    if "centroid_strict" in all_results:
-        print(fmt("centroid_strict", "Centroid cosine (strict holdout):"))
-    print(fmt("logreg_strict", "LogReg C=1 (strict holdout):"))
-    print(fmt("logreg_loo", "LogReg C=1 (LOO):"))
-    print(fmt("logreg_balanced_strict", "LogReg balanced (strict):"))
-    print(fmt("logreg_c0p1_strict", "LogReg C=0.1 (strict):"))
-    print(fmt("logreg_c10_strict", "LogReg C=10 (strict):"))
-    print(fmt("knn5_strict", "kNN k=5 cosine (strict):"))
-    print(fmt("mlp_strict", "MLP [256,128] (strict):"))
+        marker = " <-- best" if key == best_key else ""
+        print(f"  {label:<42} {r['top1']:>4}/{N_test}  "
+              f"{r['accuracy']*100:>5.1f}%{marker}")
 
+    # ── Save results ──────────────────────────────────────────────────────────
     out_meta = {
-        "split": args.split,
-        "N": N,
-        "categories": sorted(classes),
-        "training_pool_size": len(train_ids_all),
-        **all_results,
+        "train_split": args.train_split,
+        "test_split": args.test_split,
+        "N_train": N_train,
+        "N_test": N_test,
+        "categories": sorted(all_classes),
+        **{k: {kk: vv for kk, vv in v.items() if kk != "predictions"}
+           for k, v in all_results.items()},
+        "wrong_items": wrong_items[:200],  # cap to avoid huge JSON
     }
     with open(OUT_PATH, "w") as fh:
         json.dump(out_meta, fh, default=str, indent=2)

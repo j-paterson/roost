@@ -3,7 +3,7 @@ import { resortNote } from "../../../../../scripts/apply-taxonomy-resort.mjs";
 
 const ALIASES = { "twitter:web3": "Tech", "tiktok:Stuff": "Products", "tiktok:Recipes": "Food" };
 
-function note(fm) {
+function note(fm: Record<string, unknown>) {
   const body = "---\n" + Object.entries(fm).map(([k, v]) => `${k}: ${v}`).join("\n") + "\n---\n\nbody text\n";
   return body;
 }
