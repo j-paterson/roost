@@ -43,14 +43,14 @@ FIRE_RATE_CAP = 0.45                       # no tag fires on more than this frac
 DEPLOY_SAMPLE = 6000                       # auto (unseen) items used to calibrate thresholds
 SEED = 1729
 
-# Per-tag multiplier overrides (adjustment valve). Lower = higher threshold = fires less =
-# higher precision (at some recall cost). Tuned from the deployment LLM precision audit
-# (audit-tag-precision-2): clean tags keep the wide default; tags that over-fire on incidental
-# auto-item signals (Spicy on dance, Places on "Austin", Quotes on lyrics, ...) are tightened.
-PER_TAG_MULT = {
-    "Spicy": 0.6, "Other": 0.5, "Fashion": 0.7, "Quotes": 0.8, "Food": 1.0, "Fitness": 0.9,
-    "Products": 0.9, "Relationships": 0.9, "Places & Travel": 1.1, "Design": 1.3, "Crafts": 1.2,
-}
+# Per-tag multiplier overrides (adjustment valve). Lower = higher threshold = fires less.
+# CURRENTLY EMPTY (uniform): an earlier audit-driven tightening was REVERTED — it traded
+# GROUND-TRUTH recall (79%->75%) for a flawed LLM-audit precision. The audit is a proxy and is
+# UNRELIABLE for NSFW: the cloud judge refuses to validate sexually-explicit content, so "Spicy
+# 0-17% precision" was judge refusal, not detector failure (Spicy's real GT-recall is 73%). Any
+# future per-tag tuning must be driven by a RELIABLE signal (the human `collection` GT, or a
+# non-refusing/local judge for NSFW), never the refusing cloud audit.
+PER_TAG_MULT = {}
 
 
 def load_xy(vault):
