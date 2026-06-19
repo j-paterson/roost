@@ -1,12 +1,64 @@
 /**
- * Gallery-specific blocks appended to expanded cards: collection row,
- * Smart Assign match trail, pipeline detail sections.
+ * Gallery-specific blocks appended to expanded cards: category-tag chip row,
+ * collection row, Smart Assign match trail, pipeline detail sections.
  */
 import { CATEGORY_FIELD } from "@/config";
 import type { MatchDetail } from "@/types/roost";
 import type { App, BasesEntry } from "obsidian";
 import { getRoostId, safeGetValue } from "@/lib/bases-entry";
 import { pipelineHitFromEntry, renderPipelineDetail } from "@/views/pipeline-details";
+
+const CATEGORY_TAG_PREFIX = "category/";
+
+/**
+ * Parse category/* tags from a BasesEntry's note.tags field.
+ * Returns the display labels (un-slugged), preserving order.
+ * Returns [] when no category/* tags exist.
+ */
+export function parseCategoryTags(entry: BasesEntry): string[] {
+  const raw = safeGetValue(entry, "note.tags");
+  if (!raw) return [];
+  // Bases stores tags as a comma-separated string (see frontmatterBasesEntry).
+  const tagList: string[] = typeof raw === "string"
+    ? raw.split(",").map((t) => t.trim()).filter(Boolean)
+    : Array.isArray(raw)
+      ? (raw as unknown[]).map((t) => String(t).trim()).filter(Boolean)
+      : [];
+  return tagList
+    .filter((t) => t.startsWith(CATEGORY_TAG_PREFIX))
+    .map((t) => unslugCategoryTag(t.slice(CATEGORY_TAG_PREFIX.length)));
+}
+
+/**
+ * Convert a category slug back to a display label.
+ * Handles both space-preserved slugs ("Places & Travel") and
+ * dash-separated slugs ("places-travel" → "Places Travel").
+ * Title-cases the result for consistent display.
+ */
+function unslugCategoryTag(slug: string): string {
+  // Replace dashes that stand for spaces (not ampersands), then title-case.
+  return slug
+    .replace(/-/g, " ")
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+/**
+ * Build the category-chip row DOM element (or null when no category/* tags).
+ */
+export function buildCategoryTagChips(entry: BasesEntry): HTMLElement | null {
+  const labels = parseCategoryTags(entry);
+  if (labels.length === 0) return null;
+  const row = document.createElement("div");
+  row.className = "roost-expanded-category-chips";
+  for (const label of labels) {
+    const chip = document.createElement("span");
+    chip.className = "roost-expanded-category-chip";
+    chip.textContent = label;
+    chip.setAttribute("title", `Category: ${label}`);
+    row.appendChild(chip);
+  }
+  return row;
+}
 
 export interface ExpandedExtrasContext {
   app: App;
@@ -21,6 +73,10 @@ export function buildExpandedExtraElements(ctx: ExpandedExtrasContext): HTMLElem
   const { app, entry, domHost, matchDetailMap, onCollectionClick } = ctx;
   const extraEls: HTMLElement[] = [];
   const expandedId = getRoostId(entry);
+
+  // Category-tag chip row — shown first so it sits above the collection/folder row.
+  const categoryChips = buildCategoryTagChips(entry);
+  if (categoryChips) extraEls.push(categoryChips);
 
   const sourceCollection = safeGetValue(entry, "note.collection")?.toString() || null;
   const currentCategory = safeGetValue(entry, `note.${CATEGORY_FIELD}`)?.toString() || null;

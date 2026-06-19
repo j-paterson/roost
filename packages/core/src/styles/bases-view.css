@@ -1239,6 +1239,32 @@
   gap: 4px;
 }
 
+/* Category-tag chip row — shown in the expanded info pane when category/* tags exist */
+.roost-expanded-category-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 2px 0;
+}
+
+.roost-expanded-category-chip {
+  font-size: 11px;
+  font-weight: 500;
+  padding: 2px 8px;
+  border-radius: 99px;
+  background: oklch(0.45 0.12 260 / 0.12);
+  color: oklch(0.55 0.14 260);
+  letter-spacing: 0.01em;
+  cursor: default;
+  user-select: none;
+}
+
+/* In dark mode, bump up lightness so chips are readable on dark backgrounds */
+.theme-dark .roost-expanded-category-chip {
+  background: oklch(0.65 0.12 260 / 0.18);
+  color: oklch(0.78 0.14 260);
+}
+
 .roost-expanded-collection {
   display: flex;
   align-items: center;
