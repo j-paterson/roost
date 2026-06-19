@@ -24,10 +24,19 @@ import {
   headClassesMatch,
   type ClassifierHead,
 } from "@/pipeline/classifier-head";
+import {
+  loadTagDetectors,
+  classifyTags,
+  type TagDetectors,
+} from "@/pipeline/tag-detectors";
 
 // Re-export so callers wiring the head never need a direct import of classifier-head.ts.
 export { loadClassifierHead, classifyWithHead, headClassesMatch };
 export type { ClassifierHead };
+
+// Re-export tag-detector types so callers don't need a direct import.
+export { loadTagDetectors, classifyTags };
+export type { TagDetectors };
 
 // Ensemble rerank (Phase 3): T1_letter on top-5 + T2_json on top-7, fused
 // by an embedding-rank tiebreak. Sweep on v2 cache reproduces 85/119 (71.4%).
@@ -222,6 +231,75 @@ interface ScoreResult {
   unmatched: string[];
   /** Per-item match details (score + reason) for assigned items */
   matchDetails: Map<string, MatchDetail>;
+}
+
+// ── Multi-label tag assignment (Wave 2 D1) ────────────────────
+
+/** Per-item result from the multi-label tag-detector forward pass. */
+export interface TagAssignment {
+  /** The primary category — the tag with the highest sigmoid score (argmax). */
+  primary: string;
+  /**
+   * Every tag whose detector sigmoid score meets or exceeds its per-tag
+   * threshold.  May be empty when no detector fires; primary is always set.
+   */
+  tags: string[];
+  /**
+   * The complete set of tag names defined in the detector weights file.
+   * Used by confirm.ts to determine whether an existing roost_category is a
+   * "valid" (canon) primary that should be preserved vs a "dropped" tag that
+   * should be replaced.  Mirrors migrate-to-tags.mjs migrateNote's
+   * `canon.has(oldPrimary)` check.
+   */
+  canonTags: string[];
+}
+
+/**
+ * Multi-label tag-detector scoring path (Wave 2 D1).
+ *
+ * When `settings.smartAssignTags` is true AND a valid `tag-detectors.json`
+ * is loaded, this function replaces the single-label
+ * classifier-head/centroid path. For every item with a cached embedding it
+ * calls `classifyTags` and returns a `TagAssignment` (primary + full tag
+ * set). Items without a cached embedding are silently skipped (not included
+ * in the returned map).
+ *
+ * Gating: callers MUST check `settings.smartAssignTags` and call
+ * `loadTagDetectors` before invoking this function. Returns null when
+ * `det` is null so the caller can fall back to the existing path.
+ *
+ * @param itemIds  IDs of items to classify (typically the unsorted set).
+ * @param cache    Embedding cache keyed by item ID.
+ * @param det      Loaded, validated TagDetectors (from loadTagDetectors).
+ * @param onLog    Optional logger.
+ * @returns        Map<itemId, TagAssignment>, or null when `det` is null.
+ */
+export function scoreWithTagDetectors(
+  itemIds: string[],
+  cache: Record<string, EmbeddingCacheEntry>,
+  det: TagDetectors | null,
+  onLog?: (msg: string) => void,
+): Map<string, TagAssignment> | null {
+  if (det === null) return null;
+  const log = onLog ?? (() => {});
+
+  const result = new Map<string, TagAssignment>();
+  let noVec = 0;
+
+  for (const id of itemIds) {
+    const entry = cache[id];
+    if (!entry?.vec) { noVec++; continue; }
+    const classified = classifyTags(entry.vec, det);
+    if (classified.primary === null) { noVec++; continue; }
+    result.set(id, {
+      primary: classified.primary,
+      tags: classified.tags,
+      canonTags: det.tags,
+    });
+  }
+
+  log(`[scoreWithTagDetectors] ${result.size} items classified, ${noVec} skipped (no embedding)`);
+  return result;
 }
 
 /**

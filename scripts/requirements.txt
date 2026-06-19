@@ -3,3 +3,5 @@ torch>=2.1
 numpy>=1.24
 einops
 faster-whisper>=1.0
+timm>=0.9
+Pillow>=9.0

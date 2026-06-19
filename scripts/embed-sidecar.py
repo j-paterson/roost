@@ -63,6 +63,126 @@ _stats = {"requests": 0, "items": 0, "total_ms": 0.0, "errors": 0}
 
 log = logging.getLogger("embed-sidecar")
 
+# --- NSFW classifier (Marqo/nsfw-image-detection-384 via timm) --------------
+_nsfw_model = None
+_nsfw_tf = None
+_nsfw_lock = Lock()
+
+
+def _nsfw_available():
+    try:
+        import timm  # noqa: F401
+        return True
+    except Exception:
+        return False
+
+
+def _get_nsfw_model():
+    """Lazy-load the Marqo NSFW classifier.  Called inside _nsfw_lock."""
+    global _nsfw_model, _nsfw_tf
+    if _nsfw_model is None:
+        import timm
+        import torch
+        from timm.data import resolve_data_config, create_transform
+        device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
+        log.info("Loading Marqo NSFW classifier on %s …", device)
+        m = timm.create_model("hf_hub:Marqo/nsfw-image-detection-384", pretrained=True).eval().to(device)
+        tf = create_transform(**resolve_data_config({}, model=m))
+        _nsfw_model = m
+        _nsfw_tf = tf
+        log.info("NSFW classifier loaded.")
+    return _nsfw_model, _nsfw_tf
+
+
+def _score_image(model, tf, path: str) -> float:
+    """Score a single image file.  Returns 0.0 on any error."""
+    try:
+        import torch
+        from PIL import Image
+        x = tf(Image.open(path).convert("RGB")).unsqueeze(0)
+        # move to same device as model
+        device = next(model.parameters()).device
+        x = x.to(device)
+        with torch.no_grad():
+            return float(model(x).softmax(-1)[0][0])  # idx 0 = NSFW
+    except Exception:
+        return 0.0
+
+
+_VIDEO_EXTS = {".mp4", ".mov", ".mkv", ".webm", ".avi", ".m4v"}
+_NSFW_KEYFRAMES = 5  # number of evenly-spaced keyframes to sample from a video
+
+
+def _score_video(model, tf, path: str) -> float:
+    """Sample ~5 evenly-spaced keyframes from a video and return the MAX nsfw_score."""
+    try:
+        import av
+        container = av.open(path)
+        video_stream = next((s for s in container.streams if s.type == "video"), None)
+        if video_stream is None:
+            return 0.0
+        total = video_stream.frames or 0
+        # Estimate total frames via duration if metadata says 0
+        if total == 0 and video_stream.duration and video_stream.time_base:
+            total = int(float(video_stream.duration) * float(video_stream.time_base)
+                        * (video_stream.average_rate or 24))
+        # Choose evenly-spaced target frame indices
+        if total > 0:
+            step = max(1, total // _NSFW_KEYFRAMES)
+            targets = set(i * step for i in range(_NSFW_KEYFRAMES))
+        else:
+            # Unknown length — fall back to first frame only
+            targets = {0}
+
+        scores = []
+        for idx, frame in enumerate(container.decode(video_stream)):
+            if idx in targets:
+                try:
+                    from PIL import Image
+                    img = frame.to_image()
+                    scores.append(_score_image_pil(model, tf, img))
+                except Exception:
+                    pass
+            if idx > max(targets):
+                break
+        container.close()
+        return max(scores, default=0.0)
+    except Exception:
+        return 0.0
+
+
+def _score_image_pil(model, tf, pil_img) -> float:
+    """Score a PIL Image object (used by the video keyframe path)."""
+    try:
+        import torch
+        x = tf(pil_img.convert("RGB")).unsqueeze(0)
+        device = next(model.parameters()).device
+        x = x.to(device)
+        with torch.no_grad():
+            return float(model(x).softmax(-1)[0][0])
+    except Exception:
+        return 0.0
+
+
+def classify_nsfw(paths: list) -> list:
+    """Score a list of file paths for NSFW content.
+    Returns a list of dicts: [{"path": str, "nsfw_score": float}, ...]
+    Thread-safe; lazy-loads the model on first call."""
+    with _nsfw_lock:
+        model, tf = _get_nsfw_model()
+    results = []
+    for path in paths:
+        if not isinstance(path, str) or not os.path.isfile(path):
+            results.append({"path": path, "nsfw_score": 0.0})
+            continue
+        ext = Path(path).suffix.lower()
+        if ext in _VIDEO_EXTS:
+            score_val = _score_video(model, tf, path)
+        else:
+            score_val = _score_image(model, tf, path)
+        results.append({"path": path, "nsfw_score": score_val})
+    return results
+
 # --- ASR (speech-to-text) ---------------------------------------------------
 # Lazy faster-whisper integration. The imports below MUST stay inside the
 # functions so embedding-only users who haven't installed faster-whisper can
@@ -236,9 +356,35 @@ class EmbedHandler(BaseHTTPRequestHandler):
             return
         self._json(200, result)
 
+    def _handle_classify_nsfw(self):
+        if not _nsfw_available():
+            self._json(503, {"error": "timm not installed — pip install timm pillow"})
+            return
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+            raw = self.rfile.read(length) if length else b""
+            req = json.loads(raw) if raw else {}
+        except Exception as e:
+            self._json(400, {"error": f"bad json: {e}"})
+            return
+        paths = req.get("paths")
+        if not isinstance(paths, list):
+            self._json(400, {"error": "'paths' must be a list of absolute file path strings"})
+            return
+        try:
+            results = classify_nsfw(paths)
+        except Exception as e:
+            log.exception("classify-nsfw failed")
+            self._json(500, {"error": f"classify-nsfw: {e}"})
+            return
+        self._json(200, {"results": results})
+
     def do_POST(self):
         if self.path == "/transcribe":
             self._handle_transcribe()
+            return
+        if self.path == "/classify-nsfw":
+            self._handle_classify_nsfw()
             return
         if self.path not in ("/api/embed", "/api/embeddings"):
             self._json(404, {"error": f"unknown path {self.path}"})
@@ -333,6 +479,7 @@ def main():
     log.info(f"Serving on http://{args.host}:{args.port}")
     log.info(f"  POST /api/embed        Ollama-compatible batched embed")
     log.info(f"  POST /transcribe       Speech-to-text (faster-whisper, if installed)")
+    log.info(f"  POST /classify-nsfw    NSFW image/video scoring (timm Marqo, if installed)")
     log.info(f"  GET  /health           Health + request stats")
     log.info(f"  Ctrl-C to stop")
     try:

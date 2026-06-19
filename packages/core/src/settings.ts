@@ -56,6 +56,14 @@ export interface RoostSettings {
    *  weights file is absent or its classes don't match the current category set.
    *  See docs/superpowers/specs/2026-06-18-classifier-head-design.md. */
   smartAssignClassifierHead: boolean;
+  /** When true, Smart Assign uses the multi-label tag-detector forward pass
+   *  (tag-detectors.ts) instead of the classifier-head/centroid single-label path.
+   *  Produces a { primary, tags: string[] } result per item; confirm writes
+   *  roost_category = primary AND appends category/* native tags. Falls back to
+   *  the existing path when the tag-detectors.json weights file is absent.
+   *  Default false — flip only after D1 validation on a sample of items.
+   *  See docs/superpowers/specs/2026-06-19-tag-system-wave2-smartassign.md. */
+  smartAssignTags: boolean;
   /** Anthropic API key. Only used when llmBackend === "cloud". Stored in
    *  plain text in data.json — same security model as every other Obsidian
    *  plugin. Empty string when not set. */
@@ -127,6 +135,7 @@ export const DEFAULT_SETTINGS: RoostSettings = {
   llmBackend: "local",
   smartAssignEmbeddingOnly: true,
   smartAssignClassifierHead: true,
+  smartAssignTags: false,
   anthropicApiKey: "",
   anthropicModel: "claude-haiku-4-5-20251001",
   tmdbApiKey: "",

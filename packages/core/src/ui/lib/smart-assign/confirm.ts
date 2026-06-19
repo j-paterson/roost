@@ -8,6 +8,8 @@ import { buildFileIndex } from "@/lib/vault-utils";
 import { bulkWriteAssignments } from "@/ui/lib/bulk-write-assignments";
 import type { IRoostPlugin } from "@/types/plugin";
 import type { SyncProgress } from "@/ui/components/progress-header";
+import type { TagAssignment } from "@/pipeline/evaluate";
+import { appendCategoryTags, tagToObsidianTag } from "@/lib/category-tags";
 export interface SmartAssignConfirmStore {
   getClusterGroups: () => Array<{ uncertainItemIds?: string[] }>;
   getReassignments: () => Map<string, string>;
@@ -25,6 +27,14 @@ export interface SmartAssignConfirmHost {
   fileManager: import("obsidian").FileManager;
   metadataCache: import("obsidian").MetadataCache;
   runUnderGuard?: () => Promise<void> | void;
+  /**
+   * Multi-label tag assignments from the tag-detector forward pass (Wave 2 D1).
+   * Present only when `settings.smartAssignTags` is true and the detector weights
+   * were loaded successfully.  When provided, `confirmSmartAssign` appends
+   * `category/*` native tags for every fired detector tag and sets
+   * `roost_category` to the primary (only if absent or a dropped tag).
+   */
+  tagAssignments?: Map<string, TagAssignment>;
 }
 
 export interface SmartAssignConfirmResult {
@@ -112,6 +122,66 @@ export async function confirmSmartAssign(
 
   host.log(`[confirm] tagged=${result.tagged} alreadySet=${result.alreadySet} notFound=${result.notFound} errors=${result.errors}`);
   if (result.notFound > 0) host.log(`[confirm] ${result.notFound} items could not be matched to vault files`);
+
+  // ── Wave 2 D1: Append category/* tags when tagAssignments are present ────────
+  // Mirrors the faithfulness contract of migrate-to-tags.mjs migrateNote:
+  //   - Append category/<slug> for every fired tag — never remove existing tags.
+  //   - Set roost_category to the primary ONLY when absent or a dropped tag
+  //     (i.e. not in the detector canon — preserve existing valid primaries).
+  if (host.tagAssignments && host.tagAssignments.size > 0) {
+    const tagAssignments = host.tagAssignments;
+    let tagWriteCount = 0;
+
+    for (const [id, ta] of tagAssignments) {
+      const file = fileByRoostId.get(id);
+      if (!file) continue;
+      try {
+        await host.fileManager.processFrontMatter(file, (fm) => {
+          // Existing tags array (may be string[] or undefined in frontmatter)
+          const existingTags: string[] = Array.isArray(fm["tags"])
+            ? (fm["tags"] as unknown[]).map(String)
+            : [];
+
+          // Append category/* tags for all fired tags (appendCategoryTags deduplicates)
+          const allTagNames = ta.tags.length > 0 ? ta.tags : [ta.primary];
+          const newTags = appendCategoryTags(existingTags, allTagNames);
+
+          // Also ensure the primary has its category/* tag even if it didn't fire
+          const primaryObsTag = tagToObsidianTag(ta.primary);
+          const finalTags = newTags.includes(primaryObsTag)
+            ? newTags
+            : appendCategoryTags(newTags, [ta.primary]);
+
+          if (finalTags.length !== existingTags.length ||
+              !finalTags.every((t, i) => t === existingTags[i])) {
+            fm["tags"] = finalTags;
+          }
+
+          // Set roost_category = primary ONLY if absent or a dropped tag.
+          // Faithful to migrate-to-tags.mjs migrateNote:
+          //   keepPrimary = !!(oldPrimary && canon.has(oldPrimary))
+          //   effectivePrimary = keepPrimary ? oldPrimary : primary
+          // ta.canonTags is the full detector tag list, matching what migrateNote
+          // calls `detectors.tags` — so "dropped tag" = any category no longer in
+          // the trained detector weights (e.g. "Content Creation" removed from canon).
+          const existingPrimary = typeof fm[CATEGORY_FIELD] === "string"
+            ? (fm[CATEGORY_FIELD] as string)
+            : null;
+          const canon = new Set(ta.canonTags);
+          const keepPrimary = !!(existingPrimary && canon.has(existingPrimary));
+          if (!keepPrimary) {
+            fm[CATEGORY_FIELD] = ta.primary;
+          }
+        });
+        tagWriteCount++;
+      } catch (e: unknown) {
+        host.log(`[confirm/tags] error writing tags for ${id}: ${e instanceof Error ? e.message : String(e)}`);
+      }
+    }
+
+    host.log(`[confirm/tags] wrote category/* tags for ${tagWriteCount} items`);
+  }
+
   new Notice(`Smart Assign complete — ${result.tagged} notes categorized`);
 
   return { tagged: result.tagged };
