@@ -64,6 +64,14 @@ export interface RoostSettings {
    *  Default false — flip only after D1 validation on a sample of items.
    *  See docs/superpowers/specs/2026-06-19-tag-system-wave2-smartassign.md. */
   smartAssignTags: boolean;
+  /** Names of the user's OWN categories that are NSFW (e.g. ["Spicy"], ["Adult"]).
+   *  This is the only place an NSFW category is named — the product code never
+   *  hardcodes one. Categories listed here route through the NSFW side branch:
+   *  the local image classifier (nsfw-image-detector.ts / sidecar /classify-nsfw)
+   *  instead of / OR'd with the text detector for classification, and image/GT
+   *  evaluation instead of the cloud LLM (which refuses explicit content). Empty
+   *  by default — the NSFW branch is inert until the user flags a category. */
+  nsfwCategories: string[];
   /** Anthropic API key. Only used when llmBackend === "cloud". Stored in
    *  plain text in data.json — same security model as every other Obsidian
    *  plugin. Empty string when not set. */
@@ -136,6 +144,7 @@ export const DEFAULT_SETTINGS: RoostSettings = {
   smartAssignEmbeddingOnly: true,
   smartAssignClassifierHead: true,
   smartAssignTags: false,
+  nsfwCategories: [],
   anthropicApiKey: "",
   anthropicModel: "claude-haiku-4-5-20251001",
   tmdbApiKey: "",

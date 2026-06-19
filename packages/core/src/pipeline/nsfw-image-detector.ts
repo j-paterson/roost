@@ -1,5 +1,11 @@
 /**
- * Spicy-facet image detector — thin TS layer over the Python NSFW sidecar.
+ * NSFW image detector — a general, category-agnostic side branch.
+ *
+ * This is NOT tied to any specific category name. It answers "is this image
+ * NSFW?" via a local classifier, and the caller decides which of the USER's
+ * categories (settings.nsfwCategories) are NSFW and should route through here.
+ * The classifier knows nothing about "Spicy"/"Adult"/etc — those live only in
+ * the user's vault data + config.
  *
  * Contract:
  *   POST http://127.0.0.1:11435/classify-nsfw
@@ -11,12 +17,12 @@
  *   For a video.mp4 path the sidecar samples ~5 evenly-spaced keyframes
  *   and returns the max nsfw_score for that path.
  *
- * classifySpicyImage returns the MAX nsfw_score across all supplied paths,
+ * classifyNsfwImage returns the MAX nsfw_score across all supplied paths,
  * or 0 when the sidecar is unreachable or the paths list is empty.
  *
- * spicyEnsemble — OR logic:
- *   image precision is high (~90%); text recall is high (~73%).
- *   Combining with OR targets ~80%+ recall at moderate precision.
+ * nsfwEnsemble — OR logic: the image signal is precision-high (~90%), a text
+ * detector is recall-high (~73%); OR-ing targets ~80%+ recall. Refusal-proof:
+ * the image path is independent of the cloud LLM that declines NSFW content.
  */
 
 import * as path from "path";
@@ -35,16 +41,16 @@ interface NsfwResponse {
   results: NsfwResult[];
 }
 
-// ── Note shape accepted by resolveSpicyImagePaths ─────────────────────────────
+// ── Note shape accepted by resolveAttachmentImagePaths ────────────────────────
 
 /**
  * Minimal frontmatter fields needed to resolve cover + attachment paths.
  *
- * `roost_id` carries `<platform>:<id>` (e.g. "tiktok:7123456789").
+ * `roostId` carries `<platform>:<id>` (e.g. "tiktok:7123456789").
  * `cover` is stored as a wikilink string: "[[Bookmarks/TikTok/tiktok-XXX/cover.jpg]]"
  *   or a bare vault-relative path.
  */
-export interface SpicyNoteInfo {
+export interface NoteImageInfo {
   /** Absolute filesystem path to the vault root. */
   vaultPath: string;
   /** Vault-relative path to the note file (e.g. "Bookmarks/TikTok/foo.md"). */
@@ -54,13 +60,12 @@ export interface SpicyNoteInfo {
   /**
    * Raw frontmatter `cover` value, typically a wikilink:
    *   "[[Bookmarks/TikTok/tiktok-7123456789/cover.jpg]]"
-   * or a bare vault-relative path like:
-   *   "Bookmarks/TikTok/tiktok-7123456789/cover.jpg"
+   * or a bare vault-relative path.
    */
   cover?: string;
 }
 
-// ── resolveSpicyImagePaths ────────────────────────────────────────────────────
+// ── resolveAttachmentImagePaths ───────────────────────────────────────────────
 
 /** Known static thumbnail filenames, in priority order. */
 const COVER_NAMES = [
@@ -80,16 +85,11 @@ const MAX_NUMBERED_IMG = 11;
  * Attachment folder layout: `<noteDir>/<platform>-<id>/`
  *   e.g. Bookmarks/TikTok/tiktok-7123456789/
  *
- * Probes (in order):
- *  1. Absolute path derived from the `cover` wikilink / bare path in frontmatter.
- *  2. Named thumbnails (cover.jpg, video-poster.jpg, …) in the attachment folder.
- *  3. Numbered images 1.jpg … 11.jpg in the attachment folder.
- *  4. video.mp4 in the attachment folder (sidecar samples keyframes from it).
- *
- * Only paths that exist on disk are included.
- * Duplicate paths are de-duplicated (cover wikilink often points at cover.jpg).
+ * Probes (in order): the `cover` frontmatter wikilink/bare path; named
+ * thumbnails; numbered images 1.jpg…11.jpg; video.mp4 (the sidecar samples
+ * keyframes from it). Only existing, de-duplicated paths are returned.
  */
-export function resolveSpicyImagePaths(note: SpicyNoteInfo): string[] {
+export function resolveAttachmentImagePaths(note: NoteImageInfo): string[] {
   const seen = new Set<string>();
   const paths: string[] = [];
 
@@ -119,43 +119,34 @@ export function resolveSpicyImagePaths(note: SpicyNoteInfo): string[] {
     const noteDir = path.dirname(path.join(note.vaultPath, note.notePath));
     const attachDir = path.join(noteDir, `${platform}-${itemId}`);
 
-    // Named thumbnails
     for (const name of COVER_NAMES) {
       add(path.join(attachDir, name));
     }
-
-    // Numbered images
     for (let i = 1; i <= MAX_NUMBERED_IMG; i++) {
       add(path.join(attachDir, `${i}.jpg`));
     }
-
-    // Video (sidecar samples ~5 evenly-spaced keyframes)
     add(path.join(attachDir, "video.mp4"));
   }
 
   return paths;
 }
 
-// ── classifySpicyImage ────────────────────────────────────────────────────────
+// ── classifyNsfwImage ─────────────────────────────────────────────────────────
 
 /**
- * Send `coverPaths` to the NSFW sidecar and return the maximum nsfw_score.
+ * Send `imagePaths` to the NSFW sidecar and return the maximum nsfw_score.
+ * Returns 0 on empty input, an unreachable sidecar, or a malformed response.
  *
- * Returns 0 when:
- *  - `coverPaths` is empty.
- *  - The sidecar is unreachable or returns an unexpected response.
- *  - All returned scores are absent/malformed.
- *
- * @param coverPaths  Absolute paths to images and/or video.mp4 files.
+ * @param imagePaths  Absolute paths to images and/or video.mp4 files.
  */
-export async function classifySpicyImage(coverPaths: string[]): Promise<number> {
-  if (coverPaths.length === 0) return 0;
+export async function classifyNsfwImage(imagePaths: string[]): Promise<number> {
+  if (imagePaths.length === 0) return 0;
 
   try {
     const response = await fetch(NSFW_ENDPOINT, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ paths: coverPaths }),
+      body: JSON.stringify({ paths: imagePaths }),
     });
 
     if (!response.ok) return 0;
@@ -175,21 +166,21 @@ export async function classifySpicyImage(coverPaths: string[]): Promise<number> 
   }
 }
 
-// ── spicyEnsemble ─────────────────────────────────────────────────────────────
+// ── nsfwEnsemble ──────────────────────────────────────────────────────────────
 
 /**
- * Combine image and text NSFW scores with OR logic.
+ * Combine image and text NSFW scores with OR logic. The image detector is
+ * precision-high (~90%) and a text detector is recall-high (~73%); OR-ing them
+ * reaches ~80%+ recall. Used to decide whether an item belongs to a user's
+ * NSFW-flagged category — the category name is the caller's concern, not this
+ * module's.
  *
- * The image detector is precision-high (~90%) and the text detector is
- * recall-high (~73%).  OR-ing them achieves ~80%+ recall.
- *
- * @param imageScore  nsfw_score from classifySpicyImage (0–1).
- * @param textScore   Spicy text-detector score (0–1).
- * @param imgThr      Image threshold (default 0.5).
- * @param textThr     Text threshold (caller-supplied; no default — must be explicit).
- * @returns           true when either signal fires.
+ * @param imageScore  nsfw_score from classifyNsfwImage (0–1).
+ * @param textScore   text NSFW-detector score (0–1).
+ * @param imgThr      image threshold (default 0.5).
+ * @param textThr     text threshold (caller-supplied; explicit).
  */
-export function spicyEnsemble(
+export function nsfwEnsemble(
   imageScore: number,
   textScore: number,
   imgThr: number = 0.5,

@@ -1,8 +1,8 @@
 /**
- * Unit tests for spicy-image-detector.ts
+ * Unit tests for nsfw-image-detector.ts
  *
  * Covers:
- *   classifySpicyImage
+ *   classifyNsfwImage
  *     - returns max nsfw_score across all paths
  *     - returns 0 on empty paths
  *     - returns 0 when sidecar is unreachable (fetch throws)
@@ -12,7 +12,7 @@
  *     - handles a single path correctly
  *     - deduplicates the max across multiple results
  *
- *   spicyEnsemble — OR truth table
+ *   nsfwEnsemble — OR truth table
  *     - false when both below threshold
  *     - true when image fires, text does not
  *     - true when text fires, image does not
@@ -27,17 +27,17 @@ import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
 import {
-  classifySpicyImage,
-  spicyEnsemble,
-  resolveSpicyImagePaths,
-  type SpicyNoteInfo,
-} from "@/pipeline/spicy-image-detector";
+  classifyNsfwImage,
+  nsfwEnsemble,
+  resolveAttachmentImagePaths,
+  type NoteImageInfo,
+} from "@/pipeline/nsfw-image-detector";
 
-// ── classifySpicyImage tests ──────────────────────────────────────────────────
+// ── classifyNsfwImage tests ──────────────────────────────────────────────────
 
 const NSFW_ENDPOINT = "http://127.0.0.1:11435/classify-nsfw";
 
-describe("classifySpicyImage", () => {
+describe("classifyNsfwImage", () => {
   const originalFetch = globalThis.fetch;
 
   afterEach(() => {
@@ -55,7 +55,7 @@ describe("classifySpicyImage", () => {
   it("returns 0 when coverPaths is empty (no fetch call)", async () => {
     const spy = vi.fn();
     globalThis.fetch = spy as unknown as typeof fetch;
-    const score = await classifySpicyImage([]);
+    const score = await classifyNsfwImage([]);
     expect(score).toBe(0);
     expect(spy).not.toHaveBeenCalled();
   });
@@ -68,31 +68,31 @@ describe("classifySpicyImage", () => {
         { path: "/abs/2.jpg", nsfw_score: 0.6 },
       ],
     });
-    const score = await classifySpicyImage(["/abs/cover.jpg", "/abs/1.jpg", "/abs/2.jpg"]);
+    const score = await classifyNsfwImage(["/abs/cover.jpg", "/abs/1.jpg", "/abs/2.jpg"]);
     expect(score).toBeCloseTo(0.85, 5);
   });
 
   it("returns the single nsfw_score when only one path is provided", async () => {
     mockFetch({ results: [{ path: "/abs/cover.jpg", nsfw_score: 0.42 }] });
-    const score = await classifySpicyImage(["/abs/cover.jpg"]);
+    const score = await classifyNsfwImage(["/abs/cover.jpg"]);
     expect(score).toBeCloseTo(0.42, 5);
   });
 
   it("returns 0 when fetch throws (sidecar unreachable)", async () => {
     globalThis.fetch = vi.fn(async () => { throw new Error("ECONNREFUSED"); }) as unknown as typeof fetch;
-    const score = await classifySpicyImage(["/abs/cover.jpg"]);
+    const score = await classifyNsfwImage(["/abs/cover.jpg"]);
     expect(score).toBe(0);
   });
 
   it("returns 0 when response is not ok (e.g. 500)", async () => {
     mockFetch({ error: "internal server error" }, false, 500);
-    const score = await classifySpicyImage(["/abs/cover.jpg"]);
+    const score = await classifyNsfwImage(["/abs/cover.jpg"]);
     expect(score).toBe(0);
   });
 
   it("returns 0 when results array is empty", async () => {
     mockFetch({ results: [] });
-    const score = await classifySpicyImage(["/abs/cover.jpg"]);
+    const score = await classifyNsfwImage(["/abs/cover.jpg"]);
     expect(score).toBe(0);
   });
 
@@ -103,13 +103,13 @@ describe("classifySpicyImage", () => {
         { path: "/abs/1.jpg", nsfw_score: "high" },
       ],
     });
-    const score = await classifySpicyImage(["/abs/cover.jpg", "/abs/1.jpg"]);
+    const score = await classifyNsfwImage(["/abs/cover.jpg", "/abs/1.jpg"]);
     expect(score).toBe(0);
   });
 
   it("returns 0 when response has no results field", async () => {
     mockFetch({ error: "bad format" });
-    const score = await classifySpicyImage(["/abs/cover.jpg"]);
+    const score = await classifyNsfwImage(["/abs/cover.jpg"]);
     expect(score).toBe(0);
   });
 
@@ -120,7 +120,7 @@ describe("classifySpicyImage", () => {
     })) as unknown as typeof fetch;
     globalThis.fetch = spy;
 
-    await classifySpicyImage(["/abs/cover.jpg"]);
+    await classifyNsfwImage(["/abs/cover.jpg"]);
 
     expect(spy).toHaveBeenCalledTimes(1);
     const [url, init] = (spy as ReturnType<typeof vi.fn>).mock.calls[0];
@@ -139,7 +139,7 @@ describe("classifySpicyImage", () => {
     })) as unknown as typeof fetch;
     globalThis.fetch = spy;
 
-    const score = await classifySpicyImage(["/abs/tiktok-123/video.mp4"]);
+    const score = await classifyNsfwImage(["/abs/tiktok-123/video.mp4"]);
     expect(score).toBeCloseTo(0.91, 5);
     const [, init] = (spy as ReturnType<typeof vi.fn>).mock.calls[0];
     const parsed = JSON.parse((init as RequestInit).body as string);
@@ -147,58 +147,58 @@ describe("classifySpicyImage", () => {
   });
 });
 
-// ── spicyEnsemble OR truth table ─────────────────────────────────────────────
+// ── nsfwEnsemble OR truth table ─────────────────────────────────────────────
 
-describe("spicyEnsemble — OR truth table", () => {
+describe("nsfwEnsemble — OR truth table", () => {
   const IMG_THR = 0.5;
   const TEXT_THR = 0.4;
 
   it("returns false when both scores are below their thresholds", () => {
-    expect(spicyEnsemble(0.3, 0.2, IMG_THR, TEXT_THR)).toBe(false);
+    expect(nsfwEnsemble(0.3, 0.2, IMG_THR, TEXT_THR)).toBe(false);
   });
 
   it("returns true when image score meets threshold, text does not", () => {
-    expect(spicyEnsemble(0.6, 0.1, IMG_THR, TEXT_THR)).toBe(true);
+    expect(nsfwEnsemble(0.6, 0.1, IMG_THR, TEXT_THR)).toBe(true);
   });
 
   it("returns true when text score meets threshold, image does not", () => {
-    expect(spicyEnsemble(0.1, 0.5, IMG_THR, TEXT_THR)).toBe(true);
+    expect(nsfwEnsemble(0.1, 0.5, IMG_THR, TEXT_THR)).toBe(true);
   });
 
   it("returns true when both scores meet their thresholds", () => {
-    expect(spicyEnsemble(0.8, 0.9, IMG_THR, TEXT_THR)).toBe(true);
+    expect(nsfwEnsemble(0.8, 0.9, IMG_THR, TEXT_THR)).toBe(true);
   });
 
   it("image exactly at threshold fires (>= is inclusive)", () => {
-    expect(spicyEnsemble(IMG_THR, 0.0, IMG_THR, TEXT_THR)).toBe(true);
+    expect(nsfwEnsemble(IMG_THR, 0.0, IMG_THR, TEXT_THR)).toBe(true);
   });
 
   it("text exactly at threshold fires (>= is inclusive)", () => {
-    expect(spicyEnsemble(0.0, TEXT_THR, IMG_THR, TEXT_THR)).toBe(true);
+    expect(nsfwEnsemble(0.0, TEXT_THR, IMG_THR, TEXT_THR)).toBe(true);
   });
 
   it("image just below threshold does not fire when text is also below", () => {
-    expect(spicyEnsemble(IMG_THR - 0.001, TEXT_THR - 0.001, IMG_THR, TEXT_THR)).toBe(false);
+    expect(nsfwEnsemble(IMG_THR - 0.001, TEXT_THR - 0.001, IMG_THR, TEXT_THR)).toBe(false);
   });
 
   it("uses default imgThr of 0.5 when explicitly passed as 0.5", () => {
     // Verify the documented default value (0.5) matches the behaviour
-    expect(spicyEnsemble(0.49, 0.0, 0.5, 0.9)).toBe(false);
-    expect(spicyEnsemble(0.5, 0.0, 0.5, 0.9)).toBe(true);
+    expect(nsfwEnsemble(0.49, 0.0, 0.5, 0.9)).toBe(false);
+    expect(nsfwEnsemble(0.5, 0.0, 0.5, 0.9)).toBe(true);
   });
 
   it("scores of 0 / 0 return false", () => {
-    expect(spicyEnsemble(0, 0, IMG_THR, TEXT_THR)).toBe(false);
+    expect(nsfwEnsemble(0, 0, IMG_THR, TEXT_THR)).toBe(false);
   });
 
   it("scores of 1 / 1 return true", () => {
-    expect(spicyEnsemble(1, 1, IMG_THR, TEXT_THR)).toBe(true);
+    expect(nsfwEnsemble(1, 1, IMG_THR, TEXT_THR)).toBe(true);
   });
 });
 
-// ── resolveSpicyImagePaths tests ─────────────────────────────────────────────
+// ── resolveAttachmentImagePaths tests ─────────────────────────────────────────────
 
-describe("resolveSpicyImagePaths", () => {
+describe("resolveAttachmentImagePaths", () => {
   let tmpDir: string;
 
   beforeEach(() => {
@@ -209,7 +209,7 @@ describe("resolveSpicyImagePaths", () => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  function makeNote(overrides: Partial<SpicyNoteInfo> = {}): SpicyNoteInfo {
+  function makeNote(overrides: Partial<NoteImageInfo> = {}): NoteImageInfo {
     return {
       vaultPath: tmpDir,
       notePath: "Bookmarks/TikTok/some-note.md",
@@ -230,19 +230,19 @@ describe("resolveSpicyImagePaths", () => {
   }
 
   it("returns empty array when no files exist", () => {
-    const result = resolveSpicyImagePaths(makeNote());
+    const result = resolveAttachmentImagePaths(makeNote());
     expect(result).toHaveLength(0);
   });
 
   it("includes cover.jpg from the attachment folder", () => {
     touch("Bookmarks/TikTok/tiktok-7123456789/cover.jpg");
-    const result = resolveSpicyImagePaths(makeNote());
+    const result = resolveAttachmentImagePaths(makeNote());
     expect(result).toContain(path.join(attachDir(), "cover.jpg"));
   });
 
   it("includes video-poster.jpg from the attachment folder", () => {
     touch("Bookmarks/TikTok/tiktok-7123456789/video-poster.jpg");
-    const result = resolveSpicyImagePaths(makeNote());
+    const result = resolveAttachmentImagePaths(makeNote());
     expect(result).toContain(path.join(attachDir(), "video-poster.jpg"));
   });
 
@@ -250,7 +250,7 @@ describe("resolveSpicyImagePaths", () => {
     for (let i = 1; i <= 3; i++) {
       touch(`Bookmarks/TikTok/tiktok-7123456789/${i}.jpg`);
     }
-    const result = resolveSpicyImagePaths(makeNote());
+    const result = resolveAttachmentImagePaths(makeNote());
     expect(result).toContain(path.join(attachDir(), "1.jpg"));
     expect(result).toContain(path.join(attachDir(), "2.jpg"));
     expect(result).toContain(path.join(attachDir(), "3.jpg"));
@@ -259,7 +259,7 @@ describe("resolveSpicyImagePaths", () => {
 
   it("includes video.mp4 from the attachment folder", () => {
     touch("Bookmarks/TikTok/tiktok-7123456789/video.mp4");
-    const result = resolveSpicyImagePaths(makeNote());
+    const result = resolveAttachmentImagePaths(makeNote());
     expect(result).toContain(path.join(attachDir(), "video.mp4"));
   });
 
@@ -268,7 +268,7 @@ describe("resolveSpicyImagePaths", () => {
     const note = makeNote({
       cover: "[[Bookmarks/TikTok/tiktok-7123456789/cover.jpg]]",
     });
-    const result = resolveSpicyImagePaths(note);
+    const result = resolveAttachmentImagePaths(note);
     // cover.jpg appears only once despite being in both wikilink and named scan
     const count = result.filter(p => p === path.join(attachDir(), "cover.jpg")).length;
     expect(count).toBe(1);
@@ -279,14 +279,14 @@ describe("resolveSpicyImagePaths", () => {
     const note = makeNote({
       cover: "Bookmarks/TikTok/tiktok-7123456789/cover.jpg",
     });
-    const result = resolveSpicyImagePaths(note);
+    const result = resolveAttachmentImagePaths(note);
     expect(result).toContain(path.join(tmpDir, "Bookmarks/TikTok/tiktok-7123456789/cover.jpg"));
   });
 
   it("does not include non-existent paths", () => {
     // Nothing is created on disk — result must be empty
     const note = makeNote({ cover: "[[Bookmarks/TikTok/tiktok-7123456789/cover.jpg]]" });
-    const result = resolveSpicyImagePaths(note);
+    const result = resolveAttachmentImagePaths(note);
     expect(result).toHaveLength(0);
   });
 
@@ -294,7 +294,7 @@ describe("resolveSpicyImagePaths", () => {
     touch("Bookmarks/TikTok/tiktok-7123456789/cover.jpg");
     const note = makeNote({ roostId: "badrootid" });
     // No platform:id split → no attachment folder — returns empty (no cover in frontmatter either)
-    const result = resolveSpicyImagePaths(note);
+    const result = resolveAttachmentImagePaths(note);
     expect(result).toHaveLength(0);
   });
 });
