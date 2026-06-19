@@ -7,6 +7,13 @@ tag), and reports per-tag recall + precision-LOWER-BOUND + system tags/item on a
 fixture split. This is the faithfulness reference for Phase B (the TS detector
 must match this) and the standing check that the shipped weights still behave.
 
+CAVEAT — LEAKAGE: the shipped weights train on ALL honest labels, so a fixture
+split is IN training; per-tag recall here is inflated (memorised), not honest. The
+honest recall is the trainer's CV recall@k; the honest deployment DENSITY is the
+trainer's auto-item base-rate calibration (~1.8 tags/item). Use this script as a
+forward-pass FAITHFULNESS reference for Phase B (TS must match the sigmoid math),
+not as an accuracy eval.
+
 NOTE: precision-LB is pessimistic (single-label GT counts a correct SECONDARY tag
 as FP), so it badly understates FACET tags (Humor, Spicy) that are usually
 secondary. True precision comes from the LLM audit (audit-tag-precision workflow).
