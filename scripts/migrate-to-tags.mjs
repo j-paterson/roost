@@ -256,31 +256,33 @@ export function migrateNote(content, roostId, detectors, embCache) {
 
   const oldPrimary = readKey(lines, "roost_category");
 
-  // Map each firing tag to its Obsidian category/ tag string
+  // PRESERVE an existing valid primary (human-assigned, or the already-validated balanced-head
+  // category). Only (re)assign roost_category when it is ABSENT or a DROPPED tag (e.g. Content
+  // Creation, no longer in the canon). This never clobbers a human category or re-churns the
+  // validated primaries — the migration is otherwise ADD-ONLY (it appends category/* tags).
+  const canon = new Set(detectors.tags);
+  const keepPrimary = !!(oldPrimary && canon.has(oldPrimary));
+  const effectivePrimary = keepPrimary ? oldPrimary : primary;
+
+  // Map firing tags + the effective primary to Obsidian category/ tag strings
   const obsidianCatTags = firingTags.map(tagToObsidianTag);
-  const primaryObsTag = tagToObsidianTag(primary);
+  const primaryObsTag = tagToObsidianTag(effectivePrimary);
 
-  // Read existing tags to avoid duplicates
   const existingTags = new Set(readTags(lines));
-
-  // Determine which category tags are genuinely new
   const toAdd = obsidianCatTags.filter((t) => !existingTags.has(t));
-
-  // Also ensure primary tag is included even if it didn't fire (it's the argmax)
+  // Ensure the effective primary tag is present even if its detector didn't fire
   if (!existingTags.has(primaryObsTag) && !toAdd.includes(primaryObsTag)) {
     toAdd.push(primaryObsTag);
   }
 
-  // Determine if roost_category needs updating
-  const primaryChanges = primary !== oldPrimary;
+  const setPrimary = !keepPrimary && primary !== oldPrimary;
 
-  if (toAdd.length === 0 && !primaryChanges) {
-    return { content, changed: false, addedTags: [], newPrimary: primary, oldPrimary };
+  if (toAdd.length === 0 && !setPrimary) {
+    return { content, changed: false, addedTags: [], newPrimary: effectivePrimary, oldPrimary };
   }
 
-  // Apply changes
   let newLines = appendTags(lines, toAdd);
-  if (primaryChanges) {
+  if (setPrimary) {
     setKey(newLines, "roost_category", primary);
   }
 
@@ -288,7 +290,7 @@ export function migrateNote(content, roostId, detectors, embCache) {
     content: newLines.join("\n") + fm.rest,
     changed: true,
     addedTags: toAdd,
-    newPrimary: primary,
+    newPrimary: effectivePrimary,
     oldPrimary: oldPrimary ?? "(none)",
   };
 }
