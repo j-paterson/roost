@@ -60,7 +60,9 @@ from sklearn.model_selection import StratifiedKFold, cross_val_predict
 
 # ── Configuration ─────────────────────────────────────────────────────────────
 
-FACET_TAGS = ["Humor", "Spicy"]   # extend as more facets are validated
+# Facet tags are supplied at runtime via --facets (comma-separated) — NO personal
+# taxonomy is hardcoded here. Pass the user's facet/tone categories, matching the
+# plugin's settings.facetCategories (e.g. --facets "Humor,Spicy").
 RECALL_TARGET = 0.70              # target recall on held-out CV fold per facet
 FIRE_RATE_CAP = 0.60              # no facet fires on more than this fraction at deploy
 DEPLOY_SAMPLE = 6000              # auto (unseen) items used to measure fire-rate
@@ -170,9 +172,19 @@ def apply_detectors(X, W, b, thr):
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def main():
+    import argparse
+    ap = argparse.ArgumentParser(description="Train facet-tag detectors (recall-target thresholds).")
+    ap.add_argument("--facets", required=True,
+                    help="comma-separated facet/tone category names (match settings.facetCategories), "
+                         'e.g. --facets "Humor,Spicy". No taxonomy is hardcoded.')
+    args = ap.parse_args()
+    facet_tags = [f.strip() for f in args.facets.split(",") if f.strip()]
+    if not facet_tags:
+        raise SystemExit("--facets is empty")
+
     vault = os.environ.get("ROOST_VAULT")
     if not vault:
-        raise SystemExit("ROOST_VAULT not set — run: ROOST_VAULT=<path> python scripts/train-facet-detectors.py")
+        raise SystemExit("ROOST_VAULT not set — run: ROOST_VAULT=<path> python scripts/train-facet-detectors.py --facets ...")
 
     print("Loading honest labels + embeddings …")
     ids, X, y = load_xy_all(vault)
@@ -180,8 +192,8 @@ def main():
     print(f"  total honest items: {len(y)}  |  unique tags: {len(set(y))}")
 
     # Filter to facets that actually exist in the label set.
-    active_facets = [f for f in FACET_TAGS if f in counts]
-    missing = [f for f in FACET_TAGS if f not in counts]
+    active_facets = [f for f in facet_tags if f in counts]
+    missing = [f for f in facet_tags if f not in counts]
     if missing:
         print(f"  WARNING: facet(s) absent from honest labels (skipped): {missing}")
     if not active_facets:

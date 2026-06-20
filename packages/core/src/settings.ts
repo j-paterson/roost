@@ -72,6 +72,13 @@ export interface RoostSettings {
    *  evaluation instead of the cloud LLM (which refuses explicit content). Empty
    *  by default — the NSFW branch is inert until the user flags a category. */
   nsfwCategories: string[];
+  /** Names of the user's categories that are FACETS (tones/cross-cutting, not
+   *  topics — e.g. ["Humor","Spicy"]). Facets are almost always SECONDARY labels,
+   *  so they get recall-target detector thresholds (facet-detectors.json) instead
+   *  of the base-rate topical thresholds. The only place facets are named — no
+   *  taxonomy is hardcoded. Empty by default. (train-facet-detectors.py --facets
+   *  should match this list.) */
+  facetCategories: string[];
   /** Anthropic API key. Only used when llmBackend === "cloud". Stored in
    *  plain text in data.json — same security model as every other Obsidian
    *  plugin. Empty string when not set. */
@@ -145,6 +152,7 @@ export const DEFAULT_SETTINGS: RoostSettings = {
   smartAssignClassifierHead: true,
   smartAssignTags: false,
   nsfwCategories: [],
+  facetCategories: [],
   anthropicApiKey: "",
   anthropicModel: "claude-haiku-4-5-20251001",
   tmdbApiKey: "",
