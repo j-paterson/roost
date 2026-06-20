@@ -15,7 +15,7 @@ import { runClusteringStep2DiscoverAndScore } from "@/ui/lib/smart-assign/cluste
 import { runClusteringStep5Finalize } from "@/ui/lib/smart-assign/clustering-step-5-finalize";
 import { buildClusteringContext } from "@/ui/lib/smart-assign/clustering-context";
 import { loadTagDetectors, scoreWithTagDetectors, type TagAssignment } from "@/pipeline/evaluate";
-import { augmentNsfwAssignments } from "@/pipeline/nsfw-augment";
+import { augmentUncensoredAssignments } from "@/pipeline/uncensored-augment";
 import { buildFileIndex, vaultBasePath } from "@/lib/vault-utils";
 
 export interface SmartAssignClusteringRefs {
@@ -80,13 +80,13 @@ export async function runSmartAssignClustering(host: SmartAssignClusteringHost):
         host.log,
       );
       if (tagMap !== null) {
-        // ── NSFW image augment (inert when nsfwCategories=[]) ────────────────
-        const nsfwCats = host.plugin.settings.nsfwCategories ?? [];
-        if (nsfwCats.length > 0 && det !== null) {
+        // ── Uncensored content image augment (inert when uncensoredCategories=[]) ──
+        const uncensoredCats = host.plugin.settings.uncensoredCategories ?? [];
+        if (uncensoredCats.length > 0 && det !== null) {
           const vp = vaultBasePath(host.app.vault);
           const fileIndex = buildFileIndex(host.app, host.plugin.settings.syncFolder);
-          await augmentNsfwAssignments(tagMap, [...step0.unsortedIdSet], {
-            nsfwCategories: nsfwCats,
+          await augmentUncensoredAssignments(tagMap, [...step0.unsortedIdSet], {
+            uncensoredCategories: uncensoredCats,
             det,
             vaultPath: vp,
             embeddingCache: step0.cache,

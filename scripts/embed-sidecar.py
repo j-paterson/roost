@@ -63,13 +63,15 @@ _stats = {"requests": 0, "items": 0, "total_ms": 0.0, "errors": 0}
 
 log = logging.getLogger("embed-sidecar")
 
-# --- NSFW classifier (Marqo/nsfw-image-detection-384 via timm) --------------
-_nsfw_model = None
-_nsfw_tf = None
-_nsfw_lock = Lock()
+# --- Uncensored-content classifier (Marqo/nsfw-image-detection-384 via timm) -
+# The underlying model detects explicit image content; this local path is
+# censorship-resistant (cloud LLMs refuse explicit/uncensored content).
+_uncensored_model = None
+_uncensored_tf = None
+_uncensored_lock = Lock()
 
 
-def _nsfw_available():
+def _uncensored_available():
     try:
         import timm  # noqa: F401
         return True
@@ -77,21 +79,21 @@ def _nsfw_available():
         return False
 
 
-def _get_nsfw_model():
-    """Lazy-load the Marqo NSFW classifier.  Called inside _nsfw_lock."""
-    global _nsfw_model, _nsfw_tf
-    if _nsfw_model is None:
+def _get_uncensored_model():
+    """Lazy-load the Marqo explicit-content classifier.  Called inside _uncensored_lock."""
+    global _uncensored_model, _uncensored_tf
+    if _uncensored_model is None:
         import timm
         import torch
         from timm.data import resolve_data_config, create_transform
         device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
-        log.info("Loading Marqo NSFW classifier on %s …", device)
+        log.info("Loading Marqo uncensored-content classifier on %s …", device)
         m = timm.create_model("hf_hub:Marqo/nsfw-image-detection-384", pretrained=True).eval().to(device)
         tf = create_transform(**resolve_data_config({}, model=m))
-        _nsfw_model = m
-        _nsfw_tf = tf
-        log.info("NSFW classifier loaded.")
-    return _nsfw_model, _nsfw_tf
+        _uncensored_model = m
+        _uncensored_tf = tf
+        log.info("Uncensored-content classifier loaded.")
+    return _uncensored_model, _uncensored_tf
 
 
 def _score_image(model, tf, path: str) -> float:
@@ -110,11 +112,11 @@ def _score_image(model, tf, path: str) -> float:
 
 
 _VIDEO_EXTS = {".mp4", ".mov", ".mkv", ".webm", ".avi", ".m4v"}
-_NSFW_KEYFRAMES = 5  # number of evenly-spaced keyframes to sample from a video
+_UNCENSORED_KEYFRAMES = 5  # number of evenly-spaced keyframes to sample from a video
 
 
 def _score_video(model, tf, path: str) -> float:
-    """Sample ~5 evenly-spaced keyframes from a video and return the MAX nsfw_score."""
+    """Sample ~5 evenly-spaced keyframes from a video and return the MAX explicit-content score."""
     try:
         import av
         container = av.open(path)
@@ -128,8 +130,8 @@ def _score_video(model, tf, path: str) -> float:
                         * (video_stream.average_rate or 24))
         # Choose evenly-spaced target frame indices
         if total > 0:
-            step = max(1, total // _NSFW_KEYFRAMES)
-            targets = set(i * step for i in range(_NSFW_KEYFRAMES))
+            step = max(1, total // _UNCENSORED_KEYFRAMES)
+            targets = set(i * step for i in range(_UNCENSORED_KEYFRAMES))
         else:
             # Unknown length — fall back to first frame only
             targets = {0}
@@ -164,23 +166,23 @@ def _score_image_pil(model, tf, pil_img) -> float:
         return 0.0
 
 
-def classify_nsfw(paths: list) -> list:
-    """Score a list of file paths for NSFW content.
-    Returns a list of dicts: [{"path": str, "nsfw_score": float}, ...]
+def classify_uncensored(paths: list) -> list:
+    """Score a list of file paths for explicit/uncensored content.
+    Returns a list of dicts: [{"path": str, "score": float}, ...]
     Thread-safe; lazy-loads the model on first call."""
-    with _nsfw_lock:
-        model, tf = _get_nsfw_model()
+    with _uncensored_lock:
+        model, tf = _get_uncensored_model()
     results = []
     for path in paths:
         if not isinstance(path, str) or not os.path.isfile(path):
-            results.append({"path": path, "nsfw_score": 0.0})
+            results.append({"path": path, "score": 0.0})
             continue
         ext = Path(path).suffix.lower()
         if ext in _VIDEO_EXTS:
             score_val = _score_video(model, tf, path)
         else:
             score_val = _score_image(model, tf, path)
-        results.append({"path": path, "nsfw_score": score_val})
+        results.append({"path": path, "score": score_val})
     return results
 
 # --- ASR (speech-to-text) ---------------------------------------------------
@@ -356,8 +358,8 @@ class EmbedHandler(BaseHTTPRequestHandler):
             return
         self._json(200, result)
 
-    def _handle_classify_nsfw(self):
-        if not _nsfw_available():
+    def _handle_classify_uncensored(self):
+        if not _uncensored_available():
             self._json(503, {"error": "timm not installed — pip install timm pillow"})
             return
         try:
@@ -372,10 +374,10 @@ class EmbedHandler(BaseHTTPRequestHandler):
             self._json(400, {"error": "'paths' must be a list of absolute file path strings"})
             return
         try:
-            results = classify_nsfw(paths)
+            results = classify_uncensored(paths)
         except Exception as e:
-            log.exception("classify-nsfw failed")
-            self._json(500, {"error": f"classify-nsfw: {e}"})
+            log.exception("classify-uncensored failed")
+            self._json(500, {"error": f"classify-uncensored: {e}"})
             return
         self._json(200, {"results": results})
 
@@ -383,8 +385,8 @@ class EmbedHandler(BaseHTTPRequestHandler):
         if self.path == "/transcribe":
             self._handle_transcribe()
             return
-        if self.path == "/classify-nsfw":
-            self._handle_classify_nsfw()
+        if self.path == "/classify-uncensored":
+            self._handle_classify_uncensored()
             return
         if self.path not in ("/api/embed", "/api/embeddings"):
             self._json(404, {"error": f"unknown path {self.path}"})
@@ -479,7 +481,7 @@ def main():
     log.info(f"Serving on http://{args.host}:{args.port}")
     log.info(f"  POST /api/embed        Ollama-compatible batched embed")
     log.info(f"  POST /transcribe       Speech-to-text (faster-whisper, if installed)")
-    log.info(f"  POST /classify-nsfw    NSFW image/video scoring (timm Marqo, if installed)")
+    log.info(f"  POST /classify-uncensored  Explicit-content image/video scoring (timm Marqo, if installed)")
     log.info(f"  GET  /health           Health + request stats")
     log.info(f"  Ctrl-C to stop")
     try:

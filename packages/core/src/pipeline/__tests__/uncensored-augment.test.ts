@@ -1,16 +1,16 @@
 /**
- * Unit tests for pipeline/nsfw-augment.ts — augmentNsfwAssignments.
+ * Unit tests for pipeline/uncensored-augment.ts — augmentUncensoredAssignments.
  *
  * Tests:
- *   1. No-op when nsfwCategories is empty (no classifyNsfwImage call).
+ *   1. No-op when uncensoredCategories is empty (no classifyUncensoredImage call).
  *   2. Adds the tag when image score fires (imageScore >= 0.5), text did not.
  *   3. Leaves tag set unchanged when neither image nor text fires.
- *   4. Skips processing (no image call) when nsfwCategories is empty.
+ *   4. Skips processing (no image call) when uncensoredCategories is empty.
  *   5. Does not duplicate a tag already present in ta.tags.
- *   6. Handles multiple NSFW categories independently.
+ *   6. Handles multiple uncensored categories independently.
  *   7. Skips item when it has no TagAssignment in the map.
  *   8. Skips item when fileIndex has no file for that id (imagePaths=[]).
- *   9. No sidecar call when imageScore=0 (classifyNsfwImage returns 0 for empty paths).
+ *   9. No sidecar call when imageScore=0 (classifyUncensoredImage returns 0 for empty paths).
  *  10. Category not in detector tags is silently skipped.
  *  11. Both image and text fire → tag added (OR logic).
  *  12. Text fires alone (above textThr) but text already fired in scoreWithTagDetectors
@@ -21,17 +21,17 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { TagAssignment } from "@/pipeline/evaluate";
 import type { TagDetectors } from "@/pipeline/tag-detectors";
 import type { EmbeddingCacheEntry } from "@/types/roost";
-import { augmentNsfwAssignments, type AugmentNsfwOpts } from "@/pipeline/nsfw-augment";
+import { augmentUncensoredAssignments, type AugmentUncensoredOpts } from "@/pipeline/uncensored-augment";
 
 // ── Mocks ─────────────────────────────────────────────────────────────────────
 
 // We mock the three external functions that have side-effects/I/O.
-vi.mock("@/pipeline/nsfw-image-detector", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/pipeline/nsfw-image-detector")>();
+vi.mock("@/pipeline/uncensored-image-detector", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/pipeline/uncensored-image-detector")>();
   return {
     ...actual,
-    // classifyNsfwImage is replaced per-test via mockClassifyNsfwImage helper
-    classifyNsfwImage: vi.fn(async (_paths: string[]) => 0),
+    // classifyUncensoredImage is replaced per-test via getClassifyUncensoredImageMock helper
+    classifyUncensoredImage: vi.fn(async (_paths: string[]) => 0),
     // resolveAttachmentImagePaths: return ["fake-path"] when file is found (non-empty),
     // simulated by returning paths based on the note's roostId.
     resolveAttachmentImagePaths: vi.fn((_note: unknown) => {
@@ -95,7 +95,7 @@ function makeMetadataCache(files: Map<string, Record<string, unknown>>): import(
   } as unknown as import("obsidian").MetadataCache;
 }
 
-function makeOpts(overrides: Partial<AugmentNsfwOpts> = {}): AugmentNsfwOpts {
+function makeOpts(overrides: Partial<AugmentUncensoredOpts> = {}): AugmentUncensoredOpts {
   const fileIndex = new Map<string, import("obsidian").TFile>([
     ["tiktok:001", makeTFile("Bookmarks/TikTok/note1.md")],
   ]);
@@ -103,7 +103,7 @@ function makeOpts(overrides: Partial<AugmentNsfwOpts> = {}): AugmentNsfwOpts {
     ["Bookmarks/TikTok/note1.md", { cover: "[[Bookmarks/TikTok/tiktok-001/cover.jpg]]" }],
   ]));
   return {
-    nsfwCategories: ["Spicy"],
+    uncensoredCategories: ["Spicy"],
     det: makeDet(),
     vaultPath: "/vault",
     embeddingCache: makeEmbeddingCache("tiktok:001", [1, 0]),
@@ -113,17 +113,17 @@ function makeOpts(overrides: Partial<AugmentNsfwOpts> = {}): AugmentNsfwOpts {
   };
 }
 
-// Helper: get the mocked classifyNsfwImage function
-async function getClassifyNsfwImageMock() {
-  const mod = await import("@/pipeline/nsfw-image-detector");
-  return mod.classifyNsfwImage as ReturnType<typeof vi.fn>;
+// Helper: get the mocked classifyUncensoredImage function
+async function getClassifyUncensoredImageMock() {
+  const mod = await import("@/pipeline/uncensored-image-detector");
+  return mod.classifyUncensoredImage as ReturnType<typeof vi.fn>;
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
-describe("augmentNsfwAssignments", () => {
+describe("augmentUncensoredAssignments", () => {
   beforeEach(async () => {
-    const mock = await getClassifyNsfwImageMock();
+    const mock = await getClassifyUncensoredImageMock();
     mock.mockReset();
     mock.mockResolvedValue(0); // default: sidecar returns 0
   });
@@ -132,14 +132,14 @@ describe("augmentNsfwAssignments", () => {
     vi.restoreAllMocks();
   });
 
-  // ── 1. No-op when nsfwCategories=[] ─────────────────────────────────────────
-  it("is a no-op when nsfwCategories is empty — no classifyNsfwImage call", async () => {
-    const mock = await getClassifyNsfwImageMock();
+  // ── 1. No-op when uncensoredCategories=[] ────────────────────────────────────
+  it("is a no-op when uncensoredCategories is empty — no classifyUncensoredImage call", async () => {
+    const mock = await getClassifyUncensoredImageMock();
     const assignments = new Map<string, TagAssignment>([
       ["tiktok:001", { primary: "Sports", tags: ["Sports"], canonTags: ["Spicy", "Sports"] }],
     ]);
 
-    await augmentNsfwAssignments(assignments, ["tiktok:001"], makeOpts({ nsfwCategories: [] }));
+    await augmentUncensoredAssignments(assignments, ["tiktok:001"], makeOpts({ uncensoredCategories: [] }));
 
     expect(mock).not.toHaveBeenCalled();
     // Tags unchanged
@@ -147,8 +147,8 @@ describe("augmentNsfwAssignments", () => {
   });
 
   // ── 2. Adds tag when image fires, text did not ───────────────────────────────
-  it("adds the NSFW category tag when image score fires even if text score did not fire", async () => {
-    const mock = await getClassifyNsfwImageMock();
+  it("adds the uncensored category tag when image score fires even if text score did not fire", async () => {
+    const mock = await getClassifyUncensoredImageMock();
     // Image score = 0.7 (>= 0.5 threshold) → ensemble fires
     mock.mockResolvedValue(0.7);
 
@@ -159,11 +159,11 @@ describe("augmentNsfwAssignments", () => {
       ["tiktok:001", { primary: "Sports", tags: [], canonTags: ["Spicy", "Sports"] }],
     ]);
 
-    await augmentNsfwAssignments(
+    await augmentUncensoredAssignments(
       assignments,
       ["tiktok:001"],
       makeOpts({
-        nsfwCategories: ["Sports"],
+        uncensoredCategories: ["Sports"],
         det,
         embeddingCache: makeEmbeddingCache("tiktok:001", [0, 0.01]), // very low Sports sigmoid
       }),
@@ -175,7 +175,7 @@ describe("augmentNsfwAssignments", () => {
 
   // ── 3. Leaves set unchanged when neither fires ───────────────────────────────
   it("leaves tag set unchanged when neither image nor text fires", async () => {
-    const mock = await getClassifyNsfwImageMock();
+    const mock = await getClassifyUncensoredImageMock();
     // Image score = 0 → ensemble can only fire from text (but text threshold=0.4,
     // and our embedding yields sigmoid≈0.5 for Spicy — still >= 0.4 — so we use
     // a high-threshold detector here)
@@ -189,10 +189,10 @@ describe("augmentNsfwAssignments", () => {
       ["tiktok:001", { primary: "Sports", tags: [], canonTags: ["Spicy", "Sports"] }],
     ]);
 
-    await augmentNsfwAssignments(
+    await augmentUncensoredAssignments(
       assignments,
       ["tiktok:001"],
-      makeOpts({ nsfwCategories: ["Spicy"], det }),
+      makeOpts({ uncensoredCategories: ["Spicy"], det }),
     );
 
     // imageScore=0 → skip (no ensemble call needed), tags unchanged
@@ -200,21 +200,21 @@ describe("augmentNsfwAssignments", () => {
     expect(mock).toHaveBeenCalled(); // call made (paths non-empty from mock)
   });
 
-  // ── 4. No sidecar call when nsfwCategories=[] ────────────────────────────────
-  it("makes zero calls to the image sidecar when nsfwCategories is empty", async () => {
-    const mock = await getClassifyNsfwImageMock();
+  // ── 4. No sidecar call when uncensoredCategories=[] ──────────────────────────
+  it("makes zero calls to the image sidecar when uncensoredCategories is empty", async () => {
+    const mock = await getClassifyUncensoredImageMock();
     const assignments = new Map<string, TagAssignment>([
       ["tiktok:001", { primary: "Spicy", tags: ["Spicy"], canonTags: ["Spicy"] }],
     ]);
 
-    await augmentNsfwAssignments(assignments, ["tiktok:001"], makeOpts({ nsfwCategories: [] }));
+    await augmentUncensoredAssignments(assignments, ["tiktok:001"], makeOpts({ uncensoredCategories: [] }));
 
     expect(mock).not.toHaveBeenCalled();
   });
 
   // ── 5. Does not duplicate a tag already in ta.tags ───────────────────────────
   it("does not duplicate a tag that is already in ta.tags", async () => {
-    const mock = await getClassifyNsfwImageMock();
+    const mock = await getClassifyUncensoredImageMock();
     mock.mockResolvedValue(0.9); // image fires
 
     const assignments = new Map<string, TagAssignment>([
@@ -222,10 +222,10 @@ describe("augmentNsfwAssignments", () => {
       ["tiktok:001", { primary: "Spicy", tags: ["Spicy"], canonTags: ["Spicy", "Sports"] }],
     ]);
 
-    await augmentNsfwAssignments(
+    await augmentUncensoredAssignments(
       assignments,
       ["tiktok:001"],
-      makeOpts({ nsfwCategories: ["Spicy"] }),
+      makeOpts({ uncensoredCategories: ["Spicy"] }),
     );
 
     // No duplicate — still one "Spicy"
@@ -233,9 +233,9 @@ describe("augmentNsfwAssignments", () => {
     expect(tags.filter(t => t === "Spicy")).toHaveLength(1);
   });
 
-  // ── 6. Multiple NSFW categories handled independently ────────────────────────
-  it("handles multiple NSFW categories independently", async () => {
-    const mock = await getClassifyNsfwImageMock();
+  // ── 6. Multiple uncensored categories handled independently ──────────────────
+  it("handles multiple uncensored categories independently", async () => {
+    const mock = await getClassifyUncensoredImageMock();
     mock.mockResolvedValue(0.8); // image fires
 
     // High threshold so text doesn't fire for either category
@@ -244,10 +244,10 @@ describe("augmentNsfwAssignments", () => {
       ["tiktok:001", { primary: "Sports", tags: [], canonTags: ["Spicy", "Sports"] }],
     ]);
 
-    await augmentNsfwAssignments(
+    await augmentUncensoredAssignments(
       assignments,
       ["tiktok:001"],
-      makeOpts({ nsfwCategories: ["Spicy", "Sports"], det }),
+      makeOpts({ uncensoredCategories: ["Spicy", "Sports"], det }),
     );
 
     // image=0.8 >= 0.5 → ensemble fires for both
@@ -258,13 +258,13 @@ describe("augmentNsfwAssignments", () => {
 
   // ── 7. Skips item with no TagAssignment ──────────────────────────────────────
   it("skips an item that has no TagAssignment in the map", async () => {
-    const mock = await getClassifyNsfwImageMock();
+    const mock = await getClassifyUncensoredImageMock();
     const assignments = new Map<string, TagAssignment>();
 
-    await augmentNsfwAssignments(
+    await augmentUncensoredAssignments(
       assignments,
       ["tiktok:001"],
-      makeOpts({ nsfwCategories: ["Spicy"] }),
+      makeOpts({ uncensoredCategories: ["Spicy"] }),
     );
 
     // No assignment to mutate, no sidecar call needed
@@ -274,13 +274,13 @@ describe("augmentNsfwAssignments", () => {
 
   // ── 8. Handles missing file gracefully (empty imagePaths → imageScore=0) ─────
   it("gracefully handles missing file in fileIndex (empty image paths)", async () => {
-    const mock = await getClassifyNsfwImageMock();
+    const mock = await getClassifyUncensoredImageMock();
 
     const { resolveAttachmentImagePaths: resolveAttachMock } = await import(
-      "@/pipeline/nsfw-image-detector"
+      "@/pipeline/uncensored-image-detector"
     );
     (resolveAttachMock as ReturnType<typeof vi.fn>).mockReturnValueOnce([]);
-    // classifyNsfwImage([]) returns 0 (no sidecar call for empty array in real impl,
+    // classifyUncensoredImage([]) returns 0 (no sidecar call for empty array in real impl,
     // but our mock still tracks the call — in the real impl it short-circuits)
     mock.mockResolvedValue(0);
 
@@ -290,10 +290,10 @@ describe("augmentNsfwAssignments", () => {
     const fileIndex = new Map<string, import("obsidian").TFile>(); // empty
     const metadataCache = makeMetadataCache(new Map());
 
-    await augmentNsfwAssignments(
+    await augmentUncensoredAssignments(
       assignments,
       ["tiktok:999"],
-      makeOpts({ nsfwCategories: ["Spicy"], fileIndex, metadataCache,
+      makeOpts({ uncensoredCategories: ["Spicy"], fileIndex, metadataCache,
         embeddingCache: makeEmbeddingCache("tiktok:999", [1, 0]) }),
     );
 
@@ -302,29 +302,29 @@ describe("augmentNsfwAssignments", () => {
   });
 
   // ── 9. Category not in detector tags is silently skipped ─────────────────────
-  it("silently skips NSFW categories not in the detector tag list", async () => {
-    const mock = await getClassifyNsfwImageMock();
+  it("silently skips uncensored categories not in the detector tag list", async () => {
+    const mock = await getClassifyUncensoredImageMock();
     mock.mockResolvedValue(0.9);
 
     const assignments = new Map<string, TagAssignment>([
       ["tiktok:001", { primary: "Sports", tags: [], canonTags: ["Spicy", "Sports"] }],
     ]);
 
-    await augmentNsfwAssignments(
+    await augmentUncensoredAssignments(
       assignments,
       ["tiktok:001"],
-      makeOpts({ nsfwCategories: ["UnknownCategory"] }),
+      makeOpts({ uncensoredCategories: ["UnknownCategory"] }),
     );
 
     // "UnknownCategory" not in det.tags → no tag added, no crash
     expect(assignments.get("tiktok:001")!.tags).toEqual([]);
-    // No image call made because all known NSFW cats were filtered out
+    // No image call made because all known uncensored cats were filtered out
     expect(mock).not.toHaveBeenCalled();
   });
 
   // ── 10. OR logic: image fires alone → adds tag ───────────────────────────────
   it("OR logic: image fires (>= 0.5), text below threshold → tag added", async () => {
-    const mock = await getClassifyNsfwImageMock();
+    const mock = await getClassifyUncensoredImageMock();
     mock.mockResolvedValue(0.6);
 
     // Sports threshold = 0.99 so text doesn't fire
@@ -333,10 +333,10 @@ describe("augmentNsfwAssignments", () => {
       ["tiktok:001", { primary: "Sports", tags: [], canonTags: ["Spicy", "Sports"] }],
     ]);
 
-    await augmentNsfwAssignments(
+    await augmentUncensoredAssignments(
       assignments,
       ["tiktok:001"],
-      makeOpts({ nsfwCategories: ["Spicy"], det }),
+      makeOpts({ uncensoredCategories: ["Spicy"], det }),
     );
 
     expect(assignments.get("tiktok:001")!.tags).toContain("Spicy");
@@ -344,7 +344,7 @@ describe("augmentNsfwAssignments", () => {
 
   // ── 11. OR logic: neither fires → nothing added ──────────────────────────────
   it("OR logic: image below 0.5, text below textThr → tag NOT added", async () => {
-    const mock = await getClassifyNsfwImageMock();
+    const mock = await getClassifyUncensoredImageMock();
     mock.mockResolvedValue(0.3); // below 0.5 image threshold
 
     // Spicy threshold = 0.99 → text doesn't fire either
@@ -353,10 +353,10 @@ describe("augmentNsfwAssignments", () => {
       ["tiktok:001", { primary: "Sports", tags: [], canonTags: ["Spicy", "Sports"] }],
     ]);
 
-    await augmentNsfwAssignments(
+    await augmentUncensoredAssignments(
       assignments,
       ["tiktok:001"],
-      makeOpts({ nsfwCategories: ["Spicy"], det }),
+      makeOpts({ uncensoredCategories: ["Spicy"], det }),
     );
 
     // image=0.3 < 0.5, text sigmoid < 0.99 → no tag added
@@ -365,7 +365,7 @@ describe("augmentNsfwAssignments", () => {
 
   // ── 12. imageScore > 0 but < imgThr, text fires → tag added ──────────────────
   it("text fires alone (image below imgThr) → tag added", async () => {
-    const mock = await getClassifyNsfwImageMock();
+    const mock = await getClassifyUncensoredImageMock();
     mock.mockResolvedValue(0.3); // below 0.5 image threshold
 
     // Use embedding [1, 0]: Spicy sigmoid ≈ 0.731 >= threshold 0.4 → text fires
@@ -374,11 +374,11 @@ describe("augmentNsfwAssignments", () => {
       ["tiktok:001", { primary: "Sports", tags: [], canonTags: ["Spicy", "Sports"] }],
     ]);
 
-    await augmentNsfwAssignments(
+    await augmentUncensoredAssignments(
       assignments,
       ["tiktok:001"],
       makeOpts({
-        nsfwCategories: ["Spicy"],
+        uncensoredCategories: ["Spicy"],
         det,
         embeddingCache: makeEmbeddingCache("tiktok:001", [1, 0]),
       }),

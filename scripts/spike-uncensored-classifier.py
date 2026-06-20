@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Spike: validate the Marqo NSFW image classifier against Roost's human Spicy labels.
+"""Spike: validate the Marqo explicit-content image classifier against Roost's human Spicy labels.
 
 Independent of the (refusing) LLM text pipeline — classifies the cover image directly,
-so it's the refusal-proof signal for the Spicy facet. Measures recall on the human
+so it's the censorship-resistant signal for the Spicy facet. Measures recall on the human
 `collection: Spicy` items + FP rate on a non-Spicy sample (no cloud judge needed).
 
-Run: ROOST_VAULT=<vault> python scripts/spike-nsfw-classifier.py [--threshold 0.75]
+Run: ROOST_VAULT=<vault> python scripts/spike-uncensored-classifier.py [--threshold 0.75]
 """
 import argparse, glob, os, re, sys, random
 from pathlib import Path
@@ -73,7 +73,7 @@ def main():
             note_dir[iid] = Path(p).parent
             plat[iid] = m.group(1)
 
-    print(f"loading Marqo model on {DEVICE} …", file=sys.stderr)
+    print(f"loading Marqo uncensored-content model on {DEVICE} …", file=sys.stderr)
     model, tf = load_model()
 
     def folder_for(iid):

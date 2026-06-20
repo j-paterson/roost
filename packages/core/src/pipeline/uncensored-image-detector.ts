@@ -1,28 +1,31 @@
 /**
- * NSFW image detector — a general, category-agnostic side branch.
+ * Uncensored content image detector — a general, category-agnostic side branch.
  *
- * This is NOT tied to any specific category name. It answers "is this image
- * NSFW?" via a local classifier, and the caller decides which of the USER's
- * categories (settings.nsfwCategories) are NSFW and should route through here.
- * The classifier knows nothing about "Spicy"/"Adult"/etc — those live only in
- * the user's vault data + config.
+ * This is NOT tied to any specific category name. It answers "does this image
+ * contain explicit/uncensored content?" via a local classifier, and the caller
+ * decides which of the USER's categories (settings.uncensoredCategories) are
+ * uncensored and should route through here. The classifier knows nothing about
+ * "Spicy"/"Adult"/etc — those live only in the user's vault data + config.
+ *
+ * This module exists because cloud LLMs refuse explicit/uncensored content;
+ * the local classifier path is censorship-resistant by design.
  *
  * Contract:
- *   POST http://127.0.0.1:11435/classify-nsfw
+ *   POST http://127.0.0.1:11435/classify-uncensored
  *   body    {"paths":["/abs/path/cover.jpg", "/abs/path/video.mp4", ...]}
- *   response {"results":[{"path":"...","nsfw_score":<0..1>},...]}
+ *   response {"results":[{"path":"...","score":<0..1>},...]}
  *
  * Model: Marqo/nsfw-image-detection-384 via timm.
  *   label_names=['NSFW','SFW'] → softmax index 0 = NSFW score.
  *   For a video.mp4 path the sidecar samples ~5 evenly-spaced keyframes
- *   and returns the max nsfw_score for that path.
+ *   and returns the max score for that path.
  *
- * classifyNsfwImage returns the MAX nsfw_score across all supplied paths,
+ * classifyUncensoredImage returns the MAX score across all supplied paths,
  * or 0 when the sidecar is unreachable or the paths list is empty.
  *
- * nsfwEnsemble — OR logic: the image signal is precision-high (~90%), a text
+ * uncensoredEnsemble — OR logic: the image signal is precision-high (~90%), a text
  * detector is recall-high (~73%); OR-ing targets ~80%+ recall. Refusal-proof:
- * the image path is independent of the cloud LLM that declines NSFW content.
+ * the image path is independent of the cloud LLM that declines explicit/uncensored content.
  */
 
 import * as path from "path";
@@ -30,15 +33,15 @@ import * as fs from "fs";
 
 // ── Sidecar contract ──────────────────────────────────────────────────────────
 
-const NSFW_ENDPOINT = "http://127.0.0.1:11435/classify-nsfw";
+const UNCENSORED_ENDPOINT = "http://127.0.0.1:11435/classify-uncensored";
 
-interface NsfwResult {
+interface UncensoredResult {
   path: string;
-  nsfw_score: number;
+  score: number;
 }
 
-interface NsfwResponse {
-  results: NsfwResult[];
+interface UncensoredResponse {
+  results: UncensoredResult[];
 }
 
 // ── Note shape accepted by resolveAttachmentImagePaths ────────────────────────
@@ -131,19 +134,23 @@ export function resolveAttachmentImagePaths(note: NoteImageInfo): string[] {
   return paths;
 }
 
-// ── classifyNsfwImage ─────────────────────────────────────────────────────────
+// ── classifyUncensoredImage ───────────────────────────────────────────────────
 
 /**
- * Send `imagePaths` to the NSFW sidecar and return the maximum nsfw_score.
+ * Send `imagePaths` to the uncensored-content sidecar and return the maximum score.
  * Returns 0 on empty input, an unreachable sidecar, or a malformed response.
+ *
+ * The underlying classifier (Marqo/nsfw-image-detection-384) detects explicit
+ * image content; the local path is censorship-resistant (cloud LLMs refuse
+ * explicit/uncensored content).
  *
  * @param imagePaths  Absolute paths to images and/or video.mp4 files.
  */
-export async function classifyNsfwImage(imagePaths: string[]): Promise<number> {
+export async function classifyUncensoredImage(imagePaths: string[]): Promise<number> {
   if (imagePaths.length === 0) return 0;
 
   try {
-    const response = await fetch(NSFW_ENDPOINT, {
+    const response = await fetch(UNCENSORED_ENDPOINT, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ paths: imagePaths }),
@@ -151,12 +158,12 @@ export async function classifyNsfwImage(imagePaths: string[]): Promise<number> {
 
     if (!response.ok) return 0;
 
-    const data = (await response.json()) as NsfwResponse;
+    const data = (await response.json()) as UncensoredResponse;
     if (!Array.isArray(data?.results) || data.results.length === 0) return 0;
 
     let maxScore = 0;
     for (const result of data.results) {
-      const score = typeof result?.nsfw_score === "number" ? result.nsfw_score : 0;
+      const score = typeof result?.score === "number" ? result.score : 0;
       if (score > maxScore) maxScore = score;
     }
     return maxScore;
@@ -166,21 +173,21 @@ export async function classifyNsfwImage(imagePaths: string[]): Promise<number> {
   }
 }
 
-// ── nsfwEnsemble ──────────────────────────────────────────────────────────────
+// ── uncensoredEnsemble ────────────────────────────────────────────────────────
 
 /**
- * Combine image and text NSFW scores with OR logic. The image detector is
+ * Combine image and text explicit-content scores with OR logic. The image detector is
  * precision-high (~90%) and a text detector is recall-high (~73%); OR-ing them
  * reaches ~80%+ recall. Used to decide whether an item belongs to a user's
- * NSFW-flagged category — the category name is the caller's concern, not this
+ * uncensored-content category — the category name is the caller's concern, not this
  * module's.
  *
- * @param imageScore  nsfw_score from classifyNsfwImage (0–1).
- * @param textScore   text NSFW-detector score (0–1).
+ * @param imageScore  score from classifyUncensoredImage (0–1).
+ * @param textScore   text detector score (0–1).
  * @param imgThr      image threshold (default 0.5).
  * @param textThr     text threshold (caller-supplied; explicit).
  */
-export function nsfwEnsemble(
+export function uncensoredEnsemble(
   imageScore: number,
   textScore: number,
   imgThr: number = 0.5,

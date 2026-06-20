@@ -64,14 +64,16 @@ export interface RoostSettings {
    *  Default false — flip only after D1 validation on a sample of items.
    *  See docs/superpowers/specs/2026-06-19-tag-system-wave2-smartassign.md. */
   smartAssignTags: boolean;
-  /** Names of the user's OWN categories that are NSFW (e.g. ["Spicy"], ["Adult"]).
-   *  This is the only place an NSFW category is named — the product code never
-   *  hardcodes one. Categories listed here route through the NSFW side branch:
-   *  the local image classifier (nsfw-image-detector.ts / sidecar /classify-nsfw)
-   *  instead of / OR'd with the text detector for classification, and image/GT
-   *  evaluation instead of the cloud LLM (which refuses explicit content). Empty
-   *  by default — the NSFW branch is inert until the user flags a category. */
-  nsfwCategories: string[];
+  /** Names of the user's OWN categories that handle uncensored/explicit content
+   *  (e.g. ["Spicy"], ["Adult"]). This is the only place an uncensored category
+   *  is named — the product code never hardcodes one. Categories listed here route
+   *  through the uncensored content side branch: the local image classifier
+   *  (uncensored-image-detector.ts / sidecar /classify-uncensored) instead of /
+   *  OR'd with the text detector for classification, and image/GT evaluation
+   *  instead of the cloud LLM (which refuses explicit/uncensored content). Empty
+   *  by default — the uncensored content side branch is inert until the user
+   *  flags a category. */
+  uncensoredCategories: string[];
   /** Names of the user's categories that are FACETS (tones/cross-cutting, not
    *  topics — e.g. ["Humor","Spicy"]). Facets are almost always SECONDARY labels,
    *  so they get recall-target detector thresholds (facet-detectors.json) instead
@@ -151,7 +153,7 @@ export const DEFAULT_SETTINGS: RoostSettings = {
   smartAssignEmbeddingOnly: true,
   smartAssignClassifierHead: true,
   smartAssignTags: false,
-  nsfwCategories: [],
+  uncensoredCategories: [],
   facetCategories: [],
   anthropicApiKey: "",
   anthropicModel: "claude-haiku-4-5-20251001",
