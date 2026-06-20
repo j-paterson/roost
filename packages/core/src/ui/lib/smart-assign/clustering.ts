@@ -14,6 +14,9 @@ import { runClusteringStep1ScoreKnown } from "@/ui/lib/smart-assign/clustering-s
 import { runClusteringStep2DiscoverAndScore } from "@/ui/lib/smart-assign/clustering-step-2-discover";
 import { runClusteringStep5Finalize } from "@/ui/lib/smart-assign/clustering-step-5-finalize";
 import { buildClusteringContext } from "@/ui/lib/smart-assign/clustering-context";
+import { loadTagDetectors, scoreWithTagDetectors, type TagAssignment } from "@/pipeline/evaluate";
+import { augmentNsfwAssignments } from "@/pipeline/nsfw-augment";
+import { buildFileIndex, vaultBasePath } from "@/lib/vault-utils";
 
 export interface SmartAssignClusteringRefs {
   platformRef: React.MutableRefObject<string | undefined>;
@@ -47,6 +50,11 @@ export interface SmartAssignClusteringHost {
   setForceToggle: (s: Set<string>) => void;
   setUserRenames: (m: Map<string, string>) => void;
   loadFromClusterOutput: (result: ClassifyProposalData) => void;
+  /**
+   * Called after tag-detector scoring (Wave 2 D1). Absent when smartAssignTags
+   * is false or weights are not found — callers must treat it as optional.
+   */
+  setTagAssignments?: (assignments: Map<string, TagAssignment>) => void;
 }
 
 export async function runSmartAssignClustering(host: SmartAssignClusteringHost): Promise<void> {
@@ -58,6 +66,38 @@ export async function runSmartAssignClustering(host: SmartAssignClusteringHost):
   try {
     const step0 = await runClusteringStep0Embed(host, signal);
     if (!step0) return;
+
+    // ── Wave 2 D1: Multi-label tag scoring (default-off) ─────────────────────
+    // Only runs when smartAssignTags=true AND the detector weights exist.
+    // When either condition is false: setTagAssignments is never called → confirm
+    // receives no tagAssignments → single-label behaviour is unchanged.
+    if (host.plugin.settings.smartAssignTags && host.setTagAssignments) {
+      const det = loadTagDetectors(host.app.vault);
+      const tagMap = scoreWithTagDetectors(
+        [...step0.unsortedIdSet],
+        step0.cache,
+        det,
+        host.log,
+      );
+      if (tagMap !== null) {
+        // ── NSFW image augment (inert when nsfwCategories=[]) ────────────────
+        const nsfwCats = host.plugin.settings.nsfwCategories ?? [];
+        if (nsfwCats.length > 0 && det !== null) {
+          const vp = vaultBasePath(host.app.vault);
+          const fileIndex = buildFileIndex(host.app, host.plugin.settings.syncFolder);
+          await augmentNsfwAssignments(tagMap, [...step0.unsortedIdSet], {
+            nsfwCategories: nsfwCats,
+            det,
+            vaultPath: vp,
+            embeddingCache: step0.cache,
+            fileIndex,
+            metadataCache: host.app.metadataCache,
+            onLog: host.log,
+          });
+        }
+        host.setTagAssignments(tagMap);
+      }
+    }
 
     const step1 = await runClusteringStep1ScoreKnown(host, signal, step0);
     if (!step1) return;

@@ -21,6 +21,7 @@ import {
 } from "@/ui/lib/smart-assign/reassign";
 import type { SmartAssignMode } from "@/ui/lib/smart-assign/types";
 import type { NeighborSuggestion } from "@/pipeline/suggest-neighbors";
+import type { TagAssignment } from "@/pipeline/evaluate";
 
 type Mode = SmartAssignMode;
 
@@ -53,6 +54,9 @@ export function useSmartAssign(deps: SmartAssignDeps) {
 
   const catEmbeddingsRef = useRef<CategoryEmbeddings | null>(null);
   const taxonomyRef = useRef<CategoryTaxonomy | null>(null);
+  // Wave 2 D1: populated by runSmartAssignClustering when smartAssignTags=true
+  // and detector weights are found. Cleared on each new clustering run.
+  const tagAssignmentsRef = useRef<Map<string, TagAssignment> | null>(null);
 
   const [newClusterDescriptions, setNewClusterDescriptions] = useState<Map<string, string>>(new Map());
   const [newClusterNotDescriptions, setNewClusterNotDescriptions] = useState<Map<string, string>>(new Map());
@@ -115,6 +119,8 @@ export function useSmartAssign(deps: SmartAssignDeps) {
       setForceToggle,
       setUserRenames,
       loadFromClusterOutput,
+      // Wave 2 D1: store tag assignments so handleConfirm can pass them through.
+      setTagAssignments: (assignments) => { tagAssignmentsRef.current = assignments; },
     };
   }
 
@@ -150,6 +156,8 @@ export function useSmartAssign(deps: SmartAssignDeps) {
   }
 
   async function runClustering_() {
+    // Clear any tag assignments from a prior run before starting a new one.
+    tagAssignmentsRef.current = null;
     await runSmartAssignClustering(buildClusteringHost());
   }
 
@@ -168,6 +176,10 @@ export function useSmartAssign(deps: SmartAssignDeps) {
         store,
         fileManager: app.fileManager,
         metadataCache: app.metadataCache,
+        // Wave 2 D1: pass tag assignments when they were computed during clustering.
+        // tagAssignmentsRef.current is null (never set) when smartAssignTags=false
+        // or the detector weights were absent — confirm falls back to single-label.
+        tagAssignments: tagAssignmentsRef.current ?? undefined,
         runUnderGuard: async () => {
           await scanLibrary();
           resetSmartAssignStaging(buildResetHost());
