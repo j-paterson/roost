@@ -11,6 +11,7 @@ import { toggleGalleryExpanded, createGalleryExpandState, type GalleryExpandStat
 import { GallerySelectionController, type GallerySelectionHost } from "@/views/gallery-selection";
 import { GalleryFeedModeController, type GalleryFeedModeHost } from "@/views/gallery-feed-mode";
 import { traceEvent } from "@/lib/render-trace";
+import { createCoalescingTrigger, type CoalescingTrigger } from "@/lib/debounce";
 import {
   createGalleryPlaceholder,
   hydrateGalleryCard,
@@ -63,6 +64,10 @@ import { isPipelineSubstituteView } from "@/views/pipeline-views/registry";
 import { isCategoryPipelineActive } from "@/lib/pipeline-gate-plugin";
 
 export const BASES_VIEW_ID = "roost-bookmarks";
+
+/** Coalescing window for gallery repaints — collapses an Obsidian re-index storm to one
+ *  trailing paint (single updates still fire immediately via the leading edge). */
+const GALLERY_DATA_UPDATE_DEBOUNCE_MS = 250;
 
 export class BookmarksBasesView extends BasesView
   implements GallerySelectionHost, GalleryFeedModeHost, GalleryApplyFilterViewBind {
@@ -371,6 +376,8 @@ export class BookmarksBasesView extends BasesView
   }
 
   onunload(): void {
+    this.dataUpdateTrigger?.cancel();
+    this.dataUpdateTrigger = null;
     this.feedMode.dispose();
     this.hydrationObserver?.disconnect();
     this.hydrationObserver = null;
@@ -419,6 +426,8 @@ export class BookmarksBasesView extends BasesView
     });
   }
 
+  private dataUpdateTrigger: CoalescingTrigger | null = null;
+
   onDataUpdated(): void {
     const plugin = this.getRoostPlugin();
     traceEvent("onDataUpdated:enter", {
@@ -428,6 +437,27 @@ export class BookmarksBasesView extends BasesView
       dataLen: this.data?.data?.length ?? 0,
     });
     if (plugin?.bulkWriteInProgress) {
+      traceEvent("onDataUpdated:guarded");
+      return;
+    }
+
+    // Coalesce the repaint. Obsidian fires onDataUpdated in a STORM while it re-indexes
+    // externally-changed files (e.g. after a bulk vault write / the tag migration). The
+    // bulkWriteInProgress guard above only covers Roost's OWN writes, not Obsidian's
+    // re-index — so without coalescing the grid repaints on every event and strobes.
+    // Leading edge keeps single updates immediate; the burst collapses to one trailing paint.
+    if (this.dataUpdateTrigger === null) {
+      this.dataUpdateTrigger = createCoalescingTrigger(
+        () => this.performDataUpdate(),
+        GALLERY_DATA_UPDATE_DEBOUNCE_MS,
+      );
+    }
+    this.dataUpdateTrigger.trigger();
+  }
+
+  private performDataUpdate(): void {
+    // Re-check the guard: a Roost bulk write may have begun during the coalescing window.
+    if (this.getRoostPlugin()?.bulkWriteInProgress) {
       traceEvent("onDataUpdated:guarded");
       return;
     }
