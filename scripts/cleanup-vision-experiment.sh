@@ -51,6 +51,25 @@ for m in "${HF_MODELS[@]}"; do
   fi
 done
 
+echo "--- JoyCaption GGUF route (llama.cpp) ---"
+# The working JoyCaption path: Q4_K_M LM (~4.7GB) + SigLIP mmproj (~840MB) + a 3.13 venv (mlx-vlm).
+for d in /tmp/jc-gguf /tmp/jc-venv; do
+  if [ -d "$d" ]; then
+    echo "  $(du -sh "$d" 2>/dev/null | cut -f1)  $d"
+    [ "$APPLY" = "--apply" ] && rm -rf "$d" && echo "    removed."
+  else
+    echo "  (absent: $d)"
+  fi
+done
+if brew list llama.cpp >/dev/null 2>&1; then
+  echo "  brew llama.cpp installed (for JoyCaption mtmd inference)"
+  [ "$APPLY" = "--apply" ] && brew uninstall llama.cpp 2>/dev/null && echo "    uninstalled."
+fi
+
+echo
+echo "=== KEEP (experiment RESULTS — do not delete) ==="
+echo "  <vault>/.roost/cache/redescribe-exp/   — manifest + per-captioner embeddings/descriptions/results"
+echo "  <vault>/.roost/cache/exp-redescribe-*.json — cached captions (reusable for new comparisons)"
 echo
 echo "=== Optional (review by hand — installed into the DEV venv .roost/venv) ==="
 echo "  pip packages added for the experiment: transformers, accelerate, sentencepiece, mlx-vlm, timm"
