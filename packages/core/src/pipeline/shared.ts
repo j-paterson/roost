@@ -231,7 +231,7 @@ export function loadEmbeddingCache(vault: Vault): Record<string, EmbeddingCacheE
   if (vecMap && vecMap.size > 0) {
     for (const [key, vec] of vecMap) {
       if (textCache[key]) textCache[key].vec = vec;
-      else textCache[key] = { vision: null, summary: null, category: null, vec };
+      else textCache[key] = { vision: null, summary: null, category: null, vec, vecText: null };
     }
     const clipMap = loadClipVectorsBin(cachePath(vaultPath, "clip-vectors.bin"));
     if (clipMap && clipMap.size > 0) {

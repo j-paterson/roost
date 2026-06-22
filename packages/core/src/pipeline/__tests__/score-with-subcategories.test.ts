@@ -23,9 +23,9 @@ describe("scoreWithSubcategories", () => {
 
   function makeCache(): Record<string, EmbeddingCacheEntry> {
     return {
-      it1: { vec: [1, 0, 0], summary: "italian pasta", category: "food", vision: null },
-      fr1: { vec: [0, 1, 0], summary: "french bread", category: "food", vision: null },
-      wo1: { vec: [0, 0, 1], summary: "barbell squats", category: "fitness", vision: null },
+      it1: { vec: [1, 0, 0], summary: "italian pasta", category: "food", vision: null, vecText: null },
+      fr1: { vec: [0, 1, 0], summary: "french bread", category: "food", vision: null, vecText: null },
+      wo1: { vec: [0, 0, 1], summary: "barbell squats", category: "fitness", vision: null, vecText: null },
     };
   }
 
@@ -136,10 +136,10 @@ describe("scoreWithSubcategories", () => {
 
     // Two parents with subcats: Recipes (it1, it2) and Workouts (wo1, wo2).
     const cache: Record<string, EmbeddingCacheEntry> = {
-      it1: { vec: [1, 0, 0], summary: "italian", category: "food", vision: null },
-      it2: { vec: [1, 0.05, 0], summary: "italian2", category: "food", vision: null },
-      wo1: { vec: [0, 0, 1], summary: "squats", category: "fitness", vision: null },
-      wo2: { vec: [0, 0.05, 1], summary: "squats2", category: "fitness", vision: null },
+      it1: { vec: [1, 0, 0], summary: "italian", category: "food", vision: null, vecText: null },
+      it2: { vec: [1, 0.05, 0], summary: "italian2", category: "food", vision: null, vecText: null },
+      wo1: { vec: [0, 0, 1], summary: "squats", category: "fitness", vision: null, vecText: null },
+      wo2: { vec: [0, 0.05, 1], summary: "squats2", category: "fitness", vision: null, vecText: null },
     };
     const topLevel: CategoryDef[] = [
       { name: "Recipes", description: "food", centroid: vec([0.7, 0.7, 0]) },

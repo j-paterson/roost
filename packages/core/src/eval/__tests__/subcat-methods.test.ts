@@ -55,7 +55,7 @@ describe("predictT1", () => {
       return { status: 200, json: { response: "B" }, text: "B" };
     });
     const cache: Record<string, EmbeddingCacheEntry> = {
-      x: { vec: [1, 0, 0], summary: "italian pasta", category: "food", vision: null },
+      x: { vec: [1, 0, 0], summary: "italian pasta", category: "food", vision: null, vecText: null },
     };
     const cats: CategoryDef[] = [
       { name: "Italian", description: "italian food", centroid: [1, 0, 0] },
@@ -72,7 +72,7 @@ describe("predictT1", () => {
   it("returns null when chosen sim is below the floor", async () => {
     __setRequestUrlImpl(async () => ({ status: 200, json: { response: "A" }, text: "A" }));
     const cache: Record<string, EmbeddingCacheEntry> = {
-      x: { vec: [0.3, 0.3, 0.3], summary: "ambiguous", category: "food", vision: null },
+      x: { vec: [0.3, 0.3, 0.3], summary: "ambiguous", category: "food", vision: null, vecText: null },
     };
     const cats: CategoryDef[] = [
       { name: "Italian", description: "italian", centroid: [1, 0, 0] },
@@ -94,7 +94,7 @@ describe("predictEnsemble", () => {
       return { status: 200, json: { response: "A" }, text: "A" };
     });
     const cache: Record<string, EmbeddingCacheEntry> = {
-      x: { vec: [1, 0, 0], summary: "italian pasta", category: "food", vision: null },
+      x: { vec: [1, 0, 0], summary: "italian pasta", category: "food", vision: null, vecText: null },
     };
     const cats: CategoryDef[] = [
       { name: "Italian", description: "italian", centroid: [1, 0, 0] },
@@ -112,9 +112,9 @@ describe("runCell", () => {
   function buildEvalInputs() {
     const cache: Record<string, EmbeddingCacheEntry> = {};
     // Italian items lie along [1,0,0]; French along [0,1,0].
-    for (let i = 0; i < 3; i++) cache[`it${i}`] = { vec: [1, 0.05 * i, 0], summary: "", category: "food", vision: null };
-    for (let i = 0; i < 3; i++) cache[`fr${i}`] = { vec: [0.05 * i, 1, 0], summary: "", category: "food", vision: null };
-    cache["neg1"] = { vec: [0.4, 0.4, 0.4], summary: "", category: "food", vision: null }; // ambiguous
+    for (let i = 0; i < 3; i++) cache[`it${i}`] = { vec: [1, 0.05 * i, 0], summary: "", category: "food", vision: null, vecText: null };
+    for (let i = 0; i < 3; i++) cache[`fr${i}`] = { vec: [0.05 * i, 1, 0], summary: "", category: "food", vision: null, vecText: null };
+    cache["neg1"] = { vec: [0.4, 0.4, 0.4], summary: "", category: "food", vision: null, vecText: null }; // ambiguous
     return cache;
   }
   const scenarios: ScenarioFile = {
@@ -180,7 +180,7 @@ describe("predictT1Margin", () => {
   it("returns null when picked sim and runner-up sim are within margin", async () => {
     __setRequestUrlImpl(async () => ({ status: 200, json: { response: "A" }, text: "A" }));
     const cache: Record<string, EmbeddingCacheEntry> = {
-      x: { vec: [0.71, 0.71, 0], summary: "ambiguous", category: "food", vision: null },
+      x: { vec: [0.71, 0.71, 0], summary: "ambiguous", category: "food", vision: null, vecText: null },
     };
     // Italian and French centroids are both ~equidistant from the item:
     // sim(item, Italian) = sim(item, French) ≈ 0.71. Margin near 0.
@@ -195,7 +195,7 @@ describe("predictT1Margin", () => {
   it("returns the pick when the margin clears the threshold", async () => {
     __setRequestUrlImpl(async () => ({ status: 200, json: { response: "A" }, text: "A" }));
     const cache: Record<string, EmbeddingCacheEntry> = {
-      x: { vec: [1, 0, 0], summary: "italian pasta", category: "food", vision: null },
+      x: { vec: [1, 0, 0], summary: "italian pasta", category: "food", vision: null, vecText: null },
     };
     // sim(item, Italian) = 1.0; sim(item, French) = 0. Margin = 1.0.
     const cats: CategoryDef[] = [
@@ -213,7 +213,7 @@ describe("predictT1Margin", () => {
       return { status: 200, json: { response: "A" }, text: "A" };
     });
     const cache: Record<string, EmbeddingCacheEntry> = {
-      x: { vec: [1, 0, 0], summary: "italian pasta", category: "food", vision: null },
+      x: { vec: [1, 0, 0], summary: "italian pasta", category: "food", vision: null, vecText: null },
     };
     const cats: CategoryDef[] = [
       { name: "Italian", description: "italian", centroid: [1, 0, 0] },
@@ -236,7 +236,7 @@ describe("predictT1Gate", () => {
       return { status: 200, json: { response: "A" }, text: "A" };
     });
     const cache: Record<string, EmbeddingCacheEntry> = {
-      x: { vec: [0, 0, 1], summary: "weakly Recipes", category: "food", vision: null },
+      x: { vec: [0, 0, 1], summary: "weakly Recipes", category: "food", vision: null, vecText: null },
     };
     const cats: CategoryDef[] = [
       { name: "Italian", description: "italian", centroid: [1, 0, 0] },
@@ -258,7 +258,7 @@ describe("predictT1Gate", () => {
       return { status: 200, json: { response: "A" }, text: "A" };
     });
     const cache: Record<string, EmbeddingCacheEntry> = {
-      x: { vec: [1, 0, 0], summary: "italian pasta", category: "food", vision: null },
+      x: { vec: [1, 0, 0], summary: "italian pasta", category: "food", vision: null, vecText: null },
     };
     const cats: CategoryDef[] = [
       { name: "Italian", description: "italian", centroid: [1, 0, 0] },
@@ -278,7 +278,7 @@ describe("predictT1Gate", () => {
       return { status: 200, json: { response: "A" }, text: "A" };
     });
     const cache: Record<string, EmbeddingCacheEntry> = {
-      x: { vec: [1, 0, 0], summary: "italian pasta", category: "food", vision: null },
+      x: { vec: [1, 0, 0], summary: "italian pasta", category: "food", vision: null, vecText: null },
     };
     const cats: CategoryDef[] = [
       { name: "Italian", description: "italian", centroid: [1, 0, 0] },
@@ -297,8 +297,8 @@ describe("runCell with t1-margin", () => {
   // Use cosine-like setup but feed via t1-margin so we exercise the dispatcher.
   function buildEvalInputs() {
     const cache: Record<string, EmbeddingCacheEntry> = {};
-    cache["it0"] = { vec: [1, 0, 0], summary: "italian", category: "food", vision: null };
-    cache["fr0"] = { vec: [0, 1, 0], summary: "french", category: "food", vision: null };
+    cache["it0"] = { vec: [1, 0, 0], summary: "italian", category: "food", vision: null, vecText: null };
+    cache["fr0"] = { vec: [0, 1, 0], summary: "french", category: "food", vision: null, vecText: null };
     return cache;
   }
 
@@ -341,7 +341,7 @@ describe("predictT1None", () => {
   it("returns null when LLM picks N", async () => {
     __setRequestUrlImpl(async () => ({ status: 200, json: { response: "N" }, text: "N" }));
     const cache: Record<string, EmbeddingCacheEntry> = {
-      x: { vec: [0, 0, 1], summary: "off-topic", category: "food", vision: null },
+      x: { vec: [0, 0, 1], summary: "off-topic", category: "food", vision: null, vecText: null },
     };
     const cats: CategoryDef[] = [
       { name: "Italian", description: "italian", centroid: [1, 0, 0] },
@@ -355,7 +355,7 @@ describe("predictT1None", () => {
   it("returns the picked subcategory when LLM picks a letter A-E", async () => {
     __setRequestUrlImpl(async () => ({ status: 200, json: { response: "A" }, text: "A" }));
     const cache: Record<string, EmbeddingCacheEntry> = {
-      x: { vec: [1, 0, 0], summary: "italian pasta", category: "food", vision: null },
+      x: { vec: [1, 0, 0], summary: "italian pasta", category: "food", vision: null, vecText: null },
     };
     const cats: CategoryDef[] = [
       { name: "Italian", description: "italian", centroid: [1, 0, 0] },
@@ -369,7 +369,7 @@ describe("predictT1None", () => {
   it("returns null when picked sim is below the floor", async () => {
     __setRequestUrlImpl(async () => ({ status: 200, json: { response: "A" }, text: "A" }));
     const cache: Record<string, EmbeddingCacheEntry> = {
-      x: { vec: [0.4, 0.4, 0.4], summary: "ambiguous", category: "food", vision: null },
+      x: { vec: [0.4, 0.4, 0.4], summary: "ambiguous", category: "food", vision: null, vecText: null },
     };
     const cats: CategoryDef[] = [
       { name: "Italian", description: "italian", centroid: [1, 0, 0] },

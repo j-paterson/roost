@@ -61,7 +61,7 @@ export interface EmbeddingCacheEntry {
   summary: string | null;
   category: string | null;
   vec: number[] | null;
-  vecText?: number[] | null;
+  vecText: number[] | null;
   vecVersion?: number | null;
   clipVec?: number[] | null;
 }

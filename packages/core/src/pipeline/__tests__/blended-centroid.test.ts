@@ -7,7 +7,7 @@ function vec(value: number, dim = 4): number[] {
 }
 
 function entry(v: number): EmbeddingCacheEntry {
-  return { vision: null, summary: null, category: null, vec: vec(v) };
+  return { vision: null, summary: null, category: null, vec: vec(v), vecText: null };
 }
 
 describe("buildCategoryDefs blended centroid", () => {

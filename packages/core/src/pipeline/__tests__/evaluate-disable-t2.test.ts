@@ -10,8 +10,8 @@ function vec(seed: number, dim = 8): number[] {
 
 function mkCache(): Record<string, EmbeddingCacheEntry> {
   return {
-    item1: { vision: null, vec: vec(1), summary: "a video about pasta carbonara", category: "food" },
-    item2: { vision: null, vec: vec(2), summary: "a barbell back squat tutorial", category: "fitness" },
+    item1: { vision: null, vec: vec(1), summary: "a video about pasta carbonara", category: "food", vecText: null },
+    item2: { vision: null, vec: vec(2), summary: "a barbell back squat tutorial", category: "fitness", vecText: null },
   };
 }
 

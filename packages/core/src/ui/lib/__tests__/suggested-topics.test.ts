@@ -3,7 +3,7 @@ import { aggregateSuggestedTopics } from "../suggested-topics";
 import type { EmbeddingCacheEntry } from "@/types/roost";
 
 function entry(category: string | null): EmbeddingCacheEntry {
-  return { vision: null, summary: null, category, vec: null };
+  return { vision: null, summary: null, category, vec: null, vecText: null };
 }
 
 describe("aggregateSuggestedTopics", () => {

@@ -15,7 +15,7 @@ function oneHot(pos: number, dim = 768): number[] {
 }
 
 function entry(v: number[] | null): EmbeddingCacheEntry {
-  return { vision: null, summary: null, category: null, vec: v };
+  return { vision: null, summary: null, category: null, vec: v, vecText: null };
 }
 
 describe("dedupDiscoveredByCentroid", () => {

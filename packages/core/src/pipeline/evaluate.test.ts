@@ -4,7 +4,7 @@ import type { EmbeddingCacheEntry } from "@/types/roost";
 
 /** Helper to make a cache entry with optional clipVec. */
 function entry(vec: number[], clipVec?: number[]): EmbeddingCacheEntry {
-  return { vision: null, summary: null, category: null, vec, clipVec: clipVec ?? null };
+  return { vision: null, summary: null, category: null, vec, clipVec: clipVec ?? null, vecText: null };
 }
 
 describe("buildCategoryDefs", () => {
@@ -56,7 +56,7 @@ describe("buildCategoryDefs", () => {
 
   it("skips categories with no valid text vectors", () => {
     const cache: Record<string, EmbeddingCacheEntry> = {
-      a1: { vision: null, summary: null, category: null, vec: null, clipVec: null },
+      a1: { vision: null, summary: null, category: null, vec: null, clipVec: null, vecText: null },
     };
     const defs = buildCategoryDefs({ catA: ["a1"] }, descriptions, cache);
     expect(defs).toHaveLength(0);

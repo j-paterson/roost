@@ -106,6 +106,7 @@ describe("Stage 2: dual-embedding (text-only + vision-on)", () => {
       summary: "A summary of the content",
       category: "Education",
       vec: null,
+      vecText: null,
     };
 
     const vault = makeFakeVault();
@@ -149,6 +150,7 @@ describe("Stage 2: dual-embedding (text-only + vision-on)", () => {
       summary: "Summary text here",
       category: "Education",
       vec: null,
+      vecText: null,
     };
 
     const vault = makeFakeVault();
@@ -187,6 +189,7 @@ describe("Stage 2: dual-embedding (text-only + vision-on)", () => {
       summary: "ok",         // summary IS set so Stage 1b is skipped
       category: null,
       vec: null,
+      vecText: null,
     };
 
     const vault = makeFakeVault();

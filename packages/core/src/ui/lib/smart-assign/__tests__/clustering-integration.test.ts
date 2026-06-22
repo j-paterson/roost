@@ -118,19 +118,19 @@ function mkApp(vault: ReturnType<typeof mkVault>) {
 function seedCache(): Record<string, EmbeddingCacheEntry> {
   return {
     // Known collection anchors
-    cook1: { vision: null, summary: "pasta carbonara recipe", category: "Cooking", vec: oneHot(0) },
-    cook2: { vision: null, summary: "chocolate cake baking tutorial", category: "Cooking", vec: nearOneHot(0, 0.1) },
-    trav1: { vision: null, summary: "best beaches in Portugal travel guide", category: "Travel", vec: oneHot(1) },
-    trav2: { vision: null, summary: "Tokyo street food tour", category: "Travel", vec: nearOneHot(1, 0.1) },
+    cook1: { vision: null, summary: "pasta carbonara recipe", category: "Cooking", vec: oneHot(0), vecText: null },
+    cook2: { vision: null, summary: "chocolate cake baking tutorial", category: "Cooking", vec: nearOneHot(0, 0.1), vecText: null },
+    trav1: { vision: null, summary: "best beaches in Portugal travel guide", category: "Travel", vec: oneHot(1), vecText: null },
+    trav2: { vision: null, summary: "Tokyo street food tour", category: "Travel", vec: nearOneHot(1, 0.1), vecText: null },
     // Target items to classify
-    t_cook: { vision: null, summary: "homemade sourdough bread recipe", category: "Cooking", vec: nearOneHot(0, 0.5) },
-    t_trav: { vision: null, summary: "hidden gems in Barcelona", category: "Travel", vec: nearOneHot(1, 0.5) },
+    t_cook: { vision: null, summary: "homemade sourdough bread recipe", category: "Cooking", vec: nearOneHot(0, 0.5), vecText: null },
+    t_trav: { vision: null, summary: "hidden gems in Barcelona", category: "Travel", vec: nearOneHot(1, 0.5), vecText: null },
     // Fitness items — orthogonal to Cooking/Travel; near-identical vecs for high cohesion
-    fit1: { vision: null, summary: "morning HIIT workout routine for beginners", category: "Fitness", vec: oneHot(2) },
-    fit2: { vision: null, summary: "10 minute abs workout no equipment needed", category: "Fitness", vec: nearOneHot(2, 0.1) },
-    fit3: { vision: null, summary: "yoga flow for flexibility and strength", category: "Fitness", vec: nearOneHot(2, 0.2) },
-    fit4: { vision: null, summary: "full body strength training guide", category: "Fitness", vec: nearOneHot(2, 0.3) },
-    fit5: { vision: null, summary: "running tips to improve your pace", category: "Fitness", vec: nearOneHot(2, 0.4) },
+    fit1: { vision: null, summary: "morning HIIT workout routine for beginners", category: "Fitness", vec: oneHot(2), vecText: null },
+    fit2: { vision: null, summary: "10 minute abs workout no equipment needed", category: "Fitness", vec: nearOneHot(2, 0.1), vecText: null },
+    fit3: { vision: null, summary: "yoga flow for flexibility and strength", category: "Fitness", vec: nearOneHot(2, 0.2), vecText: null },
+    fit4: { vision: null, summary: "full body strength training guide", category: "Fitness", vec: nearOneHot(2, 0.3), vecText: null },
+    fit5: { vision: null, summary: "running tips to improve your pace", category: "Fitness", vec: nearOneHot(2, 0.4), vecText: null },
   };
 }
 

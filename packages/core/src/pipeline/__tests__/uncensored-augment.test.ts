@@ -78,7 +78,7 @@ function makeDet(sportsThreshold = 0.5): TagDetectors {
 
 function makeEmbeddingCache(id: string, vec: number[]): Record<string, EmbeddingCacheEntry> {
   return {
-    [id]: { vec, vision: null, summary: null, category: null },
+    [id]: { vec, vision: null, summary: null, category: null, vecText: null },
   };
 }
 

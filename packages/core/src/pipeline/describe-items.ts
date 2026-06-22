@@ -165,7 +165,7 @@ async function embedItem(
   embedder?: Embedder,
   ff: FfmpegPaths = { ffmpeg: null, ffprobe: null },
 ): Promise<boolean> {
-  const entry: EmbeddingCacheEntry = cache[item.id] || { vision: null, summary: null, category: null, vec: null };
+  const entry: EmbeddingCacheEntry = cache[item.id] || { vision: null, summary: null, category: null, vec: null, vecText: null };
 
   // Stage 1a: Vision analysis — single qwen call on the cover image
   if (!entry.vision && item.coverPath) {
@@ -230,7 +230,7 @@ async function embedItem(
       try {
         const [vVision, vText] = await embedder!.embed([visionText, plainText]);
         entry.vec = vVision ?? null;
-        entry.vecText = plainText.length > 10 ? (vText ?? null) : (vVision ?? null);
+        entry.vecText = plainText.length > 10 ? (vText ?? null) : (vVision ? [...vVision] : null);
       } catch (e: unknown) {
         log(`Embedding failed for ${item.id}: ${e instanceof Error ? e.message : String(e)}`);
         return false;

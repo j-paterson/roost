@@ -3,7 +3,7 @@ import { suggestNeighbors } from "./suggest-neighbors";
 import type { EmbeddingCacheEntry } from "@/types/roost";
 
 function entry(vec: number[], clipVec?: number[]): EmbeddingCacheEntry {
-  return { vision: null, summary: null, category: null, vec, clipVec: clipVec ?? null };
+  return { vision: null, summary: null, category: null, vec, clipVec: clipVec ?? null, vecText: null };
 }
 
 describe("suggestNeighbors", () => {
@@ -96,7 +96,7 @@ describe("suggestNeighbors", () => {
 
   it("returns empty when target has no vectors", () => {
     const cache: Record<string, EmbeddingCacheEntry> = {
-      moved1: { vision: null, summary: null, category: null, vec: null, clipVec: null },
+      moved1: { vision: null, summary: null, category: null, vec: null, clipVec: null, vecText: null },
       source1: entry([0, 1]),
     };
 

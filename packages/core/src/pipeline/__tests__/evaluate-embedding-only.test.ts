@@ -12,9 +12,9 @@ function unit(i: number, dim = 4): number[] {
 function mkCache(): Record<string, EmbeddingCacheEntry> {
   return {
     // exactly on the "Italian" centroid → must pick Italian
-    item1: { vision: null, vec: unit(0), summary: "pasta carbonara", category: "food" },
+    item1: { vision: null, vec: unit(0), summary: "pasta carbonara", category: "food", vecText: null },
     // exactly on the "Strength" centroid → must pick Strength
-    item2: { vision: null, vec: unit(1), summary: "back squat", category: "fitness" },
+    item2: { vision: null, vec: unit(1), summary: "back squat", category: "fitness", vecText: null },
   };
 }
 
