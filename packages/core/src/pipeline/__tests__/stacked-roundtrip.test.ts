@@ -214,13 +214,9 @@ describe("stacked-roundtrip: contract shape validation (loader rejects malformed
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  it("returns null when meta norm is not 'none'", () => {
+  it("returns null when meta-head.json has an unsupported version", () => {
     writeCacheFile(tmpDir, "classifier-head-text.json", FIXTURE_HEAD_TEXT);
     writeCacheFile(tmpDir, "classifier-head-vision.json", FIXTURE_HEAD_VISION);
-    // meta-head.json with wrong norm (should be "none", not "l2")
-    writeCacheFile(tmpDir, "meta-head.json", { ...FIXTURE_META, norm: "l2" });
-    // Note: the loader doesn't check norm on meta, but the version/inDim checks still fire.
-    // This sub-test verifies the version field is required.
     writeCacheFile(tmpDir, "meta-head.json", { ...FIXTURE_META, version: 2 });
     const vault = makeVault(tmpDir);
     expect(loadStackedHeads(vault)).toBeNull();
