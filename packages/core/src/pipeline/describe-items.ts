@@ -11,7 +11,7 @@ import type { StopSignal } from "@/types/sync";
 import type { Embedder } from "@/lib/embedder";
 import { loadEmbeddingCache, saveEmbeddingCache } from "@/pipeline/shared";
 
-import { OLLAMA_URL, EMBED_CONCURRENCY, VISION_MODEL, EVAL_MODEL, TOPIC_MODEL, OLLAMA_NUM_CTX } from "@/config";
+import { OLLAMA_URL, EMBED_CONCURRENCY, VISION_MODEL, VISION_NUM_CTX, EVAL_MODEL, TOPIC_MODEL, OLLAMA_NUM_CTX } from "@/config";
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
@@ -167,66 +167,28 @@ async function embedItem(
 ): Promise<boolean> {
   const entry: EmbeddingCacheEntry = cache[item.id] || { vision: null, summary: null, category: null, vec: null };
 
-  // Stage 1a: Vision analysis
-  if (!entry.vision) {
-    if (item.mp4Path && ff.ffmpeg && ff.ffprobe) {
-      // Multi-frame vision via Gemma 4 for video items
-      try {
-        const duration = getVideoDuration(ff.ffprobe, item.mp4Path);
-        if (duration && duration >= 1) {
-          const { tmpDir, framePaths } = extractKeyframes(ff.ffmpeg, item.mp4Path, duration);
-          try {
-            if (framePaths.length > 0) {
-              const images = framePaths.map(fp => {
-                const data = fs.readFileSync(fp);
-                return data.toString("base64");
-              });
-              const res = await requestUrl({
-                url: `${ollama}/api/generate`,
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  model: EVAL_MODEL,
-                  prompt: "These are frames from the beginning, middle, and end of a short video. Describe what happens in 2-3 sentences. Start with the subject, not 'The video shows'. Be specific about the subject matter, actions, and any changes between frames.",
-                  images,
-                  stream: false,
-                  options: { num_ctx: OLLAMA_NUM_CTX },
-                }),
-              });
-              entry.vision = (res.json?.response || "").trim().slice(0, 800) || null;
-            }
-          } finally {
-            fs.rmSync(tmpDir, { recursive: true, force: true });
-          }
-        }
-      } catch {
-        // Multi-frame failed — fall through to cover image
+  // Stage 1a: Vision analysis — single qwen call on the cover image
+  if (!entry.vision && item.coverPath) {
+    try {
+      const imageFile = vault.getAbstractFileByPath(item.coverPath);
+      if (imageFile instanceof TFile && /^(jpg|jpeg|png|webp)$/i.test(imageFile.extension)) {
+        const imageData = await vault.readBinary(imageFile);
+        const base64 = arrayBufferToBase64(imageData);
+        const res = await requestUrl({
+          url: `${ollama}/api/generate`,
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            model: VISION_MODEL,
+            prompt: "Describe what is happening in this image in two or three sentences.",
+            images: [base64],
+            stream: false,
+            options: { num_ctx: VISION_NUM_CTX },
+          }),
+        });
+        entry.vision = (res.json?.response || "").trim().slice(0, 500) || null;
       }
-    }
-
-    // Fallback: single cover image via minicpm-v
-    if (!entry.vision && item.coverPath) {
-      try {
-        const imageFile = vault.getAbstractFileByPath(item.coverPath);
-        if (imageFile instanceof TFile && /^(jpg|jpeg|png|webp)$/i.test(imageFile.extension)) {
-          const imageData = await vault.readBinary(imageFile);
-          const base64 = arrayBufferToBase64(imageData);
-          const res = await requestUrl({
-            url: `${ollama}/api/generate`,
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              model: VISION_MODEL,
-              prompt: "Describe what you see in one sentence. Start with the subject, not 'The image shows'. Be specific.",
-              images: [base64],
-              stream: false,
-              options: { num_ctx: OLLAMA_NUM_CTX },
-            }),
-          });
-          entry.vision = (res.json?.response || "").trim().slice(0, 300) || null;
-        }
-      } catch {}
-    }
+    } catch {}
   }
 
   // Stage 1b: Summary — combines vision description + caption + transcript + tags
