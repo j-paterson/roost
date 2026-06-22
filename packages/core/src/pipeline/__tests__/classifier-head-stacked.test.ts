@@ -89,6 +89,17 @@ describe("classifyStacked", () => {
     const r = classifyStacked([1, 0], [0, 1], HEADS);
     expect(HEADS.meta.classes).toContain(r.category);
   });
+
+  it("meta feature order is [text, vision] — a swap would change the result", () => {
+    const HEAD: ClassifierHead = { classes: ["A", "B"], W: [[1, 0], [0, 1]], b: [0, 0], dim: 2 };
+    // meta weights ONLY the first two (text) slots; vision slots have zero weight
+    const TEXT_ONLY_META = { classes: ["A", "B"], W: [[10, 0, 0, 0], [0, 10, 0, 0]], b: [0, 0], inDim: 4 };
+    const heads: StackedHeads = { text: HEAD, vision: HEAD, meta: TEXT_ONLY_META };
+    // text points at A, vision points at B; text-only meta must pick A.
+    // If feat were [...pVision, ...pText], the meta's text slots would see vision (B) and pick B.
+    const r = classifyStacked([1, 0], [0, 1], heads);
+    expect(r.category).toBe("A");
+  });
 });
 
 // ── stackedHeadsClassesMatch ──────────────────────────────────────────────────
