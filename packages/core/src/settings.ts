@@ -68,8 +68,14 @@ export interface RoostSettings {
   /** Wave: logit stacking. When true (and the head + embedding-only paths are
    *  on), Smart Assign Step 1 combines a text-only and a vision-on classifier
    *  head via a trained meta-head. Falls back to the single head when the
-   *  stacked weight files are absent/mismatched. Default false — flip after
-   *  the holdout acceptance gate. */
+   *  stacked weight files are absent/mismatched. Default true since the
+   *  acceptance gate (balanced heads, qwen cover-only): overall top-1 TikTok
+   *  72.0→76.9% (+4.9pp), Twitter 47.7→54.7% (+7.0pp). The two sub-margin
+   *  per-category dips (TikTok Media −8.4pp, Spicy −8.3pp) were hand-audited as
+   *  label-ambiguity / SFW-cover edge cases, not real regressions, and accepted.
+   *  NOTE: the stacked heads expect qwen cover-only vision-on + text-only
+   *  embeddings — re-run Smart Assign (describe + dual-embed) so the runtime
+   *  cache matches before relying on this path. */
   smartAssignStacking: boolean;
   /** Names of the user's OWN categories that handle uncensored/explicit content
    *  (e.g. ["Spicy"], ["Adult"]). This is the only place an uncensored category
@@ -160,7 +166,7 @@ export const DEFAULT_SETTINGS: RoostSettings = {
   smartAssignEmbeddingOnly: true,
   smartAssignClassifierHead: true,
   smartAssignTags: false,
-  smartAssignStacking: false,
+  smartAssignStacking: true,
   uncensoredCategories: [],
   facetCategories: [],
   anthropicApiKey: "",

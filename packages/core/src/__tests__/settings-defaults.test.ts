@@ -20,8 +20,8 @@ describe("DEFAULT_SETTINGS", () => {
     expect(Object.values(DEFAULT_SETTINGS.pipelines).every(Boolean)).toBe(true);
   });
 
-  it("defaults smartAssignStacking to false", () => {
-    expect(DEFAULT_SETTINGS.smartAssignStacking).toBe(false);
+  it("defaults smartAssignStacking to true (acceptance gate accepted, 2026-06-22)", () => {
+    expect(DEFAULT_SETTINGS.smartAssignStacking).toBe(true);
   });
 });
 

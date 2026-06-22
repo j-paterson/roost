@@ -320,6 +320,16 @@ def main():
         "--out-meta", default=None,
         help="Output path for meta-head.json (default .roost/cache/meta-head.json)",
     )
+    ap.add_argument(
+        "--bin-vision", default=None,
+        help="Input vision-on embedding bin (default .roost/cache/embedding-vectors.bin). "
+             "Its sibling embedding-meta.json supplies the dim.",
+    )
+    ap.add_argument(
+        "--bin-text", default=None,
+        help="Input text-only embedding bin (default .roost/cache/embedding-vectors-text.bin). "
+             "Its sibling embedding-meta.json supplies the dim.",
+    )
     args = ap.parse_args()
 
     vault_env = os.environ.get("ROOST_VAULT")
@@ -329,8 +339,8 @@ def main():
         VAULT = Path.home() / "ObsidianBookmarks"
     ROOST = VAULT / ".roost"
     BUILD_DIR = ROOST / "build"
-    BIN_TEXT = ROOST / "cache" / "embedding-vectors-text.bin"   # text-only (Task 7 backfill)
-    BIN_VISION = ROOST / "cache" / "embedding-vectors.bin"       # vision-on (existing)
+    BIN_TEXT = Path(args.bin_text) if args.bin_text else ROOST / "cache" / "embedding-vectors-text.bin"   # text-only (Task 7 backfill)
+    BIN_VISION = Path(args.bin_vision) if args.bin_vision else ROOST / "cache" / "embedding-vectors.bin"   # vision-on (existing)
     OUT_TEXT = Path(args.out_text) if args.out_text else ROOST / "cache" / "classifier-head-text.json"
     OUT_VISION = Path(args.out_vision) if args.out_vision else ROOST / "cache" / "classifier-head-vision.json"
     OUT_META = Path(args.out_meta) if args.out_meta else ROOST / "cache" / "meta-head.json"
