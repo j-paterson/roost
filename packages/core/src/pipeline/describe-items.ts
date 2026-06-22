@@ -74,7 +74,7 @@ export async function describeItems(opts: DescribeOpts): Promise<{ processed: nu
     const fm = app?.metadataCache?.getFileCache(file)?.frontmatter;
     if (!fm?.roost_id) continue;
     if (idFilter && !idFilter.has(fm.roost_id)) continue;
-    if (cache[fm.roost_id]?.vec) { alreadyDone++; continue; }
+    if (cache[fm.roost_id]?.vec && cache[fm.roost_id]?.vecText != null) { alreadyDone++; continue; }
     needsEmbedding.push(file);
   }
 
@@ -222,8 +222,26 @@ async function embedItem(
     }
   }
 
-  // Stage 2: Embedding — compute vision-on and text-only vectors in one batch call
-  if (!entry.vec || entry.vecText == null) {
+  // Stage 2: Embedding — compute vision-on and text-only vectors.
+  // If vec is already present but vecText is missing, backfill vecText only.
+  // If vec is absent, compute both in a single batched embed call.
+  if (entry.vec && entry.vecText == null) {
+    // Backfill path: vec is stable — only compute the text-only embedding.
+    const plainText = [entry.summary, entry.category, item.text, item.subtitle].filter(Boolean).join(" ");
+    if (plainText.length > 10) {
+      try {
+        const [vText] = await embedder!.embed([plainText]);
+        entry.vecText = vText ?? null;
+      } catch (e: unknown) {
+        log(`Text embedding backfill failed for ${item.id}: ${e instanceof Error ? e.message : String(e)}`);
+        return false;
+      }
+    } else {
+      // plainText too short — fall back to a copy of the existing vision vector
+      entry.vecText = [...entry.vec];
+    }
+  } else if (!entry.vec) {
+    // Full compute path: compute both vision-on and text-only in one batched call.
     const visionText = [entry.vision, entry.summary, entry.category, item.text, item.subtitle].filter(Boolean).join(" ");
     const plainText = [entry.summary, entry.category, item.text, item.subtitle].filter(Boolean).join(" ");
     if (visionText.length > 10) {

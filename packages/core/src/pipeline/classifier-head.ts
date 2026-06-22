@@ -75,7 +75,6 @@ function loadHeadFile(headPath: string): ClassifierHead | null {
       // each W row must have exactly `dim` columns, else the dot product is silently wrong
       !data.W.every((row) => Array.isArray(row) && row.length === data.dim)
     ) {
-      console.warn(`[roost] ${headPath} failed structural validation`);
       return null;
     }
     return { classes: data.classes, W: data.W, b: data.b, dim: data.dim };

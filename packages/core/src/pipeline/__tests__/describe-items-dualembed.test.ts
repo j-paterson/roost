@@ -180,6 +180,52 @@ describe("Stage 2: dual-embedding (text-only + vision-on)", () => {
     expect(entry.vecText![0]).toBeCloseTo(2.0);
   });
 
+  it("preserves existing entry.vec when backfilling vecText (vec must not be overwritten)", async () => {
+    // Sentinel vector — a recognisable value that must survive the backfill path.
+    const SENTINEL_VEC = new Array(768).fill(0.42);
+    savedCache["test:backfill"] = {
+      vision: null,
+      summary: "A detailed summary that is definitely longer than ten chars",
+      category: "Science",
+      vec: [...SENTINEL_VEC], // already present — must NOT be recomputed
+      vecText: null,          // missing — must be backfilled
+    };
+
+    const vault = makeFakeVault();
+    const fakeFile = new TFile() as TFile & { path: string };
+    fakeFile.path = "Bookmarks/backfill.md";
+    (vault as any).__fakeFiles = [fakeFile];
+    const app = makeApp(fakeFile, {
+      roost_id: "test:backfill",
+      title: "Some Title That Is Clearly Longer Than Ten Characters",
+    });
+
+    const embedder = makeEmbedder();
+    await describeItems({
+      vault,
+      app: app as any,
+      syncFolder: "Bookmarks",
+      ollamaUrl: "http://localhost:11434",
+      embedder: embedder as any,
+    });
+
+    const entry = savedCache["test:backfill"];
+    expect(entry).toBeDefined();
+
+    // vec must be identical to the seeded sentinel — never recomputed
+    expect(entry.vec).not.toBeNull();
+    expect(entry.vec!.length).toBe(768);
+    expect(entry.vec![0]).toBeCloseTo(0.42);
+    expect(entry.vec).toEqual(SENTINEL_VEC);
+
+    // vecText must now be set (backfilled)
+    expect(entry.vecText).not.toBeNull();
+
+    // Only ONE embed call — the single plainText call, not a batched [visionText, plainText]
+    expect(embedder.calls.length).toBe(1);
+    expect(embedder.calls[0].length).toBe(1);
+  });
+
   it("falls back vecText = vec when plainText is too short (length <= 10)", async () => {
     // Pre-seed with vision set but NO summary/category so Stage 1b is also skipped.
     // title will be empty → plainText will be "" (length 0 ≤ 10).

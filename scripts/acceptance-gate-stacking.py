@@ -419,21 +419,35 @@ def main():
     print(f"Classes ({n_classes}):        {classes_m}")
     print()
 
+    # ── Evaluate platforms ────────────────────────────────────────────────────
+    platforms_to_run = (
+        ["tiktok", "twitter"] if args.platform == "both" else [args.platform]
+    )
+
     # ── Load cover description caches ────────────────────────────────────────
     tk_cover_path = c / "exp-keyframe-cover.json"
     tw_cover_path = c / "exp-twitter-cover.json"
     tk_cover = json.load(open(tk_cover_path)) if tk_cover_path.exists() else {}
     tw_cover = json.load(open(tw_cover_path)) if tw_cover_path.exists() else {}
 
-    if not tk_cover:
-        print("WARNING: exp-keyframe-cover.json not found or empty — TikTok vision text will be caption-only.")
-    if not tw_cover:
-        print("WARNING: exp-twitter-cover.json not found or empty — Twitter vision text will be caption-only.")
-
-    # ── Evaluate platforms ────────────────────────────────────────────────────
-    platforms_to_run = (
-        ["tiktok", "twitter"] if args.platform == "both" else [args.platform]
-    )
+    # Abort if a cover cache is absent/empty for any platform being evaluated —
+    # with no cover descriptions the vision vector collapses to the text vector and
+    # a GATE: PASS would be meaningless.
+    cover_errors = []
+    if "tiktok" in platforms_to_run and not tk_cover:
+        cover_errors.append(
+            f"ERROR: exp-keyframe-cover.json is absent or empty ({tk_cover_path}).\n"
+            "  Run the TikTok describe phase to populate keyframe cover descriptions before gating."
+        )
+    if "twitter" in platforms_to_run and not tw_cover:
+        cover_errors.append(
+            f"ERROR: exp-twitter-cover.json is absent or empty ({tw_cover_path}).\n"
+            "  Run the Twitter describe phase to populate cover descriptions before gating."
+        )
+    if cover_errors:
+        for msg in cover_errors:
+            print(msg)
+        sys.exit(1)
 
     platform_results = {}
 
