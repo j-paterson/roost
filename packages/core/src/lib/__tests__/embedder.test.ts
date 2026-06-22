@@ -1,6 +1,9 @@
 // @vitest-environment node
 import { describe, it, expect } from "vitest";
-import { OllamaEmbedder, HttpEmbedder, SidecarEmbedder, selectEmbedder, describeActiveEmbedding } from "@/lib/embedder";
+import { OllamaEmbedder, HttpEmbedder, SidecarEmbedder, selectEmbedder, describeActiveEmbedding, toWellFormedText } from "@/lib/embedder";
+import { __setRequestUrlImpl, __resetRequestUrlImpl } from "obsidian";
+
+const LONE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
 
 // ── OllamaEmbedder ───────────────────────────────────────────────────────────
 
@@ -40,6 +43,35 @@ describe("HttpEmbedder", () => {
     const e = new HttpEmbedder("test-http", "http://localhost:9999");
     e.dispose();
     expect(e.ready).toBe(false);
+  });
+
+  it("strips lone surrogates from input before sending (the sidecar 500s on them otherwise)", async () => {
+    let sent: string[] | undefined;
+    __setRequestUrlImpl(async (req) => {
+      sent = (JSON.parse(req.body!) as { input: string[] }).input;
+      return { status: 200, headers: {}, json: { embeddings: sent.map(() => [0.1, 0.2]) }, text: "", arrayBuffer: new ArrayBuffer(0) };
+    });
+    const e = new HttpEmbedder("test-http", "http://localhost:9999");
+
+    const dirty = "song \uD83D lyrics"; // lone high surrogate (half an emoji)
+    const validPair = "ok 💦 emoji"; // well-formed 💦 must survive untouched
+    expect(LONE.test(dirty)).toBe(true); // precondition: the raw input IS malformed
+    await e.embed([dirty, validPair]);
+
+    expect(LONE.test(sent![0])).toBe(false); // no lone surrogate reaches the wire
+    expect(sent![0]).toBe("song � lyrics"); // replaced with U+FFFD
+    expect(sent![1]).toBe(validPair); // valid pair preserved exactly
+    e.dispose();
+    __resetRequestUrlImpl();
+  });
+});
+
+describe("toWellFormedText", () => {
+  it("replaces lone surrogates and leaves valid text alone", () => {
+    expect(toWellFormedText("a\uD83Db")).toBe("a�b"); // lone high
+    expect(toWellFormedText("a\uDCA6b")).toBe("a�b"); // lone low
+    expect(toWellFormedText("a💦b")).toBe("a💦b"); // valid pair untouched
+    expect(toWellFormedText("plain ascii")).toBe("plain ascii");
   });
 });
 

@@ -30,6 +30,24 @@ export interface Embedder {
   dispose(): void;
 }
 
+// ── Input sanitization ──────────────────────────────────────────────────────
+
+/**
+ * Replace lone (unpaired) UTF-16 surrogates with U+FFFD before embedding.
+ *
+ * Scraped captions routinely contain half of an emoji — e.g. a lone `\uD83D` — when
+ * upstream truncation splits a surrogate pair. The sidecar's HuggingFace tokenizer
+ * rejects such strings with HTTP 500 ("TextEncodeInput must be Union[...]"), and because
+ * `embed()` sends the whole batch in one request, a SINGLE bad string fails the entire
+ * batch of items. `String.prototype.toWellFormed()` (ES2024, present in Obsidian's
+ * Electron) does exactly this replacement; the regex is a fallback for older runtimes.
+ */
+export function toWellFormedText(s: string): string {
+  const fn = (s as { toWellFormed?: () => string }).toWellFormed;
+  if (typeof fn === "function") return fn.call(s);
+  return s.replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, "�");
+}
+
 // ── HttpEmbedder ──────────────────────────────────────────────────────────────
 
 /**
@@ -49,11 +67,14 @@ export class HttpEmbedder implements Embedder {
   }
 
   async embed(texts: string[]): Promise<number[][]> {
+    // Strip lone surrogates first — one bad scraped emoji 500s the tokenizer and would
+    // otherwise fail this entire batch (see toWellFormedText).
+    const input = texts.map(toWellFormedText);
     const res = await requestUrl({
       url: `${this.baseUrl}/api/embed`,
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ model: EMBED_MODEL, input: texts }),
+      body: JSON.stringify({ model: EMBED_MODEL, input }),
     });
 
     if (res.status !== 200) {
