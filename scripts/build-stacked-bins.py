@@ -66,8 +66,9 @@ def cap_tiktok(i, tcache, info):
 
 
 def cap_twitter(i, tcache, info):
+    # Production order (describe-items.ts plainText = [summary, category, title]).
     e = tcache[i]; it = info[i]
-    return " ".join(x for x in [it["title"], e.get("summary"), e.get("category")] if x)
+    return " ".join(x for x in [e.get("summary"), e.get("category"), it["title"]] if x)
 
 
 def vision_text(cover_desc, cap):

@@ -225,10 +225,13 @@ def cap_tiktok(i: str, tcache: dict, info: dict) -> str:
 
 
 def cap_twitter(i: str, tcache: dict, info: dict) -> str:
-    """Text-only caption for Twitter item (mirrors cap_tw in exp-stacking-cascade.py)."""
+    """Text-only caption for Twitter item — PRODUCTION order to match the runtime
+    embed text (describe-items.ts plainText = [summary, category, title]); the
+    single-head baseline was also trained on this order, so the gate measures the
+    representation that actually ships."""
     e  = tcache[i]
     it = info[i]
-    return " ".join(x for x in [it["title"], e.get("summary"), e.get("category")] if x)
+    return " ".join(x for x in [e.get("summary"), e.get("category"), it["title"]] if x)
 
 
 def cover_text(iid: str, cover_cache: dict, cap: str) -> str:
