@@ -23,6 +23,10 @@ import {
   classifyWithHead,
   headClassesMatch,
   type ClassifierHead,
+  loadStackedHeads,
+  classifyStacked,
+  stackedHeadsClassesMatch,
+  type StackedHeads,
 } from "@/pipeline/classifier-head";
 import {
   loadTagDetectors,
@@ -31,8 +35,8 @@ import {
 } from "@/pipeline/tag-detectors";
 
 // Re-export so callers wiring the head never need a direct import of classifier-head.ts.
-export { loadClassifierHead, classifyWithHead, headClassesMatch };
-export type { ClassifierHead };
+export { loadClassifierHead, classifyWithHead, headClassesMatch, loadStackedHeads, classifyStacked, stackedHeadsClassesMatch };
+export type { ClassifierHead, StackedHeads };
 
 // Re-export tag-detector types so callers don't need a direct import.
 export { loadTagDetectors, classifyTags };
@@ -203,6 +207,16 @@ interface ScoreOpts {
    * headClassesMatch() returns false (stale classes after collection edits).
    */
   classifierHead?: ClassifierHead | null;
+  /**
+   * Pre-loaded stacked heads bundle (settings.smartAssignStacking=true).
+   * When present AND embeddingOnly=true, the three-head forward pass
+   * (text+vision→meta) is used instead of the single classifierHead or
+   * nearest-centroid.  Takes precedence over classifierHead when both are
+   * provided.  entry.vecText ?? entry.vec is fed to the text head; entry.vec
+   * to the vision head (vecText ?? vec covers items that predate dual-embedding).
+   * Ignored when embeddingOnly is false.
+   */
+  stackedHeads?: StackedHeads | null;
   /**
    * Full-canon LLM-NONE: present ALL categories to the LLM (no embedding
    * shortlist) using T2-style per-category independent scoring. Each of the N
@@ -619,7 +633,18 @@ export async function scoreAgainstCategories(opts: ScoreOpts): Promise<ScoreResu
     log(`[${tag}] classifier-head class mismatch — falling back to nearest-centroid`);
   }
 
-  if (desc) log(`[${tag}] ${desc} (concurrency=${concurrency}${embeddingOnly ? (activeHead ? ", classifier-head" : ", embedding-only") : ""})`);
+  // Resolve stacked heads: use only when provided AND all three heads' classes match.
+  const rawStackedHeads = opts.stackedHeads ?? null;
+  const activeStackedHeads: StackedHeads | null =
+    rawStackedHeads !== null && stackedHeadsClassesMatch(rawStackedHeads, categoryNames)
+      ? rawStackedHeads
+      : null;
+  if (rawStackedHeads !== null && activeStackedHeads === null) {
+    log(`[${tag}] stacked-heads class mismatch — falling back to single-head or nearest-centroid`);
+  }
+
+  const stackedActive = activeStackedHeads !== null;
+  if (desc) log(`[${tag}] ${desc} (concurrency=${concurrency}${embeddingOnly ? (stackedActive ? ", stacked" : activeHead ? ", classifier-head" : ", embedding-only") : ""})`);
 
   if (categories.length === 0) {
     log(`[${tag}] 0 categories with centroids — skipping LLM scoring, all items unmatched`);
@@ -644,7 +669,29 @@ export async function scoreAgainstCategories(opts: ScoreOpts): Promise<ScoreResu
       const entry = cache[id];
       if (!entry?.vec) { unmatched.push(id); continue; }
 
-      if (activeHead !== null) {
+      if (activeStackedHeads !== null) {
+        // ── Stacked-head sub-path ─────────────────────────────────────────────
+        // Forward: text + vision embeddings → two base heads → meta-head argmax.
+        // vecText ?? vec covers items that predate dual-embedding (Task 3 added
+        // vecText; older cache entries have vecText=null so we fall back to vec).
+        const vecText = entry.vecText ?? entry.vec!;
+        const result = classifyStacked(vecText, entry.vec!, activeStackedHeads);
+        if (result.confidence < simThreshold) { unmatched.push(id); continue; }
+        const scoreInt = Math.max(0, Math.min(10, Math.round(result.confidence * 10)));
+        const summary = stripPreamble((entry.summary || entry.vision?.slice(0, 100) || id)).slice(0, 120);
+        assignments.set(id, result.category);
+        matchDetails.set(id, {
+          collection: result.category,
+          score: scoreInt,
+          sim: result.confidence,
+          reason: `stacked conf=${result.confidence.toFixed(3)}`,
+          t1Pick: null, t2Pick: null, decision: "agree",
+          topCentroids: [{ name: result.category, sim: result.confidence }],
+          ollamaCategory: entry.category || undefined,
+          summarySnippet: summary,
+          cached: false,
+        });
+      } else if (activeHead !== null) {
         // ── Classifier-head sub-path ──────────────────────────────────────────
         // Forward: L2-normalize vec → W·x + b → softmax → argmax + max-prob.
         // confidence replaces sim as the rejection signal; simThreshold floor is
@@ -694,7 +741,8 @@ export async function scoreAgainstCategories(opts: ScoreOpts): Promise<ScoreResu
       }
       if (idx % 10 === 0 || idx === itemIds.length - 1) onProgress?.(idx + 1, itemIds.length);
     }
-    log(`[${tag}] ${activeHead ? "classifier-head" : "embedding-only"}: ${assignments.size} assigned, ${unmatched.length} unmatched (no LLM)`);
+    const pathLabel = activeStackedHeads !== null ? "stacked" : activeHead !== null ? "classifier-head" : "embedding-only";
+    log(`[${tag}] ${pathLabel}: ${assignments.size} assigned, ${unmatched.length} unmatched (no LLM)`);
     return { assignments, unmatched, matchDetails };
   }
 

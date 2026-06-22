@@ -15,6 +15,9 @@ import {
   loadClassifierHead,
   headClassesMatch,
   type ClassifierHead,
+  loadStackedHeads,
+  stackedHeadsClassesMatch,
+  type StackedHeads,
 } from "@/pipeline/evaluate";
 import { scoreWithSubcategories } from "@/pipeline/score-with-subcategories";
 
@@ -104,18 +107,38 @@ export async function runClusteringStep1ScoreKnown(
   // Load classifier head when the feature flag is on. headClassesMatch is
   // validated inside scoreAgainstCategories; a null head triggers fallback.
   let classifierHead: ClassifierHead | null = null;
+  let stackedHeads: StackedHeads | null = null;
   if (host.plugin.settings.smartAssignClassifierHead && host.plugin.settings.smartAssignEmbeddingOnly) {
-    classifierHead = loadClassifierHead(host.app.vault);
-    if (classifierHead !== null) {
-      const categoryNames = knownCategoryDefs.map(c => c.name);
-      if (!headClassesMatch(classifierHead, categoryNames)) {
-        host.log(`[warn] classifier-head classes don't match current collections — falling back to nearest-centroid`);
-        classifierHead = null;
+    const categoryNames = knownCategoryDefs.map(c => c.name);
+
+    // Stacked path takes precedence when the stacking flag is also on.
+    if (host.plugin.settings.smartAssignStacking) {
+      stackedHeads = loadStackedHeads(host.app.vault);
+      if (stackedHeads !== null) {
+        if (!stackedHeadsClassesMatch(stackedHeads, categoryNames)) {
+          host.log(`[warn] stacked-heads classes don't match current collections — falling back to single-head`);
+          stackedHeads = null;
+        } else {
+          host.log(`Stacked heads loaded (${stackedHeads.meta.classes.length} classes, will use for Step 1)`);
+        }
       } else {
-        host.log(`Classifier head loaded (${classifierHead.classes.length} classes, will use for Step 1)`);
+        host.log(`[info] smartAssignStacking=true but stacked heads not found — falling back to single-head`);
       }
-    } else {
-      host.log(`[info] smartAssignClassifierHead=true but classifier-head.json not found — falling back to nearest-centroid`);
+    }
+
+    // Fall back to single classifier head when stacked heads are unavailable.
+    if (stackedHeads === null) {
+      classifierHead = loadClassifierHead(host.app.vault);
+      if (classifierHead !== null) {
+        if (!headClassesMatch(classifierHead, categoryNames)) {
+          host.log(`[warn] classifier-head classes don't match current collections — falling back to nearest-centroid`);
+          classifierHead = null;
+        } else {
+          host.log(`Classifier head loaded (${classifierHead.classes.length} classes, will use for Step 1)`);
+        }
+      } else {
+        host.log(`[info] smartAssignClassifierHead=true but classifier-head.json not found — falling back to nearest-centroid`);
+      }
     }
   }
 
@@ -167,6 +190,7 @@ export async function runClusteringStep1ScoreKnown(
       clipFusionAlpha: host.plugin.settings.clipFusionAlpha,
       embeddingOnly: host.plugin.settings.smartAssignEmbeddingOnly,
       classifierHead,
+      stackedHeads,
     });
     phase1Assignments = phase1.assignments;
     phase1Unmatched = phase1.unmatched;
