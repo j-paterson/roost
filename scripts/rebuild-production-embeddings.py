@@ -224,11 +224,33 @@ def phase_embed(V, C):
     print(f"wrote embedding-vectors.bin + embedding-vectors-text.bin ({len(ids)} items) + refreshed embedding-cache.json")
 
 
+def count_todo(V, C):
+    """Print the number of cover-bearing items still lacking a qwen description
+    (0 == describe phase complete). Used by the rollout orchestrator."""
+    full_path = os.path.join(C, "qwen-cover-full.json")
+    vis = json.load(open(full_path)) if os.path.exists(full_path) else {}
+    for seed in ("exp-keyframe-cover.json", "exp-twitter-cover.json"):
+        sp = os.path.join(C, seed)
+        if os.path.exists(sp):
+            for k in json.load(open(sp)):
+                vis.setdefault(k, "")
+    info = scan_items(V)
+    cover_ids = [i for i, m in info.items() if m["cover"]]
+    print(sum(1 for i in cover_ids if i not in vis))
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--phase", required=True, choices=["describe", "embed"])
+    ap.add_argument("--phase", choices=["describe", "embed"])
+    ap.add_argument("--check-todo", action="store_true",
+                    help="Print remaining describe count (0 = done) and exit.")
     args = ap.parse_args()
     V, C = vault_dirs()
+    if args.check_todo:
+        count_todo(V, C)
+        return
+    if not args.phase:
+        ap.error("--phase is required unless --check-todo")
     print("rebuild-production-embeddings.py"); print("=" * 60)
     print(f"Vault: {V}   phase: {args.phase}\n")
     if args.phase == "describe":
