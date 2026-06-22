@@ -53,14 +53,10 @@ export interface ClassifierHead {
 // ── Load ──────────────────────────────────────────────────────────────────────
 
 /**
- * Load the classifier head from <vault>/.roost/cache/classifier-head.json.
- * Returns null when the file is absent or structurally invalid (caller falls back
- * to nearest-centroid).
+ * Load and validate a single ClassifierHeadData file from an absolute path.
+ * Returns null when the file is absent or structurally invalid.
  */
-export function loadClassifierHead(vault: Vault): ClassifierHead | null {
-  const vaultPath = vaultBasePath(vault);
-  if (!vaultPath) return null;
-  const headPath = cachePath(vaultPath, "classifier-head.json");
+function loadHeadFile(headPath: string): ClassifierHead | null {
   try {
     if (!fs.existsSync(headPath)) return null;
     const data: ClassifierHeadData = JSON.parse(fs.readFileSync(headPath, "utf8"));
@@ -79,14 +75,33 @@ export function loadClassifierHead(vault: Vault): ClassifierHead | null {
       // each W row must have exactly `dim` columns, else the dot product is silently wrong
       !data.W.every((row) => Array.isArray(row) && row.length === data.dim)
     ) {
-      console.warn("[roost] classifier-head.json failed structural validation — falling back to nearest-centroid");
+      console.warn(`[roost] ${headPath} failed structural validation`);
       return null;
     }
     return { classes: data.classes, W: data.W, b: data.b, dim: data.dim };
   } catch (e: unknown) {
-    console.warn("[roost] Failed to load classifier-head.json:", e instanceof Error ? e.message : String(e));
+    console.warn("[roost] Failed to load head file:", e instanceof Error ? e.message : String(e));
     return null;
   }
+}
+
+/**
+ * Load the classifier head from <vault>/.roost/cache/classifier-head.json.
+ * Returns null when the file is absent or structurally invalid (caller falls back
+ * to nearest-centroid).
+ */
+export function loadClassifierHead(vault: Vault): ClassifierHead | null {
+  const vaultPath = vaultBasePath(vault);
+  if (!vaultPath) return null;
+  const headPath = cachePath(vaultPath, "classifier-head.json");
+  const head = loadHeadFile(headPath);
+  if (!head) {
+    // Keep the original warning message for the legacy single-head path
+    if (fs.existsSync(headPath)) {
+      console.warn("[roost] classifier-head.json failed structural validation — falling back to nearest-centroid");
+    }
+  }
+  return head;
 }
 
 // ── Forward pass ──────────────────────────────────────────────────────────────
@@ -115,11 +130,33 @@ function softmax(z: number[]): number[] {
   return exp.map(e => e / sum);
 }
 
+/** Dot product of two equal-length numeric arrays. */
+function dot(a: number[], b: number[]): number {
+  let s = 0;
+  for (let i = 0; i < a.length; i++) s += a[i] * b[i];
+  return s;
+}
+
 export interface ClassifyResult {
   /** Predicted category name (argmax of softmax). */
   category: string;
   /** Max softmax probability in [0, 1]. Higher = more confident. */
   confidence: number;
+}
+
+/**
+ * Apply the classifier head forward pass and return the full C-length softmax
+ * probability vector (useful when the probabilities are fed into a meta-head).
+ *
+ * Forward:
+ *   x_norm = x / ||x||₂
+ *   z[c]   = dot(W[c], x_norm) + b[c]   for each class c
+ *   return softmax(z)
+ */
+export function softmaxProba(vec: number[], head: ClassifierHead): number[] {
+  const xNorm = l2Normalize(vec);
+  const z = head.W.map((row, c) => dot(row, xNorm) + head.b[c]);
+  return softmax(z);
 }
 
 /**
@@ -135,22 +172,125 @@ export interface ClassifyResult {
  * straightforward to audit against the Python exporter's identical formula.
  */
 export function classifyWithHead(vec: number[], head: ClassifierHead): ClassifyResult {
-  const xNorm = l2Normalize(vec);
-  const C = head.classes.length;
-  const z = new Array<number>(C);
-  for (let c = 0; c < C; c++) {
-    let dot = 0;
-    const row = head.W[c];
-    for (let d = 0; d < row.length; d++) dot += row[d] * xNorm[d];
-    z[c] = dot + head.b[c];
-  }
-  const p = softmax(z);
+  const p = softmaxProba(vec, head);
   let argmax = 0;
   let maxP = p[0];
-  for (let c = 1; c < C; c++) {
+  for (let c = 1; c < p.length; c++) {
     if (p[c] > maxP) { maxP = p[c]; argmax = c; }
   }
   return { category: head.classes[argmax], confidence: maxP };
+}
+
+// ── Stacked head types ────────────────────────────────────────────────────────
+
+/**
+ * On-disk and in-memory meta-head (C × 2C logistic regression over stacked probs).
+ * W has shape C × inDim where inDim = 2*C.
+ */
+export interface MetaHead {
+  classes: string[];
+  /** Weight matrix, shape C × inDim (= C × 2C). */
+  W: number[][];
+  /** Bias vector, length C. */
+  b: number[];
+  /** Input dimension = 2*C (text probabilities concatenated with vision probabilities). */
+  inDim: number;
+}
+
+/** Three-head bundle: two base heads (text, vision) plus a trained meta-head. */
+export interface StackedHeads {
+  text: ClassifierHead;
+  vision: ClassifierHead;
+  meta: MetaHead;
+}
+
+// ── Stacked forward pass ──────────────────────────────────────────────────────
+
+/**
+ * Combine a text embedding and a vision embedding through a trained meta-head.
+ *
+ * Forward:
+ *   pText   = softmaxProba(vecText,   heads.text)    # length C
+ *   pVision = softmaxProba(vecVision, heads.vision)  # length C
+ *   feat    = [...pText, ...pVision]                 # length 2C  (MUST match Python exporter ordering)
+ *   z[c]    = dot(meta.W[c], feat) + meta.b[c]
+ *   p       = softmax(z)
+ *   return { category: meta.classes[argmax(p)], confidence: max(p) }
+ */
+export function classifyStacked(
+  vecText: number[],
+  vecVision: number[],
+  heads: StackedHeads,
+): ClassifyResult {
+  const pText = softmaxProba(vecText, heads.text);
+  const pVision = softmaxProba(vecVision, heads.vision);
+  const feat = [...pText, ...pVision]; // length 2C; ordering MUST match the Python exporter
+  const z = heads.meta.W.map((row, c) => dot(row, feat) + heads.meta.b[c]);
+  const p = softmax(z);
+  let best = 0;
+  for (let i = 1; i < p.length; i++) if (p[i] > p[best]) best = i;
+  return { category: heads.meta.classes[best], confidence: p[best] };
+}
+
+// ── Stacked head loader ───────────────────────────────────────────────────────
+
+/**
+ * On-disk format of meta-head.json (version 1).
+ * Kept private; the public interface is MetaHead.
+ */
+interface MetaHeadData {
+  classes: string[];
+  W: number[][];
+  b: number[];
+  inDim: number;
+  norm: "none";
+  version: 1;
+}
+
+/**
+ * Load the three-head bundle from:
+ *   <vault>/.roost/cache/classifier-head-text.json
+ *   <vault>/.roost/cache/classifier-head-vision.json
+ *   <vault>/.roost/cache/meta-head.json
+ *
+ * Returns null when any file is absent or structurally invalid.
+ * The caller should fall back to the single-head or nearest-centroid path.
+ */
+export function loadStackedHeads(vault: Vault): StackedHeads | null {
+  const vaultPath = vaultBasePath(vault);
+  if (!vaultPath) return null;
+
+  const textHead = loadHeadFile(cachePath(vaultPath, "classifier-head-text.json"));
+  if (!textHead) return null;
+
+  const visionHead = loadHeadFile(cachePath(vaultPath, "classifier-head-vision.json"));
+  if (!visionHead) return null;
+
+  const metaPath = cachePath(vaultPath, "meta-head.json");
+  try {
+    if (!fs.existsSync(metaPath)) return null;
+    const data: MetaHeadData = JSON.parse(fs.readFileSync(metaPath, "utf8"));
+    const C = Array.isArray(data.classes) ? data.classes.length : 0;
+    if (
+      data.version !== 1 ||
+      C === 0 ||
+      !Array.isArray(data.W) ||
+      data.W.length !== C ||
+      !Array.isArray(data.b) ||
+      data.b.length !== C ||
+      typeof data.inDim !== "number" ||
+      data.inDim !== 2 * C ||
+      !data.W.every((row) => Array.isArray(row) && row.length === data.inDim)
+    ) {
+      console.warn("[roost] meta-head.json failed structural validation");
+      return null;
+    }
+    const meta: MetaHead = { classes: data.classes, W: data.W, b: data.b, inDim: data.inDim };
+    return { text: textHead, vision: visionHead, meta };
+  } catch (e: unknown) {
+    console.warn("[roost] Failed to load meta-head.json:", e instanceof Error ? e.message : String(e));
+    return null;
+  }
 }
 
 // ── Compatibility check ───────────────────────────────────────────────────────
@@ -169,4 +309,19 @@ export function headClassesMatch(head: ClassifierHead, categoryNames: string[]):
     if (!headSet.has(name)) return false;
   }
   return true;
+}
+
+/**
+ * Return true when all three heads in a StackedHeads bundle agree on the same
+ * class set and that set matches the current live categories.
+ *
+ * All of text.classes, vision.classes, and meta.classes must be set-equal to
+ * categoryNames. A mismatch means the bundle is stale (re-train needed).
+ */
+export function stackedHeadsClassesMatch(heads: StackedHeads, categoryNames: string[]): boolean {
+  return (
+    headClassesMatch(heads.meta, categoryNames) &&
+    headClassesMatch(heads.text, categoryNames) &&
+    headClassesMatch(heads.vision, categoryNames)
+  );
 }
