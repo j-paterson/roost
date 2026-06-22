@@ -26,7 +26,10 @@ export const MEDIA_DOWNLOAD_MAX_RETRIES = 2;
 
 // ── Ollama ──
 export const OLLAMA_URL = "http://localhost:11434";
-export const VISION_MODEL = "minicpm-v";
+export const VISION_MODEL = "huihui_ai/qwen2.5-vl-abliterated:latest";
+// Context window for vision calls. 4096 keeps KV-cache footprint small while
+// fitting a single-frame prompt comfortably (image tokens ≈ 1000–2500).
+export const VISION_NUM_CTX = 4096;
 export const TOPIC_MODEL = "llama3.2:3b";
 export const EVAL_MODEL = "gemma4:e4b";
 export const EMBED_MODEL = "nomic-embed-text";

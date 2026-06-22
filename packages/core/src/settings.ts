@@ -51,9 +51,10 @@ export interface RoostSettings {
   smartAssignEmbeddingOnly: boolean;
   /** When true, Smart Assign Step 1 uses the trained LogReg classifier head
    *  (<vault>/.roost/cache/classifier-head.json) instead of nearest-centroid.
-   *  Default false — flip only after the validation gate passes (top-1 ≈ 0.68,
-   *  rejection AUROC > 0.52 on holdout). Falls back to nearest-centroid when the
-   *  weights file is absent or its classes don't match the current category set.
+   *  Default true (the validated honest-eval default) — flip only after the
+   *  validation gate passes (top-1 ≈ 0.68, rejection AUROC > 0.52 on holdout).
+   *  Falls back to nearest-centroid when the weights file is absent or its classes
+   *  don't match the current category set.
    *  See docs/superpowers/specs/2026-06-18-classifier-head-design.md. */
   smartAssignClassifierHead: boolean;
   /** When true, Smart Assign uses the multi-label tag-detector forward pass
@@ -64,6 +65,12 @@ export interface RoostSettings {
    *  Default false — flip only after D1 validation on a sample of items.
    *  See docs/superpowers/specs/2026-06-19-tag-system-wave2-smartassign.md. */
   smartAssignTags: boolean;
+  /** Wave: logit stacking. When true (and the head + embedding-only paths are
+   *  on), Smart Assign Step 1 combines a text-only and a vision-on classifier
+   *  head via a trained meta-head. Falls back to the single head when the
+   *  stacked weight files are absent/mismatched. Default false — flip after
+   *  the holdout acceptance gate. */
+  smartAssignStacking: boolean;
   /** Names of the user's OWN categories that handle uncensored/explicit content
    *  (e.g. ["Spicy"], ["Adult"]). This is the only place an uncensored category
    *  is named — the product code never hardcodes one. Categories listed here route
@@ -153,6 +160,7 @@ export const DEFAULT_SETTINGS: RoostSettings = {
   smartAssignEmbeddingOnly: true,
   smartAssignClassifierHead: true,
   smartAssignTags: false,
+  smartAssignStacking: false,
   uncensoredCategories: [],
   facetCategories: [],
   anthropicApiKey: "",

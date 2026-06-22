@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { PIPELINE_ENRICHMENT_IDS } from "@/lib/enrichments";
 import { DEFAULT_SETTINGS } from "@/settings";
+import { VISION_MODEL, VISION_NUM_CTX } from "@/config";
 
 describe("DEFAULT_SETTINGS", () => {
   it("integration flags default off", () => {
@@ -18,4 +19,13 @@ describe("DEFAULT_SETTINGS", () => {
     );
     expect(Object.values(DEFAULT_SETTINGS.pipelines).every(Boolean)).toBe(true);
   });
+
+  it("defaults smartAssignStacking to false", () => {
+    expect(DEFAULT_SETTINGS.smartAssignStacking).toBe(false);
+  });
+});
+
+it("vision model is qwen cover-only at num_ctx 4096", () => {
+  expect(VISION_MODEL).toBe("huihui_ai/qwen2.5-vl-abliterated:latest");
+  expect(VISION_NUM_CTX).toBe(4096);
 });
