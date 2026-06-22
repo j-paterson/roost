@@ -53,6 +53,7 @@ function entry(seed: number): EmbeddingCacheEntry {
     summary: `summary-${seed}`,
     category: `category-${seed}`,
     vec: makeVec(seed),
+    vecText: makeVec(seed + 1000), // distinct from vec so the test can differentiate
   };
 }
 
@@ -87,9 +88,35 @@ describe("embedding-cache durability", () => {
       expect(loaded[key].vision).toBe(cache[key].vision);
       expect(loaded[key].summary).toBe(cache[key].summary);
       expect(loaded[key].category).toBe(cache[key].category);
+      // vecText must round-trip from embedding-vectors-text.bin
+      expect(loaded[key].vecText).not.toBeNull();
+      expect(loaded[key].vecText!.length).toBe(VEC_DIM);
+      expect(loaded[key].vecText![0]).toBeCloseTo(cache[key].vecText![0], 5);
     }
     // The first float should round-trip through Float32.
     expect(loaded["tiktok:1"].vec![0]).toBeCloseTo(cache["tiktok:1"].vec![0], 5);
+    // vec and vecText must be distinct (different seeds)
+    expect(loaded["tiktok:1"].vec![0]).not.toBeCloseTo(loaded["tiktok:1"].vecText![0], 1);
+  });
+
+  it("round-trips vecText independently of vec (embedding-vectors-text.bin)", () => {
+    const cache: Record<string, EmbeddingCacheEntry> = {
+      "tiktok:10": entry(10),
+    };
+    saveEmbeddingCache(vault, cache);
+
+    // Corrupt embedding-vectors.bin so vec cannot load, but leave text bin intact
+    fs.writeFileSync(cacheFile(tmp, "embedding-vectors.bin"), "CORRUPT");
+
+    __resetEmbeddingCache();
+    const loaded = loadEmbeddingCache(vault);
+
+    // vec should be null (corrupted bin)
+    expect(loaded["tiktok:10"]?.vec ?? null).toBeNull();
+    // vecText should survive via embedding-vectors-text.bin
+    expect(loaded["tiktok:10"]?.vecText).not.toBeNull();
+    expect(loaded["tiktok:10"]!.vecText!.length).toBe(VEC_DIM);
+    expect(loaded["tiktok:10"]!.vecText![0]).toBeCloseTo(cache["tiktok:10"].vecText![0], 5);
   });
 
   it("salvages the complete-vector prefix from a truncated bin and keeps all text (Fix 3 + Fix 2)", () => {

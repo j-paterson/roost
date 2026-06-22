@@ -187,6 +187,22 @@ function saveVectorsBin(binPath: string, cache: Record<string, EmbeddingCacheEnt
   writeFileAtomic(binPath, Buffer.concat([headerBuf, floatBuf]));
 }
 
+/** Write text-only (vision-off) vectors to a binary file. Mirrors saveVectorsBin exactly,
+ *  but reads from entry.vecText. Only entries that have a valid VEC_DIM vecText are stored. */
+function saveTextVectorsBin(binPath: string, cache: Record<string, EmbeddingCacheEntry>): void {
+  const keys: string[] = [];
+  for (const [k, v] of Object.entries(cache)) {
+    if (v.vecText && v.vecText.length === VEC_DIM) keys.push(k);
+  }
+  const headerBuf = Buffer.from(JSON.stringify(keys) + "\n", "utf8");
+  const floatBuf = Buffer.alloc(keys.length * VEC_DIM * 4);
+  const view = new Float32Array(floatBuf.buffer, floatBuf.byteOffset, keys.length * VEC_DIM);
+  for (let i = 0; i < keys.length; i++) {
+    view.set(cache[keys[i]].vecText!, i * VEC_DIM);
+  }
+  writeFileAtomic(binPath, Buffer.concat([headerBuf, floatBuf]));
+}
+
 /** Write JSON with vec stripped to null (text fields only — backward compatible with scripts). */
 function saveTextJson(jsonPath: string, cache: Record<string, EmbeddingCacheEntry>): void {
   const stripped: Record<string, { vision: string | null; summary: string | null; category: string | null; vec: null }> = {};
@@ -223,6 +239,16 @@ export function loadEmbeddingCache(vault: Vault): Record<string, EmbeddingCacheE
     }
   }
 
+  // Load text-only (vision-off) vectors from embedding-vectors-text.bin.
+  // Missing or truncated file is non-fatal — vecText falls back to null and
+  // will be recomputed on the next describe-items run.
+  const textVecMap = loadVectorsBin(cachePath(vaultPath, "embedding-vectors-text.bin"));
+  if (textVecMap && textVecMap.size > 0) {
+    for (const [key, vecText] of textVecMap) {
+      if (textCache[key]) textCache[key].vecText = vecText;
+    }
+  }
+
   // Dim guard (Fix 4): warn loudly on a model/dim change instead of silently
   // serving mismatched vectors.
   try {
@@ -243,6 +269,7 @@ export function saveEmbeddingCache(vault: Vault, cache: Record<string, Embedding
   try {
     fs.mkdirSync(dir, { recursive: true });
     saveVectorsBin(cachePath(vaultPath, "embedding-vectors.bin"), cache);
+    saveTextVectorsBin(cachePath(vaultPath, "embedding-vectors-text.bin"), cache);
     saveTextJson(cachePath(vaultPath, "embedding-cache.json"), cache);
     writeFileAtomic(cachePath(vaultPath, "embedding-meta.json"), JSON.stringify({ dim: VEC_DIM }));
   } catch (e: unknown) {

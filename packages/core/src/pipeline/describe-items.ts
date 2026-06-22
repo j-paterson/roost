@@ -222,14 +222,15 @@ async function embedItem(
     }
   }
 
-  // Stage 2: Embedding
-  if (!entry.vec) {
-    const parts = [entry.vision, entry.summary, entry.category, item.text, item.subtitle].filter(Boolean);
-    const embedText = parts.join(" ");
-    if (embedText.length > 10) {
+  // Stage 2: Embedding — compute vision-on and text-only vectors in one batch call
+  if (!entry.vec || entry.vecText == null) {
+    const visionText = [entry.vision, entry.summary, entry.category, item.text, item.subtitle].filter(Boolean).join(" ");
+    const plainText = [entry.summary, entry.category, item.text, item.subtitle].filter(Boolean).join(" ");
+    if (visionText.length > 10) {
       try {
-        const [vec] = await embedder!.embed([embedText]);
-        entry.vec = vec ?? null;
+        const [vVision, vText] = await embedder!.embed([visionText, plainText]);
+        entry.vec = vVision ?? null;
+        entry.vecText = plainText.length > 10 ? (vText ?? null) : (vVision ?? null);
       } catch (e: unknown) {
         log(`Embedding failed for ${item.id}: ${e instanceof Error ? e.message : String(e)}`);
         return false;
