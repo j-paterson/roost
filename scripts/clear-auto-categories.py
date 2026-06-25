@@ -44,40 +44,31 @@ def main():
     cache_dir = os.path.join(V, ".roost", "cache")
 
     if args.restore:
-        backup = json.load(open(args.restore))
-        # Build roost_id -> [all current file paths] so duplicate-id files (e.g. the
-        # "@author"/"Unknown" Twitter pairs) all get restored, not just the one path
-        # captured in the backup.
-        id_to_paths = {}
-        for p in glob.glob(str(Path(os.environ["ROOST_VAULT"])) + "/Bookmarks/**/*.md", recursive=True):
-            try:
-                fm = open(p, encoding="utf-8", errors="ignore").read().split("---")
-            except Exception:
-                continue
-            block = fm[1] if len(fm) >= 3 else ""
-            mid = re.search(r'^roost_id:\s*"?([^"\n]+)', block, re.M)
-            if mid:
-                id_to_paths.setdefault(mid.group(1).strip(), []).append(p)
+        backup = json.load(open(args.restore))  # { relpath: {roost_category, roost_subcategory} }
         n = 0
-        for rid, info in backup.items():
-            for p in id_to_paths.get(rid, [os.path.join(V, info["path"])]):
-                if not os.path.exists(p):
-                    continue
-                t = open(p, encoding="utf-8", errors="ignore").read()
-                m = FM_RE.match(t)
-                if not m:
-                    continue
-                head, fm, sep, body = m.groups()
-                if re.search(r"^roost_category:", fm, re.M):
-                    continue  # already has one; don't double-write
-                line = f'roost_category: {info["roost_category"]}\n'
-                if re.search(r"^roost_assigned_by:", fm, re.M):
-                    fm = re.sub(r"^(roost_assigned_by:.*\r?\n)", r"\1" + line, fm, count=1, flags=re.M)
-                else:
-                    fm = fm + line
-                open(p, "w", encoding="utf-8").write(head + fm + sep + body)
-                n += 1
-        print(f"restored roost_category on {n} files")
+        for relpath, info in backup.items():
+            p = os.path.join(V, relpath)
+            if not os.path.exists(p):
+                continue
+            t = open(p, encoding="utf-8", errors="ignore").read()
+            m = FM_RE.match(t)
+            if not m:
+                continue
+            head, fm, sep, body = m.groups()
+            additions = ""
+            if info.get("roost_category") and not re.search(r"^roost_category:", fm, re.M):
+                additions += f'roost_category: {info["roost_category"]}\n'
+            if info.get("roost_subcategory") and not re.search(r"^roost_subcategory:", fm, re.M):
+                additions += f'roost_subcategory: {info["roost_subcategory"]}\n'
+            if not additions:
+                continue
+            if re.search(r"^roost_assigned_by:", fm, re.M):
+                fm = re.sub(r"^(roost_assigned_by:.*\r?\n)", r"\1" + additions, fm, count=1, flags=re.M)
+            else:
+                fm = fm + additions
+            open(p, "w", encoding="utf-8").write(head + fm + sep + body)
+            n += 1
+        print(f"restored {n} files (category/subcategory re-inserted where backed up)")
         return
 
     backup = {}
@@ -94,20 +85,30 @@ def main():
         head, fm, sep, body = m.groups()
         if not fm_get(fm, "roost_id"):
             continue
-        if fm_get(fm, "roost_assigned_by") != "auto":
+        # Non-human = the pipeline's own "auto" definition (buildFilterInput: anything
+        # not "human" is treated as auto). Covers explicit auto AND unstamped items.
+        if fm_get(fm, "roost_assigned_by") == "human":
             continue
         cat = fm_get(fm, "roost_category")
-        if not cat or cat in ("undefined", "null"):
-            continue
+        sub = fm_get(fm, "roost_subcategory")
+        cat_set = bool(cat) and cat not in ("undefined", "null")
+        sub_set = bool(sub) and sub not in ("undefined", "null")
+        if not cat_set and not sub_set:
+            continue  # nothing to clear
         coll = fm_get(fm, "collection")
         if coll and coll not in ("undefined", "null"):
             skipped_coll += 1
             continue  # anchored by collection — clearing roost_category wouldn't unsort it
         rid = fm_get(fm, "roost_id")
         new_fm = re.sub(r"^roost_category:.*\r?\n", "", fm, flags=re.M)
-        backup[rid] = {"path": os.path.relpath(p, V), "roost_category": cat}
+        new_fm = re.sub(r"^roost_subcategory:.*\r?\n", "", new_fm, flags=re.M)
+        backup[os.path.relpath(p, V)] = {
+            "roost_id": rid,
+            "roost_category": cat if cat_set else None,
+            "roost_subcategory": sub if sub_set else None,
+        }
         if len(samples) < 4:
-            samples.append((rid, cat))
+            samples.append((rid, cat if cat_set else "-", sub if sub_set else "-"))
         changed += 1
         if args.apply:
             open(p, "w", encoding="utf-8").write(head + new_fm + sep + body)
