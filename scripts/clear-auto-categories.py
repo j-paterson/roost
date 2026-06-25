@@ -45,26 +45,38 @@ def main():
 
     if args.restore:
         backup = json.load(open(args.restore))
+        # Build roost_id -> [all current file paths] so duplicate-id files (e.g. the
+        # "@author"/"Unknown" Twitter pairs) all get restored, not just the one path
+        # captured in the backup.
+        id_to_paths = {}
+        for p in glob.glob(str(Path(os.environ["ROOST_VAULT"])) + "/Bookmarks/**/*.md", recursive=True):
+            try:
+                fm = open(p, encoding="utf-8", errors="ignore").read().split("---")
+            except Exception:
+                continue
+            block = fm[1] if len(fm) >= 3 else ""
+            mid = re.search(r'^roost_id:\s*"?([^"\n]+)', block, re.M)
+            if mid:
+                id_to_paths.setdefault(mid.group(1).strip(), []).append(p)
         n = 0
         for rid, info in backup.items():
-            p = os.path.join(V, info["path"])
-            if not os.path.exists(p):
-                continue
-            t = open(p, encoding="utf-8", errors="ignore").read()
-            m = FM_RE.match(t)
-            if not m:
-                continue
-            head, fm, sep, body = m.groups()
-            if re.search(r"^roost_category:", fm, re.M):
-                continue  # already has one; don't double-write
-            # re-insert roost_category after roost_assigned_by (or at end of fm)
-            line = f'roost_category: {info["roost_category"]}\n'
-            if re.search(r"^roost_assigned_by:", fm, re.M):
-                fm = re.sub(r"^(roost_assigned_by:.*\r?\n)", r"\1" + line, fm, count=1, flags=re.M)
-            else:
-                fm = fm + line
-            open(p, "w", encoding="utf-8").write(head + fm + sep + body)
-            n += 1
+            for p in id_to_paths.get(rid, [os.path.join(V, info["path"])]):
+                if not os.path.exists(p):
+                    continue
+                t = open(p, encoding="utf-8", errors="ignore").read()
+                m = FM_RE.match(t)
+                if not m:
+                    continue
+                head, fm, sep, body = m.groups()
+                if re.search(r"^roost_category:", fm, re.M):
+                    continue  # already has one; don't double-write
+                line = f'roost_category: {info["roost_category"]}\n'
+                if re.search(r"^roost_assigned_by:", fm, re.M):
+                    fm = re.sub(r"^(roost_assigned_by:.*\r?\n)", r"\1" + line, fm, count=1, flags=re.M)
+                else:
+                    fm = fm + line
+                open(p, "w", encoding="utf-8").write(head + fm + sep + body)
+                n += 1
         print(f"restored roost_category on {n} files")
         return
 
