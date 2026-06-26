@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect } from "react";
 import type { App } from "obsidian";
 import type { IRoostPlugin } from "@/types/plugin";
-import { scanLibraryTree, type LibraryTreeData } from "@/ui/lib/library-tree";
+import { scanLibraryTree, applyCategoryDelta, type LibraryTreeData } from "@/ui/lib/library-tree";
 
 const EMPTY_TREE: LibraryTreeData = {
   total: 0,
@@ -18,6 +18,13 @@ export function useLibraryTree(app: App, plugin: IRoostPlugin) {
       scanLibraryTree(app, plugin.settings.syncFolder, plugin.settings),
     );
   }, [app, plugin]);
+
+  /** Optimistically repaint the sidebar counts from a known assignment delta
+   *  (category → newly-assigned item count) without re-scanning the vault. A
+   *  reconciling scanLibrary() should follow once metadata settles. */
+  const applyOptimisticAssignment = useCallback((delta: Map<string, number>) => {
+    setLibraryTree(prev => applyCategoryDelta(prev, delta));
+  }, []);
 
   useEffect(() => {
     void scanLibrary();
@@ -36,5 +43,5 @@ export function useLibraryTree(app: App, plugin: IRoostPlugin) {
     };
   }, [app, plugin, scanLibrary]);
 
-  return { libraryTree, scanLibrary };
+  return { libraryTree, scanLibrary, applyOptimisticAssignment };
 }

@@ -30,13 +30,16 @@ interface SmartAssignDeps {
   plugin: IRoostPlugin;
   log: (msg: string) => void;
   scanLibrary: () => Promise<void>;
+  /** Optimistically repaint the sidebar counts from a known assignment delta,
+   *  so confirm shows a single snappy update instead of a file-by-file ripple. */
+  applyOptimisticAssignment: (delta: Map<string, number>) => void;
   applyFilter: (filter: RoostFilter) => void;
   stopSignalRef: React.MutableRefObject<StopSignal | null>;
   setSyncProgress: (p: SyncProgress | null | ((prev: SyncProgress | null) => SyncProgress | null)) => void;
 }
 
 export function useSmartAssign(deps: SmartAssignDeps) {
-  const { app, plugin, log, scanLibrary, applyFilter, stopSignalRef, setSyncProgress } = deps;
+  const { app, plugin, log, scanLibrary, applyOptimisticAssignment, applyFilter, stopSignalRef, setSyncProgress } = deps;
 
   const [mode, setMode] = useState<Mode>("sync");
   const [pipelineStep, setPipelineStep] = useState<number | null>(null);
@@ -164,6 +167,24 @@ export function useSmartAssign(deps: SmartAssignDeps) {
   async function handleConfirm(proposedFolders: { name: string; itemIds: string[] }[] | null) {
     if (!proposedFolders) return;
     setConfirming(true);
+
+    // Optimistic, single repaint of the sidebar counts: we already know each item's
+    // assigned category, so move the unsorted items into their categories now rather
+    // than waiting for Obsidian to lazily re-index the bulk write file-by-file. The
+    // reconcile scanLibrary() below corrects any drift (uncertain-skips, failures).
+    const delta = new Map<string, number>();
+    let moved = 0;
+    for (const folder of proposedFolders) {
+      let n = 0;
+      for (const id of folder.itemIds) if (unsortedIds.has(id)) n++;
+      if (n > 0) { delta.set(folder.name, (delta.get(folder.name) ?? 0) + n); moved += n; }
+    }
+    applyOptimisticAssignment(delta);
+    // Hold the rebuild-suppression flag long enough for a write this size to finish
+    // indexing, so trailing "resolved" events don't re-derive partial counts on top
+    // of the optimistic repaint. Scales with batch size; capped.
+    const settleTimeoutMs = Math.min(90_000, 15_000 + moved * 4);
+
     try {
       await confirmSmartAssign({
         plugin,
@@ -181,9 +202,11 @@ export function useSmartAssign(deps: SmartAssignDeps) {
         // or the detector weights were absent — confirm falls back to single-label.
         tagAssignments: tagAssignmentsRef.current ?? undefined,
         runUnderGuard: async () => {
-          await scanLibrary();
           resetSmartAssignStaging(buildResetHost());
-          await waitForMetadataQuiet(app.metadataCache);
+          // bulkWriteInProgress stays true here, so the optimistic counts hold while
+          // Obsidian finishes indexing; reconcile with a single re-scan once quiet.
+          await waitForMetadataQuiet(app.metadataCache, { quietMs: 600, timeoutMs: settleTimeoutMs });
+          await scanLibrary();
           // Refresh pending-pipeline counts now that frontmatter has settled,
           // then auto-enqueue any pipelines that have new work.
           plugin.refreshPendingPipelines();

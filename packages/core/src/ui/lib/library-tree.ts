@@ -21,6 +21,44 @@ export interface LibraryTreeData {
   platforms: { name: string; display: string; total: number }[];
 }
 
+/**
+ * Apply an optimistic assignment delta to a library tree WITHOUT re-scanning the
+ * vault. Used right after Smart Assign confirm so the sidebar counts repaint once,
+ * immediately, instead of ticking up file-by-file as Obsidian's metadata cache
+ * lazily re-indexes the bulk frontmatter write.
+ *
+ * `delta` maps category name → number of items newly moved into it from the unsorted
+ * bucket. Categories not already present are appended (e.g. a canonical category the
+ * head resurrected). `total` and `platforms` are unchanged — items don't leave the
+ * vault, they just gain a category. A reconciling scanLibraryTree() should follow to
+ * correct any drift (failed writes, uncertain-skips, externally-changed files).
+ */
+export function applyCategoryDelta(
+  tree: LibraryTreeData,
+  delta: Map<string, number>,
+): LibraryTreeData {
+  let moved = 0;
+  for (const n of delta.values()) moved += n;
+  if (moved === 0) return tree;
+  const categories = tree.categories.map(c => ({ ...c }));
+  const byName = new Map(categories.map(c => [c.name, c]));
+  for (const [name, n] of delta) {
+    if (n === 0) continue;
+    const existing = byName.get(name);
+    if (existing) existing.count += n;
+    else {
+      const created: LibraryTreeCategory = { name, count: n };
+      categories.push(created);
+      byName.set(name, created);
+    }
+  }
+  return {
+    ...tree,
+    unsorted: Math.max(0, tree.unsorted - moved),
+    categories,
+  };
+}
+
 function sortByCustomOrder<T extends [string, number]>(
   entries: T[],
   order: string[],

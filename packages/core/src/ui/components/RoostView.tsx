@@ -34,7 +34,7 @@ interface RoostViewProps {
 
 export function RoostView({ app, plugin }: RoostViewProps) {
   const { logs, showLogs, setShowLogs, log } = useRoostSidebarLog(plugin);
-  const { libraryTree, scanLibrary } = useLibraryTree(app, plugin);
+  const { libraryTree, scanLibrary, applyOptimisticAssignment } = useLibraryTree(app, plugin);
 
   const [activeFilter, setActiveFilter] = useState<RoostFilter>(null);
   const activeFilterRef = useRef<RoostFilter | null>(null);
@@ -88,6 +88,7 @@ export function RoostView({ app, plugin }: RoostViewProps) {
     plugin,
     log,
     scanLibrary,
+    applyOptimisticAssignment,
     applyFilter,
     stopSignalRef: platformSync.stopSignalRef,
     setSyncProgress: platformSync.setSyncProgress,
