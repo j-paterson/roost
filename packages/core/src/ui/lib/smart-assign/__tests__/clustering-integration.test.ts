@@ -497,6 +497,60 @@ describe("clustering integration (steps 0→1→2)", () => {
     expect(allLogs).toMatch(/Stacked heads loaded.*cascade will use/);
   });
 
+  // ── Test 5: Single-head (non-stacked) pass-through on class mismatch ────────
+  //
+  // Mirrors Test 3 but for the single classifier-head path (smartAssignStacking=false).
+  // Before the cascade change, headClassesMatch() returning false would have nulled the head.
+  // Now the head is always passed to scoreAgainstCategories; the cascade handles
+  // off-taxonomy classes gracefully via the centroid tier fallback.
+  it("passes single classifier head to scoreAgainstCategories even when head classes mismatch live categories", async () => {
+    // Arrange: write only classifier-head.json whose classes ["OldCat1","OldCat2"]
+    // are a complete mismatch with the live categories ["Cooking","Travel"].
+    // Deliberately do NOT write stacked-head files (text/vision/meta).
+    const cacheDir = path.join(tmpDir, ".roost", "cache");
+    fs.mkdirSync(cacheDir, { recursive: true });
+    const mismatchSingleHead = {
+      version: 1,
+      classes: ["OldCat1", "OldCat2"],
+      W: [[1, 0], [0, 1]],
+      b: [0, 0],
+      dim: 2,
+      norm: "l2",
+      trainedOn: 5,
+    };
+    fs.writeFileSync(path.join(cacheDir, "classifier-head.json"), JSON.stringify(mismatchSingleHead));
+
+    const vault = mkVault();
+    saveEmbeddingCache(vault, seedCache());
+    const input: SmartAssignInput = { ...TEST_INPUT };
+    const { host } = makeHost({ vault, input });
+
+    // Enable head + embeddingOnly; leave stacking OFF so the single-head path is used.
+    const s = host.plugin.settings as unknown as Record<string, unknown>;
+    s["smartAssignClassifierHead"] = true;
+    s["smartAssignEmbeddingOnly"] = true;
+    s["smartAssignStacking"] = false;
+
+    // Capture log messages.
+    const logs: string[] = [];
+    (host as unknown as Record<string, unknown>)["log"] = (msg: string) => { logs.push(msg); };
+
+    installStandardMock();
+
+    const signal: StopSignal = { stopped: false, stop() { this.stopped = true; } };
+    host.refs.stopSignalRef.current = signal;
+
+    const s0 = await runClusteringStep0Embed(host, signal);
+    expect(s0).not.toBeNull();
+    await runClusteringStep1ScoreKnown(host, signal, s0!);
+
+    // The kill-switch MUST be gone: no warning about class mismatch.
+    const allLogs = logs.join("\n");
+    expect(allLogs).not.toMatch(/don't match current collections/);
+    // The info log confirms the single head was loaded and passed through to the cascade.
+    expect(allLogs).toMatch(/Classifier head loaded.*cascade will use/);
+  });
+
   // ── Test 4: Step-by-step slice wiring (white-box) ─────────
   it("step 0→1→2 slices compose correctly and expose the expected contracts", async () => {
     const vault = mkVault();

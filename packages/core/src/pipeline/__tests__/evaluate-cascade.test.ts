@@ -111,3 +111,42 @@ it("below both thresholds → unmatched (handed to discovery)", async () => {
   });
   expect(r.unmatched).toContain("z1");
 });
+
+// ── Regression: off-taxonomy confident head emission ──────────────────────────
+//
+// The existing tests above use live cats {A, B, X} where A and B ARE trained
+// head classes — so when the head emits "A" it is still on-taxonomy.
+// This test exercises the genuinely new surface: a live category set that
+// contains NEITHER "A" NOR "B", so the head's confident emission of "A" is
+// off-taxonomy (the vault does not yet have that category).
+// The cascade must assign the item to the head's class directly (tier "stacked"),
+// never deferring to the centroid tier or marking it unmatched.
+it("off-taxonomy confident head emission: item assigned to head class absent from live categories (not deferred to centroid or unmatched)", async () => {
+  // Live cats: only "P" and "Q" — neither is a trained head class.
+  // The stacked head has classes ["A","B","C"]; item [9,0,0,0] fires "A" at conf≈1.0.
+  // "A" is off-taxonomy (not in offTaxCats), so this exercises the new behavioral surface.
+  const offTaxCats: CategoryDef[] = [
+    { name: "P", description: "p", centroid: [0, 0, 1, 0] },
+    { name: "Q", description: "q", centroid: [0, 1, 0, 0] },
+  ];
+  // Assert precondition: the head's confident class is genuinely absent from the live set.
+  const liveNames = offTaxCats.map(c => c.name);
+  expect(liveNames).not.toContain("A");
+
+  const cache: Record<string, EmbeddingCacheEntry> = {
+    h1: { vec: [9, 0, 0, 0], vecText: [9, 0, 0, 0], vision: null, summary: "h1", category: null },
+  };
+  const r = await scoreAgainstCategories({
+    itemIds: ["h1"], cache, categories: offTaxCats,
+    embeddingOnly: true, stackedHeads: mkStackedHeads(),
+    onLog: () => {},
+  });
+
+  // Item lands in assignments mapped to the off-taxonomy class "A".
+  expect(r.assignments.has("h1")).toBe(true);
+  expect(r.assignments.get("h1")).toBe("A");
+  // Item must NOT be routed to unmatched or to the centroid tier.
+  expect(r.unmatched).not.toContain("h1");
+  // The matchDetails reason names the head tier ("stacked").
+  expect(r.matchDetails.get("h1")?.reason).toMatch(/stacked/);
+});
