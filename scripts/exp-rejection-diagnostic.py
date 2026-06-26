@@ -19,6 +19,50 @@ from sklearn.covariance import LedoitWolf
 
 SEED=1729; DROP={"Content Creation"}
 
+# ── Phase 3 helpers (stacked-meta confidence, reuse acceptance-gate-stacking math) ──
+
+def _sfmax(z):
+    e=np.exp(z-z.max()); return e/e.sum()
+
+def _l2n(v):
+    n=float(np.linalg.norm(v)); return v/(n if n else 1.0)
+
+def _load_head(path):
+    with open(path) as fh: return json.load(fh)
+
+# CANONICAL SOURCE: acceptance-gate-stacking.py forward_stacked / forward_single.
+# These functions extend those by also returning the max-softmax confidence (the
+# gate functions only return the category string and their return type is not changed
+# here to avoid touching fair-baseline-check.py).  Any math change in the gate must
+# be mirrored here; the divergence guard below will catch regressions at run-time.
+def _fwd_stacked_score(th,tv,tm,vt,vv):
+    """Returns (pred_class: str, meta_max_softmax: float). Math mirrors acceptance-gate-stacking.py forward_stacked."""
+    Wt=np.asarray(th["W"],np.float64); bt=np.asarray(th["b"],np.float64)
+    Wv=np.asarray(tv["W"],np.float64); bv=np.asarray(tv["b"],np.float64)
+    Wm=np.asarray(tm["W"],np.float64); bm=np.asarray(tm["b"],np.float64)
+    pt=_sfmax(Wt@_l2n(vt.astype(np.float64))+bt)
+    pv=_sfmax(Wv@_l2n(vv.astype(np.float64))+bv)
+    pm=_sfmax(Wm@np.concatenate([pt,pv])+bm)
+    return tm["classes"][int(pm.argmax())], float(pm.max())
+
+def _fwd_single_score(hs,vv):
+    """Returns (pred_class: str, max_softmax: float). Math mirrors acceptance-gate-stacking.py forward_single."""
+    W=np.asarray(hs["W"],np.float64); b=np.asarray(hs["b"],np.float64)
+    p=_sfmax(W@_l2n(vv.astype(np.float64))+b)
+    return hs["classes"][int(p.argmax())], float(p.max())
+
+def _pick_tau(score,correct,target=0.90):
+    """Lowest τ whose precision-on-accepted >= target. Returns (tau, prec, cov) or None."""
+    best=None
+    for tau in np.unique(score)[::-1]:          # descending: high→low τ
+        mask=score>=tau
+        if mask.sum()==0: continue
+        prec=float(correct[mask].mean())
+        cov=float(mask.mean())
+        if prec>=target:
+            best=(float(tau),prec,cov)           # keep updating → lowest valid τ
+    return best
+
 def load_xy(vault):
     cache=L.load_cache(bin_path=os.path.join(vault,".roost","cache","embedding-vectors.bin"))
     labels,_=L.load_honest_labels(vault)
@@ -99,12 +143,131 @@ def main():
         res.append((held,float(roc_auc_score(lab,sc)),nood))
     for h,a,n in sorted(res,key=lambda x:-x[1]): print(f"  hold {h:18} AUROC {a:.3f}  (n_ood={n})")
     print(f"  MEAN OOD AUROC: {np.mean([a for _,a,_ in res]):.3f}")
+
+    # ── Phase 3 — Stacked-meta confidence calibration (τ_head, τ_centroid) ────
+    phase3={}
+    cdir=os.path.join(V,".roost","cache")
+    heads_ok=all(os.path.exists(os.path.join(cdir,h)) for h in
+                 ["classifier-head.json","classifier-head-text.json",
+                  "classifier-head-vision.json","meta-head.json"])
+    print("\n── Phase 3: stacked-meta confidence calibration (τ_head, τ_centroid) ──")
+    if not heads_ok:
+        print("  SKIPPED — one or more head JSONs missing")
+        print("  Conservative fallbacks: τ_head=0.55  τ_centroid=0.50  (un-calibrated)")
+        phase3={"skipped":True,"tau_head":0.55,"tau_centroid":0.50}
+    else:
+        hs =_load_head(os.path.join(cdir,"classifier-head.json"))
+        th_ =_load_head(os.path.join(cdir,"classifier-head-text.json"))
+        tv_ =_load_head(os.path.join(cdir,"classifier-head-vision.json"))
+        tm_ =_load_head(os.path.join(cdir,"meta-head.json"))
+        meta_classes=tm_["classes"]
+        # Guard: single + meta heads must share the same taxonomy or AUROC for
+        # the single-head sanity check is meaningless.
+        assert set(hs["classes"])==set(meta_classes), (
+            f"single-head classes != meta classes — "
+            f"single={sorted(hs['classes'])}  meta={sorted(meta_classes)}"
+        )
+
+        # Load both embedding caches (text + vision)
+        vcache=L.load_cache(bin_path=os.path.join(cdir,"embedding-vectors.bin"))
+        tcache=L.load_cache(bin_path=os.path.join(cdir,"embedding-vectors-text.bin"))
+        labels3,_=L.load_honest_labels(V)
+
+        # Build per-item arrays with both embeddings
+        ids3,cats3,vvecs3,tvecs3=[],[],[],[]
+        for iid,cat in labels3.items():
+            if cat in DROP: continue
+            if cat not in meta_classes: continue
+            vv=vcache.get(iid); vt=tcache.get(iid)
+            if vv is None or vt is None: continue
+            vv=np.asarray(vv,np.float64); vt=np.asarray(vt,np.float64)
+            nv=np.linalg.norm(vv); nt=np.linalg.norm(vt)
+            if nv==0 or nt==0 or not np.isfinite(vv).all() or not np.isfinite(vt).all(): continue
+            ids3.append(iid); cats3.append(cat); vvecs3.append(vv/nv); tvecs3.append(vt/nt)
+
+        n3=len(ids3)
+        print(f"  items with both embeddings + labels: {n3}")
+        Xv3=np.array(vvecs3)
+
+        # ── Divergence guard: spot-check first item against canonical gate ────
+        import importlib.util as _ilu
+        _gp=os.path.join(os.path.dirname(os.path.abspath(__file__)),"acceptance-gate-stacking.py")
+        _gs=_ilu.spec_from_file_location("_gate",_gp); _gm=_ilu.module_from_spec(_gs); _gs.loader.exec_module(_gm)
+        _sv,_st=vvecs3[0],tvecs3[0]
+        _sp_stacked,_=_fwd_stacked_score(th_,tv_,tm_,_st,_sv)
+        _gp_stacked=_gm.forward_stacked(th_,tv_,tm_,_st,_sv)
+        assert _sp_stacked==_gp_stacked,(
+            f"DIVERGENCE _fwd_stacked_score→{_sp_stacked!r} != gate forward_stacked→{_gp_stacked!r}; "
+            "sync with acceptance-gate-stacking.py forward_stacked"
+        )
+        _sp_single,_=_fwd_single_score(hs,_sv)
+        _gp_single=_gm.forward_single(hs,_sv)
+        assert _sp_single==_gp_single,(
+            f"DIVERGENCE _fwd_single_score→{_sp_single!r} != gate forward_single→{_gp_single!r}; "
+            "sync with acceptance-gate-stacking.py forward_single"
+        )
+        print(f"  divergence-guard PASS: item[0]={ids3[0]} stacked={_sp_stacked!r} single={_sp_single!r}")
+
+        # Forward passes
+        msp_meta=np.zeros(n3); msp_single=np.zeros(n3)
+        pred_meta_i=np.zeros(n3,int); pred_single_i=np.zeros(n3,int)
+        for i,(vv,vt) in enumerate(zip(vvecs3,tvecs3)):
+            pm,mm=_fwd_stacked_score(th_,tv_,tm_,vt,vv)
+            ps,ms=_fwd_single_score(hs,vv)
+            pred_meta_i[i]=meta_classes.index(pm)
+            msp_meta[i]=mm
+            pred_single_i[i]=meta_classes.index(ps) if ps in meta_classes else -1
+            msp_single[i]=ms
+
+        gt3=np.array([meta_classes.index(c) for c in cats3])
+        corr_meta=(pred_meta_i==gt3).astype(int)
+        corr_single=(pred_single_i==gt3).astype(int)
+
+        # Cosine-centroid top sim (vision embeddings; production centroids over all labeled items)
+        cats3_arr=np.array(cats3)
+        cents3=np.array([
+            _l2n(Xv3[cats3_arr==cl].mean(0)) if (cats3_arr==cl).sum()>0 else np.zeros(Xv3.shape[1])
+            for cl in meta_classes
+        ])
+        cos_sim3=(Xv3@cents3.T).max(1)
+
+        # AUROC sanity checks
+        auroc_meta=roc_auc_score(corr_meta,msp_meta)
+        auroc_single_h=roc_auc_score(corr_single,msp_single)
+        auroc_cos3=roc_auc_score(corr_meta,cos_sim3)
+        print(f"  AUROC single-head max-softmax: {auroc_single_h:.3f}  (sanity ≈0.76)")
+        print(f"  AUROC meta max-softmax:        {auroc_meta:.3f}")
+        print(f"  AUROC cosine-centroid:         {auroc_cos3:.3f}  (sanity ≈0.613)")
+
+        # Calibrate τ_head
+        r_head=_pick_tau(msp_meta,corr_meta,target=0.90)
+        if r_head:
+            tau_h,prec_h,cov_h=r_head
+            print(f"  τ_head={tau_h:.4f}  (prec={prec_h:.3f}  cov={cov_h:.3f})")
+        else:
+            tau_h,prec_h,cov_h=0.55,float('nan'),float('nan')
+            print("  τ_head=FALLBACK 0.55  (no threshold achieves prec≥0.90)")
+
+        # Calibrate τ_centroid
+        r_cos=_pick_tau(cos_sim3,corr_meta,target=0.90)
+        if r_cos:
+            tau_c,prec_c,cov_c=r_cos
+            print(f"  τ_centroid={tau_c:.4f}  (prec={prec_c:.3f}  cov={cov_c:.3f})")
+        else:
+            tau_c,prec_c,cov_c=0.50,float('nan'),float('nan')
+            print("  τ_centroid=FALLBACK 0.50  (no threshold achieves prec≥0.90)")
+
+        phase3={"n":n3,"auroc_single_msp":auroc_single_h,"auroc_meta_msp":auroc_meta,
+                "auroc_cosine":auroc_cos3,
+                "tau_head":tau_h,"tau_head_prec":prec_h,"tau_head_cov":cov_h,
+                "tau_centroid":tau_c,"tau_centroid_prec":prec_c,"tau_centroid_cov":cov_c}
+
     os.makedirs(os.path.join(V,".roost","cache","redescribe-exp"),exist_ok=True)
     json.dump({"dim95":dim95,"participation_ratio":pr,"intra":intra,"inter":inter,"silhouette":sil,
                "lr_C1":acc1,"lr_tunedC":accT,"top1":float(correct.mean()),
                "phase1":{nm:float(roc_auc_score(correct,s)) for nm,s in [("msp",msp),("cosine",cos),("maha",mah),("rmd",rmd)]},
                "phase2_mean_ood_auroc":float(np.mean([a for _,a,_ in res])),
-               "phase2":{h:a for h,a,_ in res}},
+               "phase2":{h:a for h,a,_ in res},"phase3":phase3},
               open(os.path.join(V,".roost","cache","redescribe-exp","rejection-diagnostic.json"),"w"),indent=2)
 
 if __name__=="__main__": main()
