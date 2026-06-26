@@ -49,17 +49,22 @@ describe("scoreAgainstCategories embeddingOnly", () => {
     expect(urls.length).toBe(0); // no rerank
     expect(result.assignments.get("item1")).toBe("Italian");
     expect(result.assignments.get("item2")).toBe("Strength");
-    expect(result.matchDetails.get("item1")?.reason).toMatch(/^emb-top1/);
+    // Cascade centroid tier — reason prefix changed from "emb-top1" to "centroid"
+    expect(result.matchDetails.get("item1")?.reason).toMatch(/^centroid/);
     expect(result.matchDetails.get("item1")?.decision).toBe("agree");
   });
 
-  it("honors the similarity floor: below-threshold items go unmatched", async () => {
+  it("items orthogonal to all centroids fall below CENTROID_REJECT_TAU and go unmatched", async () => {
+    // [0,0,0,1] has cosine sim = 0 against all three centroids (unit(0)/unit(1)/unit(2))
+    // → below CENTROID_REJECT_TAU (0.50) → unmatched without LLM.
+    const lowSimCache: Record<string, EmbeddingCacheEntry> = {
+      item1: { vision: null, vec: [0, 0, 0, 1], summary: "x", category: null, vecText: null },
+    };
     const result = await scoreAgainstCategories({
       itemIds: ["item1"],
-      cache: mkCache(),
+      cache: lowSimCache,
       categories: mkCats(),
       embeddingOnly: true,
-      threshold: 1.01, // impossible cosine → must reject
     });
     expect(urls.length).toBe(0);
     expect(result.assignments.size).toBe(0);

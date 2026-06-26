@@ -6,14 +6,15 @@ import type { CategoryDef } from "@/pipeline/evaluate";
 import type { EmbeddingCacheEntry } from "@/types/roost";
 import type { StackedHeads } from "@/pipeline/classifier-head";
 
-/** Minimal stacked-heads fixture whose classes are a superset of the live top-level
- *  categories (Recipes, Workouts) so stackedHeadsClassesMatch passes. */
+/** Minimal stacked-heads fixture for the cascade — weights must be large enough that
+ *  softmax confidence > HEAD_REJECT_TAU (0.6149) for items pointing at a single class.
+ *  Base heads use weight 10 (softmax([10,0,0]) ≈ 1.0); meta uses weight 2 (softmax([4,0,0]) ≈ 0.98). */
 function mkStacked(): StackedHeads {
   const classes = ["Recipes", "Workouts", "Extra"];
-  const base = { classes, W: [[1, 0, 0], [0, 1, 0], [0, 0, 1]], b: [0, 0, 0], dim: 3 };
+  const base = { classes, W: [[10, 0, 0], [0, 10, 0], [0, 0, 10]], b: [0, 0, 0], dim: 3 };
   const meta = {
     classes,
-    W: [[1, 0, 0, 1, 0, 0], [0, 1, 0, 0, 1, 0], [0, 0, 1, 0, 0, 1]],
+    W: [[2, 0, 0, 2, 0, 0], [0, 2, 0, 0, 2, 0], [0, 0, 2, 0, 0, 2]],
     b: [0, 0, 0],
     inDim: 6,
   };

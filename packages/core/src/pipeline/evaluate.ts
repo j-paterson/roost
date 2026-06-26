@@ -12,7 +12,7 @@ import { vaultBasePath } from "@/lib/vault-utils";
 import { cachePath } from "@/lib/roost-paths";
 import type { EmbeddingCacheEntry, MatchDetail } from "@/types/roost";
 import type { StopSignal } from "@/types/sync";
-import { OLLAMA_URL, EVAL_MODEL, MIN_DISCOVERY_COHESION, SCORE_CONCURRENCY, OLLAMA_NUM_CTX } from "@/config";
+import { OLLAMA_URL, EVAL_MODEL, MIN_DISCOVERY_COHESION, SCORE_CONCURRENCY, OLLAMA_NUM_CTX, HEAD_REJECT_TAU, CENTROID_REJECT_TAU } from "@/config";
 import { cosineSimilarity, computeCentroid, computeWeightedCentroid, computeCohesion, stripPreamble, HUMAN_WEIGHT, fusedSimilarity } from "@/pipeline/shared";
 import type { AssignedBy } from "@/lib/vault-utils";
 import { resolveTaxonomy, type CategoryTaxonomy } from "@/pipeline/taxonomy";
@@ -622,29 +622,12 @@ export async function scoreAgainstCategories(opts: ScoreOpts): Promise<ScoreResu
   const fullCanon = opts.fullCanon === true;
   const alpha = opts.clipFusionAlpha ?? DEFAULT_CLIP_FUSION_ALPHA;
 
-  // Resolve classifier head: use it only when provided AND classes match live categories.
+  // Heads run whenever present. They only ever emit their own trained classes, so an
+  // unknown LIVE category can no longer disable them — the cascade decides per item.
   const rawHead = opts.classifierHead ?? null;
-  const categoryNames = categories.map(c => c.name);
-  const activeHead: ClassifierHead | null =
-    rawHead !== null && headClassesMatch(rawHead, categoryNames)
-      ? rawHead
-      : null;
-  if (rawHead !== null && activeHead === null) {
-    log(`[${tag}] classifier-head class mismatch — falling back to nearest-centroid`);
-  }
-
-  // Resolve stacked heads: use only when provided AND all three heads' classes match.
   const rawStackedHeads = opts.stackedHeads ?? null;
-  const activeStackedHeads: StackedHeads | null =
-    rawStackedHeads !== null && stackedHeadsClassesMatch(rawStackedHeads, categoryNames)
-      ? rawStackedHeads
-      : null;
-  if (rawStackedHeads !== null && activeStackedHeads === null) {
-    log(`[${tag}] stacked-heads class mismatch — falling back to single-head or nearest-centroid`);
-  }
-
-  const stackedActive = activeStackedHeads !== null;
-  if (desc) log(`[${tag}] ${desc} (concurrency=${concurrency}${embeddingOnly ? (stackedActive ? ", stacked" : activeHead ? ", classifier-head" : ", embedding-only") : ""})`);
+  const categoryNames = categories.map(c => c.name);
+  if (desc) log(`[${tag}] ${desc} (concurrency=${concurrency}${embeddingOnly ? (rawStackedHeads ? ", stacked-cascade" : rawHead ? ", head-cascade" : ", embedding-only") : ""})`);
 
   if (categories.length === 0) {
     log(`[${tag}] 0 categories with centroids — skipping LLM scoring, all items unmatched`);
@@ -655,11 +638,15 @@ export async function scoreAgainstCategories(opts: ScoreOpts): Promise<ScoreResu
     };
   }
 
-  // Embedding-only fast path: assign each item using either the trained classifier
-  // head (when activeHead is non-null) or the top-1 nearest centroid (default).
-  // No LLM calls in either sub-path. Validated to beat the dual-LLM ensemble on
-  // honest labels (+11.7pp, adversary could-not-refute). See the embeddingOnly
-  // JSDoc on ScoreOpts.
+  // Embedding-only fast path: per-item cascade (no LLM). Validated to beat the
+  // dual-LLM ensemble on honest labels (+11.7pp, adversary could-not-refute).
+  // See the embeddingOnly JSDoc on ScoreOpts.
+  //
+  // Tier 1 — head (mature categories). Confidence ≥ HEAD_REJECT_TAU → assign.
+  //           Below → defer to tier 2.
+  // Tier 2 — centroid (ALL live cats, incl. incubating ones the head can't emit).
+  //           sim ≥ CENTROID_REJECT_TAU → assign.
+  // Tier 3 — discovery handles the residue (unmatched).
   if (embeddingOnly) {
     const assignments = new Map<string, string>();
     const matchDetails = new Map<string, MatchDetail>();
@@ -669,92 +656,60 @@ export async function scoreAgainstCategories(opts: ScoreOpts): Promise<ScoreResu
       const entry = cache[id];
       if (!entry?.vec) { unmatched.push(id); continue; }
 
-      if (activeStackedHeads !== null) {
-        // ── Stacked-head sub-path ─────────────────────────────────────────────
-        // Forward: text + vision embeddings → two base heads → meta-head argmax.
-        // vecText ?? vec covers items that predate dual-embedding (Task 3 added
-        // vecText; older cache entries have vecText=null so we fall back to vec).
-        const vecText = entry.vecText ?? entry.vec!;
-        const result = classifyStacked(vecText, entry.vec!, activeStackedHeads);
-        if (result.confidence < simThreshold) { unmatched.push(id); continue; }
-        const scoreInt = Math.max(0, Math.min(10, Math.round(result.confidence * 10)));
-        const summary = stripPreamble((entry.summary || entry.vision?.slice(0, 100) || id)).slice(0, 120);
-        assignments.set(id, result.category);
-        matchDetails.set(id, {
-          collection: result.category,
-          score: scoreInt,
-          sim: result.confidence,
-          reason: `stacked conf=${result.confidence.toFixed(3)}`,
-          t1Pick: null, t2Pick: null, decision: "agree",
-          topCentroids: [{ name: result.category, sim: result.confidence }],
-          ollamaCategory: entry.category || undefined,
-          summarySnippet: summary,
-          cached: false,
-        });
-      } else if (activeHead !== null) {
-        // ── Classifier-head sub-path ──────────────────────────────────────────
-        // Forward: L2-normalize vec → W·x + b → softmax → argmax + max-prob.
-        // confidence replaces sim as the rejection signal; simThreshold floor is
-        // applied against confidence for API consistency (default 0 = pure argmax).
-        const result = classifyWithHead(entry.vec!, activeHead);
-        if (result.confidence < simThreshold) { unmatched.push(id); continue; }
-        const scoreInt = Math.max(0, Math.min(10, Math.round(result.confidence * 10)));
-        const summary = stripPreamble((entry.summary || entry.vision?.slice(0, 100) || id)).slice(0, 120);
-        assignments.set(id, result.category);
-        matchDetails.set(id, {
-          collection: result.category,
-          score: scoreInt,
-          sim: result.confidence,
-          reason: `head conf=${result.confidence.toFixed(3)}`,
-          t1Pick: null, t2Pick: null, decision: "agree",
-          topCentroids: [{ name: result.category, sim: result.confidence }],
-          ollamaCategory: entry.category || undefined,
-          summarySnippet: summary,
-          cached: false,
-        });
-      } else {
-        // ── Nearest-centroid sub-path ─────────────────────────────────────────
-        const ranked = categories
-          .map(cat => ({
-            name: cat.name,
-            sim: fusedSimilarity(entry.vec!, cat.centroid, entry.clipVec, cat.clipCentroid, alpha),
-          }))
-          .sort((a, b) => b.sim - a.sim);
-        if (ranked.length === 0) { unmatched.push(id); continue; }
-        const top = ranked[0];
-        // simThreshold floor still applies (default 0 = pure argmax).
-        if (top.sim < simThreshold) { unmatched.push(id); continue; }
-        const scoreInt = Math.max(0, Math.min(10, Math.round(top.sim * 10)));
-        const summary = stripPreamble((entry.summary || entry.vision?.slice(0, 100) || id)).slice(0, 120);
-        assignments.set(id, top.name);
-        matchDetails.set(id, {
-          collection: top.name,
-          score: scoreInt,
-          sim: top.sim,
-          reason: `emb-top1 sim=${top.sim.toFixed(3)}`,
-          t1Pick: null, t2Pick: null, decision: "agree",
-          topCentroids: ranked.slice(0, 5).map(c => ({ name: c.name, sim: c.sim })),
-          ollamaCategory: entry.category || undefined,
-          summarySnippet: summary,
-          cached: false,
-        });
+      let tier: "stacked" | "head" | "centroid" | null = null;
+      let cat = ""; let conf = 0;
+      let ranked: { name: string; sim: number }[] = [];
+
+      // Tier 1 — head (mature categories). Threshold τ_head; below → defer.
+      if (rawStackedHeads !== null) {
+        const r = classifyStacked(entry.vecText ?? entry.vec!, entry.vec!, rawStackedHeads);
+        if (r.confidence >= HEAD_REJECT_TAU) { tier = "stacked"; cat = r.category; conf = r.confidence; }
+      } else if (rawHead !== null) {
+        const r = classifyWithHead(entry.vec!, rawHead);
+        if (r.confidence >= HEAD_REJECT_TAU) { tier = "head"; cat = r.category; conf = r.confidence; }
       }
+
+      // Tier 2 — centroid over ALL live categories (incubating ones the head can't emit).
+      if (tier === null) {
+        ranked = categories
+          .map(c => ({ name: c.name, sim: fusedSimilarity(entry.vec!, c.centroid, entry.clipVec, c.clipCentroid, alpha) }))
+          .sort((a, b) => b.sim - a.sim);
+        if (ranked.length > 0 && ranked[0].sim >= CENTROID_REJECT_TAU) {
+          tier = "centroid"; cat = ranked[0].name; conf = ranked[0].sim;
+        }
+      }
+
+      // Tier 3 — discovery handles the residue.
+      if (tier === null) {
+        unmatched.push(id);
+        if (idx % 10 === 0 || idx === itemIds.length - 1) onProgress?.(idx + 1, itemIds.length);
+        continue;
+      }
+
+      const scoreInt = Math.max(0, Math.min(10, Math.round(conf * 10)));
+      const summary = stripPreamble((entry.summary || entry.vision?.slice(0, 100) || id)).slice(0, 120);
+      assignments.set(id, cat);
+      matchDetails.set(id, {
+        collection: cat, score: scoreInt, sim: conf,
+        reason: tier === "centroid" ? `centroid sim=${conf.toFixed(3)}` : `${tier} conf=${conf.toFixed(3)}`,
+        t1Pick: null, t2Pick: null, decision: "agree",
+        topCentroids: tier === "centroid" ? ranked.slice(0, 5).map(c => ({ name: c.name, sim: c.sim })) : [{ name: cat, sim: conf }],
+        ollamaCategory: entry.category || undefined,
+        summarySnippet: summary, cached: false,
+      });
       if (idx % 10 === 0 || idx === itemIds.length - 1) onProgress?.(idx + 1, itemIds.length);
     }
-    const pathLabel = activeStackedHeads !== null ? "stacked" : activeHead !== null ? "classifier-head" : "embedding-only";
-    log(`[${tag}] ${pathLabel}: ${assignments.size} assigned, ${unmatched.length} unmatched (no LLM)`);
-    // Visibility: with subset-match the head/meta may emit a canonical class the live
-    // vault doesn't currently contain (it's the trained taxonomy's authority, not the
-    // vault's). Surface those so the behaviour is never silent (the old guardrail's intent).
+
+    // Visibility: head emitted a class not currently in the vault (model-B desired, never silent).
     const liveSet = new Set(categoryNames);
     const offTaxonomy = new Map<string, number>();
-    for (const cat of assignments.values()) {
-      if (!liveSet.has(cat)) offTaxonomy.set(cat, (offTaxonomy.get(cat) ?? 0) + 1);
-    }
+    for (const c of assignments.values()) if (!liveSet.has(c)) offTaxonomy.set(c, (offTaxonomy.get(c) ?? 0) + 1);
+    const pathLabel = rawStackedHeads !== null ? "stacked" : rawHead !== null ? "head" : "centroid";
+    log(`[${tag}] ${pathLabel} cascade: ${assignments.size} assigned, ${unmatched.length} unmatched (no LLM)`);
     if (offTaxonomy.size > 0) {
       const total = [...offTaxonomy.values()].reduce((a, b) => a + b, 0);
       const detail = [...offTaxonomy.entries()].sort((a, b) => b[1] - a[1]).map(([c, n]) => `${c}(${n})`).join(", ");
-      log(`[${tag}] ${pathLabel} assigned ${total} item(s) to ${offTaxonomy.size} category(ies) not currently in the vault: ${detail}`);
+      log(`[${tag}] ${pathLabel} cascade assigned ${total} item(s) to ${offTaxonomy.size} category(ies) not currently in the vault: ${detail}`);
     }
     return { assignments, unmatched, matchDetails };
   }

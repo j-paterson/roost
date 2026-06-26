@@ -12,6 +12,14 @@ export const SUBCATEGORY_FIELD = "roost_subcategory";
 /** Frontmatter field tracking how the category was assigned ("human" | "auto") */
 export const ASSIGNED_BY_FIELD = "roost_assigned_by";
 
+// ── Cascade thresholds ──
+/** Cascade tier-1 cutoff: head max-softmax below this defers the item to the centroid
+ *  tier (then discovery). Calibrated conservative (≥0.90 precision-on-accepted). */
+export const HEAD_REJECT_TAU = 0.6149;
+/** Cascade tier-2 cutoff: nearest-centroid sim below this leaves the item unmatched for
+ *  discovery. Weak signal (AUROC ~0.58) — kept low, stopgap only. */
+export const CENTROID_REJECT_TAU = 0.50;
+
 // ── Clustering ──
 export const ABSORPTION_THRESHOLD = 0.3;
 export const TAXONOMY_MIN_CLUSTER_SIZE = 2;
