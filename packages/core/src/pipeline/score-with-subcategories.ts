@@ -10,6 +10,7 @@
  */
 import { scoreAgainstCategories } from "@/pipeline/evaluate";
 import type { CategoryDef } from "@/pipeline/evaluate";
+import type { ClassifierHead, StackedHeads } from "@/pipeline/classifier-head";
 import type { EmbeddingCacheEntry, MatchDetail } from "@/types/roost";
 import type { Vault } from "obsidian";
 import type { StopSignal } from "@/types/sync";
@@ -38,6 +39,14 @@ export interface ScoreWithSubcategoriesOpts {
    *  the validated honest-label win. Pass 2 (subcategory) is left LLM-based
    *  (unvalidated for subcats). */
   embeddingOnly?: boolean;
+  /** Trained single classifier head for pass 1 (top-level). Forwarded to
+   *  scoreAgainstCategories, which uses it only when its classes match the live
+   *  categories; null → nearest-centroid. */
+  classifierHead?: ClassifierHead | null;
+  /** Stacked heads (text + vision + meta) for pass 1 (top-level). Takes precedence
+   *  over classifierHead when present and class-matching. Pass 2 (subcategories) never
+   *  uses heads — subcats are not in the head's class set. */
+  stackedHeads?: StackedHeads | null;
 }
 
 export interface ScoreWithSubcategoriesResult {
@@ -55,7 +64,7 @@ export async function scoreWithSubcategories(
   const {
     itemIds, cache, topLevelCategories, subcatsByParent,
     vault, threshold, subcatThreshold, ollamaUrl, onProgress, onLog, stopSignal, concurrency,
-    clipFusionAlpha, embeddingOnly,
+    clipFusionAlpha, embeddingOnly, classifierHead, stackedHeads,
   } = opts;
 
   // Total work: pass 1 = N items + pass 2 = up to N more (depends on pass-1 routing).
@@ -68,7 +77,7 @@ export async function scoreWithSubcategories(
   const pass1 = await scoreAgainstCategories({
     itemIds, cache, categories: topLevelCategories, vault,
     threshold, ollamaUrl, onLog, stopSignal, concurrency,
-    clipFusionAlpha, embeddingOnly,
+    clipFusionAlpha, embeddingOnly, classifierHead, stackedHeads,
     onProgress: (d) => { done = d; reportProgress(); },
   });
 

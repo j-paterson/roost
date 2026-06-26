@@ -161,6 +161,8 @@ export async function runClusteringStep1ScoreKnown(
       stopSignal: signal,
       clipFusionAlpha: host.plugin.settings.clipFusionAlpha,
       embeddingOnly: host.plugin.settings.smartAssignEmbeddingOnly,
+      classifierHead,
+      stackedHeads,
     });
     phase1Assignments = new Map();
     const newSubcats = new Map<string, string | null>();

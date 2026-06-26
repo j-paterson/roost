@@ -4,6 +4,21 @@ import { scoreWithSubcategories } from "@/pipeline/score-with-subcategories";
 import { __resetScoreCacheForTests } from "@/pipeline/evaluate";
 import type { CategoryDef } from "@/pipeline/evaluate";
 import type { EmbeddingCacheEntry } from "@/types/roost";
+import type { StackedHeads } from "@/pipeline/classifier-head";
+
+/** Minimal stacked-heads fixture whose classes are a superset of the live top-level
+ *  categories (Recipes, Workouts) so stackedHeadsClassesMatch passes. */
+function mkStacked(): StackedHeads {
+  const classes = ["Recipes", "Workouts", "Extra"];
+  const base = { classes, W: [[1, 0, 0], [0, 1, 0], [0, 0, 1]], b: [0, 0, 0], dim: 3 };
+  const meta = {
+    classes,
+    W: [[1, 0, 0, 1, 0, 0], [0, 1, 0, 0, 1, 0], [0, 0, 1, 0, 0, 1]],
+    b: [0, 0, 0],
+    inDim: 6,
+  };
+  return { text: base, vision: base, meta };
+}
 
 function vec(arr: number[]): number[] { return arr; }
 
@@ -55,6 +70,24 @@ describe("scoreWithSubcategories", () => {
     expect(result.assignments.get("wo1")?.subcategory).toBe(null);
     expect(result.assignments.get("it1")?.parent).toBe("Recipes");
     expect(result.assignments.get("fr1")?.parent).toBe("Recipes");
+  });
+
+  it("forwards stackedHeads to pass 1 — top-level uses the stacked path, not centroid", async () => {
+    // Regression: filter-mode (write.into==='category') routes through this wrapper,
+    // which previously never received the heads, so the Smart Assign button silently
+    // scored top-level by nearest-centroid even with stacking enabled.
+    const result = await scoreWithSubcategories({
+      itemIds: ["it1", "wo1"],
+      cache: makeCache(),
+      topLevelCategories: topLevel,
+      subcatsByParent: new Map(), // no subcats → pass 2 skipped, no LLM
+      embeddingOnly: true,
+      stackedHeads: mkStacked(),
+      threshold: 0,
+      onProgress: () => {},
+    });
+    expect(result.matchDetails.get("it1")?.reason).toMatch(/stacked/);
+    expect(result.matchDetails.get("wo1")?.reason).toMatch(/stacked/);
   });
 
   it("NONE refusal at subcat → item gets parent + subcategory: null", async () => {
