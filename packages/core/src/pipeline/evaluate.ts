@@ -743,6 +743,19 @@ export async function scoreAgainstCategories(opts: ScoreOpts): Promise<ScoreResu
     }
     const pathLabel = activeStackedHeads !== null ? "stacked" : activeHead !== null ? "classifier-head" : "embedding-only";
     log(`[${tag}] ${pathLabel}: ${assignments.size} assigned, ${unmatched.length} unmatched (no LLM)`);
+    // Visibility: with subset-match the head/meta may emit a canonical class the live
+    // vault doesn't currently contain (it's the trained taxonomy's authority, not the
+    // vault's). Surface those so the behaviour is never silent (the old guardrail's intent).
+    const liveSet = new Set(categoryNames);
+    const offTaxonomy = new Map<string, number>();
+    for (const cat of assignments.values()) {
+      if (!liveSet.has(cat)) offTaxonomy.set(cat, (offTaxonomy.get(cat) ?? 0) + 1);
+    }
+    if (offTaxonomy.size > 0) {
+      const total = [...offTaxonomy.values()].reduce((a, b) => a + b, 0);
+      const detail = [...offTaxonomy.entries()].sort((a, b) => b[1] - a[1]).map(([c, n]) => `${c}(${n})`).join(", ");
+      log(`[${tag}] ${pathLabel} assigned ${total} item(s) to ${offTaxonomy.size} category(ies) not currently in the vault: ${detail}`);
+    }
     return { assignments, unmatched, matchDetails };
   }
 

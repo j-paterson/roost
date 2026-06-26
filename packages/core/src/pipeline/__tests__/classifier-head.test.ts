@@ -162,15 +162,23 @@ describe("headClassesMatch", () => {
     expect(headClassesMatch(FIXTURE_HEAD, ["C", "A", "B"])).toBe(true);
   });
 
-  it("returns false when a category is missing from the head", () => {
+  it("returns false when a live category is absent from the head (head can't produce it)", () => {
     expect(headClassesMatch(FIXTURE_HEAD, ["A", "B", "C", "D"])).toBe(false);
   });
 
-  it("returns false when the head has extra classes not in live categories", () => {
-    expect(headClassesMatch(FIXTURE_HEAD, ["A", "B"])).toBe(false);
+  it("returns TRUE when live categories are a subset of the head's classes", () => {
+    // The head was trained on a fixed taxonomy; the live vault may not currently
+    // contain every class (e.g. a canonical category with no items). The head can
+    // still classify the live categories and may legitimately emit the extra one.
+    expect(headClassesMatch(FIXTURE_HEAD, ["A", "B"])).toBe(true);
+    expect(headClassesMatch(FIXTURE_HEAD, ["A"])).toBe(true);
   });
 
-  it("returns false when counts match but a name differs", () => {
+  it("returns false when the live set is empty", () => {
+    expect(headClassesMatch(FIXTURE_HEAD, [])).toBe(false);
+  });
+
+  it("returns false when a live category name is not in the head", () => {
     expect(headClassesMatch(FIXTURE_HEAD, ["A", "B", "X"])).toBe(false);
   });
 });

@@ -295,14 +295,22 @@ export function loadStackedHeads(vault: Vault): StackedHeads | null {
 // ── Compatibility check ───────────────────────────────────────────────────────
 
 /**
- * Return true when the head's classes exactly match the current live category set.
- * Called by the wiring in evaluate.ts before trusting the head's output.
+ * Return true when every live category is a class the head can produce — i.e. the
+ * live category set is a (non-empty) SUBSET of the head's classes. Called by the
+ * wiring in evaluate.ts before trusting the head's output.
  *
- * A mismatch means the user added/removed collections since the head was trained —
- * fall back to nearest-centroid so the head never silently routes to a stale label.
+ * The head is trained on a fixed taxonomy (the canonical classes). The live vault
+ * need not currently contain every one of them — a canonical category can sit empty
+ * (e.g. after a bulk re-category, or simply because nothing was ever filed there).
+ * Requiring an EXACT match made the head unusable in that case and silently dropped
+ * the whole run to nearest-centroid. A subset check keeps the head usable while still
+ * rejecting genuinely foreign taxonomies: if the live set contains a name the head
+ * was NOT trained on, the head can't represent it, so we fall back. The head may emit
+ * a class not currently present in the live vault (the trained taxonomy is the
+ * authority); scoreAgainstCategories logs those so the behaviour is never silent.
  */
-export function headClassesMatch(head: ClassifierHead, categoryNames: string[]): boolean {
-  if (head.classes.length !== categoryNames.length) return false;
+export function headClassesMatch(head: { classes: string[] }, categoryNames: string[]): boolean {
+  if (categoryNames.length === 0) return false;
   const headSet = new Set(head.classes);
   for (const name of categoryNames) {
     if (!headSet.has(name)) return false;

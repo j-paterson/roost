@@ -113,12 +113,17 @@ describe("stackedHeadsClassesMatch", () => {
     expect(stackedHeadsClassesMatch(HEADS, ["B", "A"])).toBe(true);
   });
 
-  it("returns false when live categories have an extra class", () => {
+  it("returns false when live categories include a class the heads can't produce", () => {
     expect(stackedHeadsClassesMatch(HEADS, ["A", "B", "C"])).toBe(false);
   });
 
-  it("returns false when live categories are missing a class", () => {
-    expect(stackedHeadsClassesMatch(HEADS, ["A"])).toBe(false);
+  it("returns TRUE when live categories are a subset of the heads' classes", () => {
+    // The trained taxonomy is the authority; a class can sit empty in the vault.
+    expect(stackedHeadsClassesMatch(HEADS, ["A"])).toBe(true);
+  });
+
+  it("returns false when the live set is empty", () => {
+    expect(stackedHeadsClassesMatch(HEADS, [])).toBe(false);
   });
 });
 
