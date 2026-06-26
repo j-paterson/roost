@@ -434,7 +434,70 @@ describe("clustering integration (steps 0→1→2)", () => {
     expect(matched["Travel"]).toContain("t_trav");
   });
 
-  // ── Test 3: Step-by-step slice wiring (white-box) ─────────
+  // ── Test 3: Stacked-heads pass-through on class mismatch (Task 3) ────
+  //
+  // Before Task 3, clustering-step-1-score.ts nulled stacked heads when
+  // stackedHeadsClassesMatch() returned false (live categories not in head's
+  // training set). Task 3 removes that kill-switch so the cascade always
+  // receives the heads and handles off-taxonomy classes gracefully itself.
+  it("passes stacked heads to scoreAgainstCategories even when head classes mismatch live categories", async () => {
+    // Arrange: write stacked-head files whose classes ["OldCat1","OldCat2"]
+    // are a complete mismatch with the live categories ["Cooking","Travel"].
+    const cacheDir = path.join(tmpDir, ".roost", "cache");
+    fs.mkdirSync(cacheDir, { recursive: true });
+    const mismatchHead = {
+      version: 1,
+      classes: ["OldCat1", "OldCat2"],
+      W: [[1, 0], [0, 1]],
+      b: [0, 0],
+      dim: 2,
+      norm: "l2",
+      trainedOn: 5,
+    };
+    const mismatchMeta = {
+      version: 1,
+      classes: ["OldCat1", "OldCat2"],
+      W: [[5, 0, 5, 0], [0, 5, 0, 5]],
+      b: [0, 0],
+      inDim: 4,
+      norm: "none",
+    };
+    fs.writeFileSync(path.join(cacheDir, "classifier-head-text.json"), JSON.stringify(mismatchHead));
+    fs.writeFileSync(path.join(cacheDir, "classifier-head-vision.json"), JSON.stringify(mismatchHead));
+    fs.writeFileSync(path.join(cacheDir, "meta-head.json"), JSON.stringify(mismatchMeta));
+
+    const vault = mkVault();
+    saveEmbeddingCache(vault, seedCache());
+    const input: SmartAssignInput = { ...TEST_INPUT };
+    const { host } = makeHost({ vault, input });
+
+    // Enable all three flags needed for the stacked-head path.
+    const s = host.plugin.settings as unknown as Record<string, unknown>;
+    s["smartAssignClassifierHead"] = true;
+    s["smartAssignEmbeddingOnly"] = true;
+    s["smartAssignStacking"] = true;
+
+    // Capture log messages.
+    const logs: string[] = [];
+    (host as unknown as Record<string, unknown>)["log"] = (msg: string) => { logs.push(msg); };
+
+    installStandardMock();
+
+    const signal: StopSignal = { stopped: false, stop() { this.stopped = true; } };
+    host.refs.stopSignalRef.current = signal;
+
+    const s0 = await runClusteringStep0Embed(host, signal);
+    expect(s0).not.toBeNull();
+    await runClusteringStep1ScoreKnown(host, signal, s0!);
+
+    // The kill-switch MUST be gone: no warning about class mismatch.
+    const allLogs = logs.join("\n");
+    expect(allLogs).not.toMatch(/don't match current collections/);
+    // Instead the info log confirms the heads were passed through to the cascade.
+    expect(allLogs).toMatch(/Stacked heads loaded.*cascade will use/);
+  });
+
+  // ── Test 4: Step-by-step slice wiring (white-box) ─────────
   it("step 0→1→2 slices compose correctly and expose the expected contracts", async () => {
     const vault = mkVault();
     saveEmbeddingCache(vault, seedCache());

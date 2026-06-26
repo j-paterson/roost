@@ -269,9 +269,11 @@ describe("loadClassifierHead fallback", () => {
     expect(head!.b.length).toBe(3);
   });
 
-  it("fallback triggers when classes mismatch live categories after loading", () => {
+  it("headClassesMatch returns false when live categories are a superset of head's classes", () => {
     // loadClassifierHead itself just validates structure; headClassesMatch is
-    // used by callers. Assert the round-trip: load → mismatch → fallback.
+    // retained for Spec 2 (auto-retrain eligibility). The runtime scoring path
+    // no longer gates on this — the cascade handles off-taxonomy classes via
+    // the centroid tier.
     const cacheDir = path.join(tmpDir, ".roost", "cache");
     fs.mkdirSync(cacheDir, { recursive: true });
     const good: ClassifierHeadData = {
@@ -287,8 +289,9 @@ describe("loadClassifierHead fallback", () => {
     const vault = makeVault(tmpDir);
     const head = loadClassifierHead(vault);
     expect(head).not.toBeNull();
-    // Simulate: user added a new collection "D" since training
+    // Simulate: user added a new collection "D" since training — headClassesMatch
+    // returns false (head can't emit "D"), but callers may still use the head
+    // for the classes it does know (centroid tier handles the rest).
     expect(headClassesMatch(head!, ["A", "B", "C", "D"])).toBe(false);
-    // A caller seeing false should fall back to nearest-centroid.
   });
 });

@@ -160,6 +160,8 @@ interface ScoreOpts {
   categories: CategoryDef[];
   vault?: Vault;
   topK?: number;
+  /** NOTE: has NO effect when `embeddingOnly: true` — that path uses the calibrated
+   *  constants `HEAD_REJECT_TAU` / `CENTROID_REJECT_TAU` instead of this value. */
   threshold?: number;
   ollamaUrl?: string;
   /** Short tag for log lines, e.g. "Step 1" */

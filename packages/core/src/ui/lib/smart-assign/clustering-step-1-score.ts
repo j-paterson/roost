@@ -13,10 +13,8 @@ import {
   generateClusterDescriptions,
   buildCategoryDefs,
   loadClassifierHead,
-  headClassesMatch,
   type ClassifierHead,
   loadStackedHeads,
-  stackedHeadsClassesMatch,
   type StackedHeads,
 } from "@/pipeline/evaluate";
 import { scoreWithSubcategories } from "@/pipeline/score-with-subcategories";
@@ -104,23 +102,20 @@ export async function runClusteringStep1ScoreKnown(
   );
   host.log(`${knownCategoryDefs.length} collections with centroids`);
 
-  // Load classifier head when the feature flag is on. headClassesMatch is
-  // validated inside scoreAgainstCategories; a null head triggers fallback.
+  // Load classifier head when the feature flag is on. The cascade in
+  // scoreAgainstCategories handles off-taxonomy classes gracefully (tier-2
+  // centroid catches anything the head can't confidently emit), so we no
+  // longer gate on headClassesMatch / stackedHeadsClassesMatch here.
+  // Those helpers are retained for Spec 2 (auto-retrain eligibility).
   let classifierHead: ClassifierHead | null = null;
   let stackedHeads: StackedHeads | null = null;
   if (host.plugin.settings.smartAssignClassifierHead && host.plugin.settings.smartAssignEmbeddingOnly) {
-    const categoryNames = knownCategoryDefs.map(c => c.name);
-
     // Stacked path takes precedence when the stacking flag is also on.
     if (host.plugin.settings.smartAssignStacking) {
       stackedHeads = loadStackedHeads(host.app.vault);
       if (stackedHeads !== null) {
-        if (!stackedHeadsClassesMatch(stackedHeads, categoryNames)) {
-          host.log(`[warn] stacked-heads classes don't match current collections — falling back to single-head`);
-          stackedHeads = null;
-        } else {
-          host.log(`Stacked heads loaded (${stackedHeads.meta.classes.length} classes, will use for Step 1)`);
-        }
+        const known = stackedHeads.meta.classes.length;
+        host.log(`Stacked heads loaded (${known} classes) — cascade will use them where confident`);
       } else {
         host.log(`[info] smartAssignStacking=true but stacked heads not found — falling back to single-head`);
       }
@@ -130,12 +125,7 @@ export async function runClusteringStep1ScoreKnown(
     if (stackedHeads === null) {
       classifierHead = loadClassifierHead(host.app.vault);
       if (classifierHead !== null) {
-        if (!headClassesMatch(classifierHead, categoryNames)) {
-          host.log(`[warn] classifier-head classes don't match current collections — falling back to nearest-centroid`);
-          classifierHead = null;
-        } else {
-          host.log(`Classifier head loaded (${classifierHead.classes.length} classes, will use for Step 1)`);
-        }
+        host.log(`Classifier head loaded (${classifierHead.classes.length} classes) — cascade will use where confident`);
       } else {
         host.log(`[info] smartAssignClassifierHead=true but classifier-head.json not found — falling back to nearest-centroid`);
       }

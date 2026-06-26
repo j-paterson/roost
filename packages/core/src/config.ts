@@ -17,7 +17,7 @@ export const ASSIGNED_BY_FIELD = "roost_assigned_by";
  *  tier (then discovery). Calibrated conservative (≥0.90 precision-on-accepted). */
 export const HEAD_REJECT_TAU = 0.6149;
 /** Cascade tier-2 cutoff: nearest-centroid sim below this leaves the item unmatched for
- *  discovery. Weak signal (AUROC ~0.58) — kept low, stopgap only. */
+ *  discovery. Weak signal (AUROC 0.613) — kept low, stopgap only. */
 export const CENTROID_REJECT_TAU = 0.50;
 
 // ── Clustering ──
