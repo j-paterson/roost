@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useCallback } from "react";
 import * as React from "react";
 import { App } from "obsidian";
 import type { RoostFilter, MatchDetail, ClassifyProposalData, SmartAssignInput } from "@/types/roost";
@@ -235,6 +235,11 @@ export function useSmartAssign(deps: SmartAssignDeps) {
     acceptStagingNeighborSuggestions(buildReassignHost(), suggestions, suggestionTarget, itemIds);
   }
 
+  const rejectItem = useCallback((itemId: string) => {
+    store.rejectItem(itemId);
+    bumpStore();
+  }, [store, bumpStore]);
+
   const sliderSplitIds = React.useMemo(() => {
     if (!proposal) return new Set<string>();
     return store.getSliderSplits(15);
@@ -302,6 +307,7 @@ export function useSmartAssign(deps: SmartAssignDeps) {
     handleConfirm,
     handleCancel,
     reassignItems,
+    rejectItem,
     suggestions, suggestionTarget,
     acceptSuggestions, dismissSuggestions,
   };

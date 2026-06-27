@@ -232,6 +232,7 @@ export type ItemClickData =
   | { action: "move"; itemId: string; from: string; to: string }
   | { action: "acceptSuggestions"; itemIds: string[] }
   | { action: "dismissSuggestions" }
+  | { action: "reject"; itemId: string; groupId: string }
   | { action: "delete"; roostId: string };
 
 /**

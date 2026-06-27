@@ -129,6 +129,8 @@ export function RoostView({ app, plugin }: RoostViewProps) {
         sa.acceptSuggestions(data.itemIds);
       } else if (data?.action === "dismissSuggestions") {
         sa.dismissSuggestions();
+      } else if (data?.action === "reject") {
+        sa.rejectItem(data.itemId);
       } else if (data?.action === "delete" && data.roostId) {
         const ok = await deleteItem(app, app.vault, plugin.settings.syncFolder, data.roostId);
         if (ok) {

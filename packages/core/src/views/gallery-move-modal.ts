@@ -139,6 +139,17 @@ export function openGalleryMoveModal(ctx: GalleryMoveModalContext, entry: BasesE
       },
     });
     modal.open();
+
+    // Reject control: marks the item wrong without picking a replacement.
+    const rejectBtn = modal.contentEl.createEl("button", {
+      text: "Reject (wrong — leave uncategorized)",
+      cls: "roost-reject-btn",
+    });
+    rejectBtn.addEventListener("click", () => {
+      plugin2.fireItemClick({ action: "reject", itemId: item.roostId, groupId });
+      modal.close();
+    });
+
     return;
   }
 
