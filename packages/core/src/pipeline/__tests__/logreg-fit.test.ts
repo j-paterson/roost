@@ -39,10 +39,11 @@ describe("fitLogReg", () => {
     expect(classifyWithHead([0, 2], head).category).toBe("B");
   });
 
-  it("is deterministic (same input → identical weights)", () => {
+  it("is deterministic (same input → identical weights and biases)", () => {
     const { X, y, classes } = dataset();
     const a = fitLogReg(X, y, classes, { C: 1, balanced: true });
     const b = fitLogReg(X, y, classes, { C: 1, balanced: true });
     expect(a.W).toEqual(b.W);
+    expect(a.b).toEqual(b.b);
   });
 });

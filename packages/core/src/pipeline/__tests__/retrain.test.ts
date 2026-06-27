@@ -141,6 +141,25 @@ describe("runRetrain", () => {
     expect(vi.mocked(restorePreviousHeads)).not.toHaveBeenCalled();
   });
 
+  it("holdout empty with existing head → skips retrain to protect live head; writeStackedHeads NOT called", () => {
+    // 3 rows of one class: n values are 0,1,2 — none satisfy n%5===4 → holdout is empty.
+    const sparseRows = Array.from({ length: 3 }, (_, i) => ({
+      id: `sparse${i}`,
+      vecText: [1, 0],
+      vecVision: [0, 1],
+      category: "catA",
+    }));
+    vi.mocked(buildTrainingRows).mockReturnValue(sparseRows);
+    vi.mocked(loadStackedHeads).mockReturnValue(fakeCurrentHeads);
+    // trainStackedHeadsFromRows should NOT be reached, but mock defensively.
+    vi.mocked(trainStackedHeadsFromRows).mockReturnValue(fakeCandidateData);
+
+    const result = runRetrain(mockVault, () => {});
+
+    expect(result).toEqual({ ran: false, swapped: false, reason: "holdout empty, cannot gate" });
+    expect(vi.mocked(writeStackedHeads)).not.toHaveBeenCalled();
+  });
+
   it("write throws → restorePreviousHeads called; result {ran:true, swapped:false}; function does NOT re-throw", () => {
     vi.mocked(buildTrainingRows).mockReturnValue(fakeRows);
     vi.mocked(trainStackedHeadsFromRows).mockReturnValue(fakeCandidateData);

@@ -246,15 +246,12 @@ export async function confirmSmartAssign(
 
   // ── Self-Improving Loop: retrain classifier head (opt-in, fail-closed) ──────
   // Runs after the capture block; failure must NEVER break confirm/write.
+  // maybeRetrain is the single gate — pass the setting value directly so the
+  // enabled/disabled check lives in one place (the outer `if` was a dead branch).
   try {
-    if (host.plugin.settings.smartAssignAutoRetrain) {
-      const vault = host.plugin.app.vault;
-      const triggered = shouldRetrain({
-        newLabelsSinceLastTrain: reassigned.size + host.store.getRejects().size,
-        newlyEligibleCount: 0, // refined later; reassigned-count floor is the v1 trigger
-      });
-      maybeRetrain(true, triggered, () => runRetrain(vault, host.log));
-    }
+    const vault = host.plugin.app.vault;
+    const triggered = shouldRetrain({ newLabelsSinceLastTrain: reassigned.size + host.store.getRejects().size, newlyEligibleCount: 0 });
+    maybeRetrain(host.plugin.settings.smartAssignAutoRetrain, triggered, () => runRetrain(vault, host.log));
   } catch (e: unknown) {
     host.log(`[retrain] failed (kept current head): ${e instanceof Error ? e.message : String(e)}`);
   }

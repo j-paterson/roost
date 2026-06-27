@@ -38,15 +38,29 @@ describe("head-store", () => {
       expect(fs.existsSync(path.join(root, ".roost", "cache", f))).toBe(true);
   });
 
-  it("backs up the previous head and restores it on rollback", () => {
+  it("backs up the previous head and restores ALL THREE files on rollback", () => {
     const v = vaultAt(root);
     writeStackedHeads(v, heads); // v1
-    const v2 = { ...heads, text: { ...heads.text, W: [[2]] } };
+    const v2 = {
+      text:   { ...heads.text,   W: [[2]] },
+      vision: { ...heads.vision, W: [[3]] },
+      meta:   { ...heads.meta,   W: [[4, 4]] },
+    };
     writeStackedHeads(v, v2);    // v2, backing up v1 → .prev
     restorePreviousHeads(v);
-    const restored = JSON.parse(
-      fs.readFileSync(path.join(root, ".roost", "cache", "classifier-head-text.json"), "utf8"),
-    );
-    expect(restored.W).toEqual([[1]]); // v1 restored
+    const cacheDir = path.join(root, ".roost", "cache");
+    const restoredText   = JSON.parse(fs.readFileSync(path.join(cacheDir, "classifier-head-text.json"),   "utf8"));
+    const restoredVision = JSON.parse(fs.readFileSync(path.join(cacheDir, "classifier-head-vision.json"), "utf8"));
+    const restoredMeta   = JSON.parse(fs.readFileSync(path.join(cacheDir, "meta-head.json"),              "utf8"));
+    expect(restoredText.W).toEqual([[1]]);     // v1 text restored
+    expect(restoredVision.W).toEqual([[1]]);   // v1 vision restored
+    expect(restoredMeta.W).toEqual([[1, 1]]);  // v1 meta restored
+  });
+
+  it("restorePreviousHeads returns false when no .prev files exist (fresh vault)", () => {
+    const v = vaultAt(root);
+    writeStackedHeads(v, heads); // first write — no .prev files created
+    const result = restorePreviousHeads(v);
+    expect(result).toBe(false);
   });
 });

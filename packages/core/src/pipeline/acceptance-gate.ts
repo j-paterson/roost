@@ -34,7 +34,7 @@ export function evaluateGate(
   const perClass: GateResult["perClass"] = {};
   const failures: string[] = [];
   for (const c of Object.keys(cur.perClass)) {
-    const a = cur.perClass[c]; const b = cand.perClass[c] ?? 0;
+    const a = cur.perClass[c]; const b = cand.perClass[c];
     const delta = b - a;
     perClass[c] = { current: a, candidate: b, delta };
     if (delta < -catMargin) failures.push(`class ${c} regressed ${(delta * 100).toFixed(1)}pp`);

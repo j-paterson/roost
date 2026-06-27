@@ -81,6 +81,8 @@ function minClassCount(y: string[]): number {
 function oofProba(X: number[][], y: string[], classes: string[], folds: number[]): number[][] {
   const K = classes.length;
   const P = X.map(() => new Array(K).fill(0));
+  // Build a class→global-index map once (O(1) lookup in inner loop vs O(K) indexOf).
+  const classIndex = new Map<string, number>(classes.map((c, i) => [c, i]));
   const nFolds = Math.max(...folds) + 1;
   for (let f = 0; f < nFolds; f++) {
     const trIdx: number[] = []; const valIdx: number[] = [];
@@ -91,12 +93,12 @@ function oofProba(X: number[][], y: string[], classes: string[], folds: number[]
     const head = { classes: foldClasses, W: fit.W, b: fit.b, dim: X[0].length };
     for (const i of valIdx) {
       const proba = softmaxProba(X[i], head); // aligned to foldClasses
-      foldClasses.forEach((c, fc) => { P[i][classes.indexOf(c)] = proba[fc]; });
+      foldClasses.forEach((c, fc) => { P[i][classIndex.get(c)!] = proba[fc]; });
     }
   }
   return P;
 }
 
-export function trainStackedHeads(vault: Vault) {
+export function trainStackedHeads(vault: Vault): { text: ClassifierHeadData; vision: ClassifierHeadData; meta: MetaHeadData } | null {
   return trainStackedHeadsFromRows(buildTrainingRows(vault));
 }

@@ -303,6 +303,13 @@ export class RoostSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
+      .setName("Auto-retrain classifier on confirm")
+      .setDesc("When enabled, confirming Smart Assign retrains the per-vault head from your corrections (in-process; only swapped in if it doesn't regress on a holdout).")
+      .addToggle((t) => t.setValue(this.plugin.settings.smartAssignAutoRetrain).onChange(async (v) => {
+        this.plugin.settings.smartAssignAutoRetrain = v; await this.plugin.saveSettings();
+      }));
+
+    new Setting(containerEl)
       .setName("OMDB API key")
       .setDesc("API key for film/TV cover fetch (fetch-covers command)")
       .addText(text => text
@@ -313,13 +320,6 @@ export class RoostSettingTab extends PluginSettingTab {
           await this.plugin.saveSettings();
         })
       );
-
-    new Setting(containerEl)
-      .setName("Auto-retrain classifier on confirm")
-      .setDesc("When enabled, confirming Smart Assign retrains the per-vault head from your corrections (in-process; only swapped in if it doesn't regress on a holdout).")
-      .addToggle((t) => t.setValue(this.plugin.settings.smartAssignAutoRetrain).onChange(async (v) => {
-        this.plugin.settings.smartAssignAutoRetrain = v; await this.plugin.saveSettings();
-      }));
 
     // ── Agent memory ──
     containerEl.createEl("h3", { text: "Agent memory" });

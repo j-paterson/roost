@@ -65,7 +65,18 @@ export function runRetrain(vault: Vault, log: (m: string) => void): RetrainOutco
     return { ran: false, swapped: false, reason: "no eligible training data" };
   }
 
+  // Load current head early so the holdout-empty guard can reference it.
+  const current = loadStackedHeads(vault);
   const { train, holdout } = splitHoldout(rows);
+
+  // Guard: if a live head exists but the holdout is empty (e.g. sparse embedding
+  // cache with < 5 rows per class), we cannot validate the candidate — skip to
+  // protect the live head.  First-train (current === null) still proceeds.
+  if (current && holdout.length === 0) {
+    log("[retrain] holdout empty (sparse embedding cache?) — skipping retrain to protect live head");
+    return { ran: false, swapped: false, reason: "holdout empty, cannot gate" };
+  }
+
   const candidateData = trainStackedHeadsFromRows(train);
   if (!candidateData) {
     return { ran: false, swapped: false, reason: "trainer returned null" };
@@ -93,7 +104,6 @@ export function runRetrain(vault: Vault, log: (m: string) => void): RetrainOutco
     },
   };
 
-  const current = loadStackedHeads(vault);
   let gate: GateResult | null = null;
   if (current && holdout.length > 0) {
     gate = evaluateGate(current, candidate, holdout);

@@ -27,4 +27,12 @@ describe("evaluateGate", () => {
     expect(r.pass).toBe(false);
     expect(r.failures.length).toBeGreaterThan(0);
   });
+
+  it("evaluateGate with empty samples returns pass:true with no NaN", () => {
+    const r = evaluateGate(head(5), head(5), []);
+    expect(r.pass).toBe(true);
+    expect(Number.isNaN(r.overallCurrent)).toBe(false);
+    expect(Number.isNaN(r.overallCandidate)).toBe(false);
+    expect(r.failures).toHaveLength(0);
+  });
 });
