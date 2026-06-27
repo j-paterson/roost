@@ -520,12 +520,12 @@ All manually-triggered heavy jobs (sync, backfills, pipeline runs) route through
 
 ## Categorization Pipeline (Smart Assign)
 
-Deployed in `packages/core/src/pipeline/evaluate.ts` and coordinated from `packages/core/src/ui/hooks/use-smart-assign.ts`. Score-first: each item is scored against its top-K nearest category centroids, the ensemble picks the best candidate, and a conditional rejection rule decides whether to assign or leave unmatched. Unmatched items pass through a discovery + contrastive-description pass that can propose brand-new categories before a second scoring sweep.
+Deployed in `packages/core/src/pipeline/evaluate.ts` and coordinated from `packages/core/src/ui/hooks/use-smart-assign.ts`. Score-first: by default each item runs through the **per-item cascade** (head → centroid → discovery; see "Default scoring" below). Unmatched items pass through a discovery + contrastive-description pass that can propose brand-new categories before a second scoring sweep. (The legacy LLM ensemble is retained behind `smartAssignEmbeddingOnly: false`.)
 
 **Pipeline steps** (exactly what the progress header shows):
 
 1. **Embed** — fill any missing vectors via vision + topic + sidecar embedder
-2. **Score Known** — score every item against current collection centroids (uses `.roost/score-cache.json`)
+2. **Score Known** — run every item through the per-item cascade (head → centroid), assigning the first confident tier (uses `.roost/score-cache.json`)
 3. **Discover** — bucket unmatched items by Ollama category, keep cohesive cohorts as proposals
 4. **Describe** — one contrastive LLM call per proposal produces description + NOT clause
 5. **Score New** — re-score against existing + proposed catalog
@@ -541,19 +541,58 @@ Three stages per item, results cached in `.roost/cache/` (vectors in `embedding-
 
 Embeddings go through a local sidecar at `EMBED_URL` (`http://localhost:11435`) that runs the fine-tuned `sentence-transformers` model with an Ollama-compatible `/api/embed` endpoint. Vision and topic analysis still go through stock Ollama at `OLLAMA_URL`. Category centroid embeddings in `taxonomy.ts` are routed through the same sidecar — critical, since item↔category cosines are garbage if the two live in different vector spaces.
 
-### Default: embedding top-1 (LLM rerank dropped — 2026-06-16)
+### Default scoring: the per-item cascade (head → centroid → discovery) — 2026-06-26
 
-**Smart Assign now assigns each item to its top-1 nearest category centroid and
-skips the LLM rerank by default** (`settings.smartAssignEmbeddingOnly`, default
-`true`; `scoreAgainstCategories({ embeddingOnly })`). On a contamination-free
-honest fixture (GT = non-auto TikTok `collection`, never `roost_category`) this
-beats the dual-LLM ensemble on top-1 accuracy — **52.1% vs 40.4%** on 265 items
-(+11.7pp), holdout 56.2% vs 45.2% — and an independent adversary could-not-refute
-(the rerank overrides correct nearest-centroid picks; net −8 items). The full
-ensemble below is retained and re-enabled by setting `smartAssignEmbeddingOnly:
-false`. Rationale + every data point: `docs/superpowers/specs/2026-06-16-honest-eval-results.md`.
-Note: this is an *assignment* win; open-set rejection (FPR) is unchanged and
-remains a separate unsolved problem.
+> **Doc currency note:** this section reflects the shipped default as of 2026-06-26
+> (the Coexistence Cascade, `docs/superpowers/specs/2026-06-26-coexistence-cascade-design.md`).
+> Older subsections below (the LLM ensemble, the pure embedding-top-1 framing) describe
+> *components that still exist but are no longer the default path*; treat this section as
+> authoritative for current runtime behavior.
+
+**Smart Assign scores each unsorted item through a per-item cascade** in
+`scoreAgainstCategories`'s `embeddingOnly` branch — not one engine for the whole run.
+Each item takes the first confident tier:
+
+1. **Head tier (mature categories).** The per-vault **stacked head** — a text head, a
+   vision head, and a meta-head stacking their probabilities, each a multinomial
+   logistic regression over the **frozen 768-d** embeddings (`classifyStacked` in
+   `classifier-head.ts`; falls back to the single classifier head if stacking is off).
+   If `confidence ≥ HEAD_REJECT_TAU` (`config.ts`, **0.6149**) → assign. Calibrated to
+   ~90% precision-on-accepted; conservative by design (prefer deferring to discovery
+   over a confident wrong assignment).
+2. **Centroid tier (incubating categories).** For items the head didn't place, score
+   against **all** live category centroids; if top cosine `sim ≥ CENTROID_REJECT_TAU`
+   (**0.50**, set low — the centroid signal is weak, AUROC ~0.61, so its job is "don't
+   re-discover an existing category," not "judge correctness") → assign.
+3. **Discovery (new categories).** Items no tier places confidently fall to `unmatched`
+   and flow to Step 2's discovery, which clusters the residue into new-category proposals.
+
+This replaced the previous **all-or-nothing gate** (`headClassesMatch` /
+`stackedHeadsClassesMatch`): the head used to run for the whole run *only if* the vault's
+live category set was a subset of the head's trained classes, so a single unknown live
+category disabled the head for every item and dropped the run to nearest-centroid. Those
+functions are **retained** (for Spec 2's "has a retrain caught up to the live taxonomy?"
+check) but are **no longer a runtime kill-switch** — `clustering-step-1-score.ts` now
+passes the loaded heads through unconditionally and the cascade self-selects per item.
+
+The head may **emit one of its trained classes even when that class is not yet a live
+vault category** — under the per-vault-taxonomy model this is desired (the head
+introducing a canonical category the vault didn't yet contain). Such off-taxonomy
+assignments are recorded by a visibility log in `evaluate.ts`, persist via the free-form
+`roost_category` frontmatter on confirm (no pre-existing-collection validation), and are
+locked by `evaluate-cascade.test.ts`.
+
+Relevant flags (`settings.ts`): `smartAssignStacking` (**true**), `smartAssignClassifierHead`
+(true), `smartAssignEmbeddingOnly` (true). Setting `smartAssignEmbeddingOnly: false`
+re-enables the LLM ensemble path described below.
+
+**Historical (centroid tier provenance):** the embedding-top-1 default landed 2026-06-16,
+beating the dual-LLM ensemble on a contamination-free honest fixture — **52.1% vs 40.4%**
+top-1 on 265 items (+11.7pp), holdout 56.2% vs 45.2%
+(`docs/superpowers/specs/2026-06-16-honest-eval-results.md`). That nearest-centroid logic
+is now tier 2 of the cascade. Note: this was an *assignment* win; open-set rejection
+remains the separate, structurally-hard problem the conservative `τ` defaults manage rather
+than solve.
 
 ### Score-first ensemble classifier (`evaluate.ts`) — retained, off by default
 
