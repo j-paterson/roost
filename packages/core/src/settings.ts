@@ -77,6 +77,12 @@ export interface RoostSettings {
    *  embeddings — re-run Smart Assign (describe + dual-embed) so the runtime
    *  cache matches before relying on this path. */
   smartAssignStacking: boolean;
+  /** When true, confirming Smart Assign retrains the per-vault classifier head
+   *  from accumulated human corrections (in-process; only swapped in when the
+   *  acceptance gate passes — fail-closed). Default false — opt in once you
+   *  have enough labelled data (RETRAIN_SIGNAL_FLOOR human actions per confirm).
+   *  See docs/superpowers/specs/2026-06-26-self-improving-loop-design.md. */
+  smartAssignAutoRetrain: boolean;
   /** Names of the user's OWN categories that handle uncensored/explicit content
    *  (e.g. ["Spicy"], ["Adult"]). This is the only place an uncensored category
    *  is named — the product code never hardcodes one. Categories listed here route
@@ -167,6 +173,7 @@ export const DEFAULT_SETTINGS: RoostSettings = {
   smartAssignClassifierHead: true,
   smartAssignTags: false,
   smartAssignStacking: true,
+  smartAssignAutoRetrain: false,
   uncensoredCategories: [],
   facetCategories: [],
   anthropicApiKey: "",
@@ -306,6 +313,13 @@ export class RoostSettingTab extends PluginSettingTab {
           await this.plugin.saveSettings();
         })
       );
+
+    new Setting(containerEl)
+      .setName("Auto-retrain classifier on confirm")
+      .setDesc("When enabled, confirming Smart Assign retrains the per-vault head from your corrections (in-process; only swapped in if it doesn't regress on a holdout).")
+      .addToggle((t) => t.setValue(this.plugin.settings.smartAssignAutoRetrain).onChange(async (v) => {
+        this.plugin.settings.smartAssignAutoRetrain = v; await this.plugin.saveSettings();
+      }));
 
     // ── Agent memory ──
     containerEl.createEl("h3", { text: "Agent memory" });
