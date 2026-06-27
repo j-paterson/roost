@@ -66,9 +66,7 @@ export function runRetrain(vault: Vault, log: (m: string) => void): RetrainOutco
   }
 
   const { train, holdout } = splitHoldout(rows);
-  // If holdout consumed everything (tiny dataset), fall back to training on all rows.
-  const trainRows = train.length > 0 ? train : rows;
-  const candidateData = trainStackedHeadsFromRows(trainRows);
+  const candidateData = trainStackedHeadsFromRows(train);
   if (!candidateData) {
     return { ran: false, swapped: false, reason: "trainer returned null" };
   }
@@ -127,7 +125,7 @@ export function runRetrain(vault: Vault, log: (m: string) => void): RetrainOutco
     return {
       ran: true,
       swapped: true,
-      reason: gate ? "gate passed" : "first head",
+      reason: gate ? "gate passed" : current === null ? "first head" : "holdout empty, gate skipped",
       gate: gate ?? undefined,
     };
   }
