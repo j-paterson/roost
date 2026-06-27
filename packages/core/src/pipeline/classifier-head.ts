@@ -235,9 +235,9 @@ export function classifyStacked(
 
 /**
  * On-disk format of meta-head.json (version 1).
- * Kept private; the public interface is MetaHead.
+ * Exported for use by the retrain engine (train-head.ts).
  */
-interface MetaHeadData {
+export interface MetaHeadData {
   classes: string[];
   W: number[][];
   b: number[];
