@@ -24,4 +24,33 @@ describe("scoreWithSubcategories forwards suppression to pass 1", () => {
     expect(res.assignments.get("x")).toBeUndefined();
     expect(res.unmatched).toContain("x");
   });
+
+  it("control — without suppressedClasses, item IS assigned Tech", async () => {
+    const cache: Record<string, EmbeddingCacheEntry> = {
+      x: { vision: null, vec: unit(0), summary: "s", category: "c", vecText: null },
+    };
+    const cats: CategoryDef[] = [{ name: "Tech", description: "", centroid: unit(0) }];
+    const res = await scoreWithSubcategories({
+      itemIds: ["x"], cache, topLevelCategories: cats, embeddingOnly: true,
+      subcatsByParent: new Map(),
+      // No suppressedClasses — proves the suppression test isn't trivially passing.
+    });
+    expect(res.assignments.get("x")).toEqual({ parent: "Tech", subcategory: null });
+    expect(res.unmatched).not.toContain("x");
+  });
+
+  it("control — empty suppressedClasses map behaves identically to omitting the field", async () => {
+    const cache: Record<string, EmbeddingCacheEntry> = {
+      x: { vision: null, vec: unit(0), summary: "s", category: "c", vecText: null },
+    };
+    const cats: CategoryDef[] = [{ name: "Tech", description: "", centroid: unit(0) }];
+    const res = await scoreWithSubcategories({
+      itemIds: ["x"], cache, topLevelCategories: cats, embeddingOnly: true,
+      subcatsByParent: new Map(),
+      suppressedClasses: new Map(),
+    });
+    // Empty map = no rejections → same "Tech" assignment as omitting the field entirely.
+    expect(res.assignments.get("x")).toEqual({ parent: "Tech", subcategory: null });
+    expect(res.unmatched).not.toContain("x");
+  });
 });
