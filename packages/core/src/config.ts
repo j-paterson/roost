@@ -95,3 +95,15 @@ export const WEEKLY_DIGEST_CLUSTER_THRESHOLD = 0.78;
  *  developing/running live e2e. */
 export const DEV_COMMANDS_ENABLED =
   typeof process !== "undefined" && process.env?.ROOST_DEV_COMMANDS === "1";
+
+// ── Self-improving loop (Spec 2) ──────────────────────────────────────────────
+export const TRAINING_SET_VERSION = 1;
+export const EVAL_LOG_VERSION = 1;
+/** Min human positives before a category is training-eligible (graduates into the head). */
+export const TRAIN_ELIGIBILITY_MIN = 5;
+/** Fading-window half-life (in confirm-batches) for prequential accuracy. */
+export const EVAL_FADE_HALFLIFE_BATCHES = 5;
+/** Flag a class whose wrong predictions have gone uncorrected for this many batches. */
+export const CORRECTION_RATE_WINDOW_BATCHES = 8;
+/** Flag a class whose human-label share jumps by more than this between halves. */
+export const DRIFT_FLAG_DELTA = 0.15;
