@@ -14,13 +14,14 @@ export interface DriftFlag {
   flagged: boolean;
 }
 
+/** Deduplicates and sorts the distinct batch timestamps ascending. */
 function batchOrder(records: EvalRecord[]): number[] {
   return [...new Set(records.map((r) => r.ts))].sort((a, b) => a - b);
 }
 
 /** For each predicted class, how many of the most-recent batches have passed since the user
  *  last CORRECTED a wrong prediction of it (i.e. a record where guess===category && !correct).
- *  A class still being predicted but never corrected for > windowBatches is flagged (silent-rot). */
+ *  A class still being predicted but never corrected for >= windowBatches is flagged (silent-rot). */
 export function correctionRateFlags(records: EvalRecord[], windowBatches: number): CorrectionRateFlag[] {
   const batches = batchOrder(records);
   const lastIdx = batches.length - 1;

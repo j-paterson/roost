@@ -139,6 +139,8 @@ export function openGalleryMoveModal(ctx: GalleryMoveModalContext, entry: BasesE
       },
     });
     modal.open();
+    // Safe: Obsidian's Modal.open() renders contentEl synchronously before returning,
+    // so appending the reject button here is equivalent to doing it before open().
 
     // Reject control: marks the item wrong without picking a replacement.
     const rejectBtn = modal.contentEl.createEl("button", {

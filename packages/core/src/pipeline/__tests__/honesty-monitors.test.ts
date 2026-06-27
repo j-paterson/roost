@@ -7,7 +7,7 @@ function r(ts: number, guess: string | null, final: string | null, correct: bool
 }
 
 describe("correctionRateFlags", () => {
-  it("flags a predicted class whose wrong predictions go uncorrected past the window", () => {
+  it("flags a class whose predictions go unchallenged past the window", () => {
     // 'Lifestyle' predicted across batches 1..10, always accepted as correct (never corrected)
     const recs: EvalRecord[] = [];
     for (let t = 1; t <= 10; t++) recs.push(r(t, "Lifestyle", "Lifestyle", true));

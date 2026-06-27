@@ -13,7 +13,8 @@ export function emptyTrainingSet(): TrainingSet {
 }
 
 /** Record a human positive (correction or explicit pick). Latest wins; clears that class
- *  from the item's rejections (an explicit affirm overrides a prior reject). */
+ *  from the item's rejections (an explicit affirm overrides a prior reject).
+ *  MUTATES the input TrainingSet in place and returns the same reference. */
 export function addPositive(ts: TrainingSet, id: string, category: string, at: number): TrainingSet {
   ts.positives[id] = { category, ts: at };
   const rej = ts.rejections[id];
@@ -25,7 +26,8 @@ export function addPositive(ts: TrainingSet, id: string, category: string, at: n
   return ts;
 }
 
-/** Record a human rejection (id ✗ category). Never adds a positive. */
+/** Record a human rejection (id ✗ category). Never adds a positive.
+ *  MUTATES the input TrainingSet in place and returns the same reference. */
 export function addRejection(ts: TrainingSet, id: string, category: string): TrainingSet {
   const cur = ts.rejections[id] ?? [];
   if (!cur.includes(category)) ts.rejections[id] = [...cur, category];
@@ -61,7 +63,7 @@ const FILE = "training-set.json";
 
 export function loadTrainingSet(vault: Vault): TrainingSet {
   const raw = loadPipelineCache<unknown>(vault, FILE) as unknown as Partial<TrainingSet>;
-  if (!raw || typeof raw !== "object" || !("positives" in raw)) return emptyTrainingSet();
+  if (typeof raw !== "object" || !("positives" in raw)) return emptyTrainingSet();
   return {
     version: raw.version ?? TRAINING_SET_VERSION,
     positives: raw.positives ?? {},

@@ -29,12 +29,27 @@ export function appendEvalRecords(vault: Vault, records: EvalRecord[]): void {
   }
 }
 
+/** Parse a raw JSONL string into EvalRecords. Each line is parsed independently;
+ *  unparseable lines are silently skipped so one corrupt line cannot discard the whole log. */
+export function parseEvalLines(raw: string): EvalRecord[] {
+  const out: EvalRecord[] = [];
+  for (const line of raw.split("\n")) {
+    if (!line) continue;
+    try {
+      out.push(JSON.parse(line) as EvalRecord);
+    } catch {
+      // skip corrupt line
+    }
+  }
+  return out;
+}
+
 export function readEvalLog(vault: Vault): EvalRecord[] {
   const root = vaultBasePath(vault);
   if (!root) return [];
   try {
     const raw = fs.readFileSync(cachePath(root, FILE), "utf8");
-    return raw.split("\n").filter(Boolean).map((l) => JSON.parse(l) as EvalRecord);
+    return parseEvalLines(raw);
   } catch {
     return [];
   }
@@ -49,14 +64,12 @@ export function fadingWindowAccuracy(
 ): { overall: number; byTier: Record<string, number>; byClass: Record<string, number> } {
   if (!records.length) return { overall: 0, byTier: {}, byClass: {} };
   const batches = [...new Set(records.map((r) => r.ts))].sort((a, b) => a - b);
-  const newest = batches[batches.length - 1];
   const idx = new Map(batches.map((b, i) => [b, i]));
   const lastIdx = batches.length - 1;
   const weightOf = (ts: number) => {
     const age = lastIdx - (idx.get(ts) ?? 0); // newest → 0
     return Math.pow(0.5, age / Math.max(1e-9, halfLifeBatches));
   };
-  void newest;
   const acc = (sel: (r: EvalRecord) => boolean) => {
     let num = 0, den = 0;
     for (const r of records) {

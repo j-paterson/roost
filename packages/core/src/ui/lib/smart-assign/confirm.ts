@@ -158,19 +158,20 @@ export async function confirmSmartAssign(
   const isSubcat = confirmInput?.write.into === "subcategoryOf";
   const parentName = isSubcat ? (confirmInput!.write as { into: "subcategoryOf"; parent: string }).parent : null;
 
+  const rejects = host.store.getRejects();
   const itemCategory = buildItemCategory({
     proposedFolders,
     unsortedIds: host.unsortedIds,
     uncertainIds,
     reassigned,
-    rejects: host.store.getRejects(),
+    rejects,
     isSubcat,
     assignedSubcategories: host.assignedSubcategories,
   });
 
   const totalProposed = proposedFolders.reduce((n, f) => n + f.itemIds.length, 0);
   const skippedUncertain = [...uncertainIds].filter(id => !reassigned.has(id)).length;
-  host.log(`[confirm] ${itemCategory.size} items to categorize (${totalProposed} total, ${skippedUncertain} uncertain skipped, ${totalProposed - itemCategory.size - skippedUncertain} already categorized)`);
+  host.log(`[confirm] ${itemCategory.size} items to categorize (${totalProposed} total, ${skippedUncertain} uncertain skipped, ${rejects.size} rejected, ${totalProposed - itemCategory.size - skippedUncertain - rejects.size} already categorized)`);
 
   const fileByRoostId = buildFileIndex(host.plugin.app, host.syncFolder);
 
@@ -220,7 +221,7 @@ export async function confirmSmartAssign(
       guesses.set(id, { guess: detail.collection ?? null, tier });
     }
     const { trainingSet, evalRecords } = captureLoopUpdates({
-      ts: tsStore, itemCategory, reassigned, rejects: host.store.getRejects(),
+      ts: tsStore, itemCategory, reassigned, rejects,
       guesses, now: Date.now(),
     });
     saveTrainingSet(vault, trainingSet);

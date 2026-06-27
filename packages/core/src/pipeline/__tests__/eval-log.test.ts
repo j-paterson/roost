@@ -1,9 +1,25 @@
 import { describe, it, expect } from "vitest";
-import { fadingWindowAccuracy, type EvalRecord } from "@/pipeline/eval-log";
+import { fadingWindowAccuracy, parseEvalLines, type EvalRecord } from "@/pipeline/eval-log";
 
 function rec(ts: number, guess: string, tier: EvalRecord["tier"], final: string): EvalRecord {
   return { ts, roostId: `${ts}-${guess}`, guess, tier, finalLabel: final, correct: guess === final };
 }
+
+describe("parseEvalLines", () => {
+  it("returns both valid records when one line is garbage", () => {
+    const line1 = JSON.stringify(rec(1, "Food", "stacked", "Food"));
+    const line2 = JSON.stringify(rec(2, "Tech", "centroid", "Tech"));
+    const raw = [line1, "NOT_VALID_JSON{{{", line2].join("\n");
+    const result = parseEvalLines(raw);
+    expect(result).toHaveLength(2);
+    expect(result[0].roostId).toBe("1-Food");
+    expect(result[1].roostId).toBe("2-Tech");
+  });
+
+  it("returns [] for empty string", () => {
+    expect(parseEvalLines("")).toEqual([]);
+  });
+});
 
 describe("fadingWindowAccuracy", () => {
   it("weights recent batches more than old ones", () => {
