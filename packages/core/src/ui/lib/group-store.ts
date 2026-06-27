@@ -39,6 +39,7 @@ export class GroupStore {
 
   // Reassignment tracking — user-initiated moves during staging
   private reassignments: Map<string, string> = new Map(); // itemId → targetGroupId
+  private rejections: Set<string> = new Set(); // itemIds the user explicitly rejected (wrong, no replacement)
 
   // Library state
   private assignments: Map<string, string> = new Map();
@@ -272,6 +273,7 @@ export class GroupStore {
     this.noiseGroupId = null;
     this.extraGroupIds = [];
     this.reassignments.clear();
+    this.rejections.clear();
   }
 
   // ── Item reassignment ──
@@ -291,6 +293,21 @@ export class GroupStore {
 
   /** Get all user reassignments (itemId → targetGroupId). */
   getReassignments(): Map<string, string> { return this.reassignments; }
+
+  /** Mark an item's auto-assignment wrong WITHOUT picking a replacement. */
+  rejectItem(itemId: string): void {
+    this.rejections.add(itemId);
+  }
+
+  /** Undo a rejection (e.g. the user then picks a category). */
+  unrejectItem(itemId: string): void {
+    this.rejections.delete(itemId);
+  }
+
+  /** Items the user explicitly rejected this proposal. */
+  getRejects(): Set<string> {
+    return this.rejections;
+  }
 
   // ── Tree queries ──
 
