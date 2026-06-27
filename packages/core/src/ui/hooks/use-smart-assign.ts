@@ -201,6 +201,9 @@ export function useSmartAssign(deps: SmartAssignDeps) {
         // tagAssignmentsRef.current is null (never set) when smartAssignTags=false
         // or the detector weights were absent — confirm falls back to single-label.
         tagAssignments: tagAssignmentsRef.current ?? undefined,
+        // Self-Improving Loop: provide the phase-1 match-detail map so captureLoopUpdates
+        // can extract each item's pre-confirm guess and tier.
+        getMatchDetails: () => matchDetailMap,
         runUnderGuard: async () => {
           resetSmartAssignStaging(buildResetHost());
           // bulkWriteInProgress stays true here, so the optimistic counts hold while

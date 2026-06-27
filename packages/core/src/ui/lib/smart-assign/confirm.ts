@@ -10,6 +10,11 @@ import type { IRoostPlugin } from "@/types/plugin";
 import type { SyncProgress } from "@/ui/components/progress-header";
 import type { TagAssignment } from "@/pipeline/evaluate";
 import { appendCategoryTags, tagToObsidianTag } from "@/lib/category-tags";
+import {
+  type TrainingSet, addPositive, addRejection, loadTrainingSet, saveTrainingSet,
+} from "@/pipeline/training-set";
+import type { EvalRecord, EvalTier } from "@/pipeline/eval-log";
+import { appendEvalRecords } from "@/pipeline/eval-log";
 export interface SmartAssignConfirmStore {
   getClusterGroups: () => Array<{ uncertainItemIds?: string[] }>;
   getReassignments: () => Map<string, string>;
@@ -63,10 +68,64 @@ export interface SmartAssignConfirmHost {
    * `roost_category` to the primary (only if absent or a dropped tag).
    */
   tagAssignments?: Map<string, TagAssignment>;
+  /**
+   * Returns the phase-1 match-detail map (id → {collection?, reason?}).
+   * Optional — present in the live UI hook; absent in tests that don't need it.
+   */
+  getMatchDetails?: () => Map<string, { collection?: string; reason?: string }>;
 }
 
 export interface SmartAssignConfirmResult {
   tagged: number;
+}
+
+/**
+ * Pure helper — computes training-set mutations and prequential eval records
+ * from a single confirm operation. Unit-testable with no vault I/O.
+ *
+ * Invariants:
+ *   - Only HUMAN-provenance items (present in `reassigned`) become positives.
+ *   - Rejected items are recorded as negatives (id ✗ guessed class) — never positives.
+ *   - Eval records are emitted for every item that had a pre-confirm guess.
+ */
+export function captureLoopUpdates(args: {
+  ts: TrainingSet;
+  itemCategory: Map<string, string>;            // id → "Cat\x00Subcat" (final written labels)
+  reassigned: Map<string, string>;              // human-provenance ids
+  rejects: Set<string>;
+  guesses: Map<string, { guess: string | null; tier: EvalTier }>; // pre-correction head guess
+  now: number;
+}): { trainingSet: TrainingSet; evalRecords: EvalRecord[] } {
+  const { ts, itemCategory, reassigned, rejects, guesses, now } = args;
+  const evalRecords: EvalRecord[] = [];
+
+  // Positives: human-provenance written items only (never auto-accepted).
+  for (const [id, encoded] of itemCategory) {
+    if (!reassigned.has(id)) continue; // auto → not trained
+    const category = encoded.indexOf("\x00") >= 0 ? encoded.slice(0, encoded.indexOf("\x00")) : encoded;
+    addPositive(ts, id, category, now);
+  }
+
+  // Negatives: rejected items (id ✗ the class the head guessed).
+  for (const id of rejects) {
+    const g = guesses.get(id)?.guess;
+    if (g) addRejection(ts, id, g);
+  }
+
+  // Prequential eval: for every reviewed item with a guess, compare guess vs final label.
+  for (const [id, g] of guesses) {
+    let finalLabel: string | null = null;
+    if (rejects.has(id)) finalLabel = null; // rejected, no replacement
+    else {
+      const enc = itemCategory.get(id);
+      if (enc !== undefined) finalLabel = enc.indexOf("\x00") >= 0 ? enc.slice(0, enc.indexOf("\x00")) : enc;
+    }
+    evalRecords.push({
+      ts: now, roostId: id, guess: g.guess, tier: g.tier,
+      finalLabel, correct: g.guess !== null && finalLabel !== null && g.guess === finalLabel,
+    });
+  }
+  return { trainingSet: ts, evalRecords };
 }
 
 /**
@@ -145,6 +204,29 @@ export async function confirmSmartAssign(
 
   host.log(`[confirm] tagged=${result.tagged} alreadySet=${result.alreadySet} notFound=${result.notFound} errors=${result.errors}`);
   if (result.notFound > 0) host.log(`[confirm] ${result.notFound} items could not be matched to vault files`);
+
+  // ── Self-Improving Loop: capture positives + rejections + prequential eval ──
+  // Runs after bulkWriteAssignments; failure must never break confirm.
+  try {
+    const vault = host.plugin.app.vault;
+    const tsStore = loadTrainingSet(vault);
+    const guesses = new Map<string, { guess: string | null; tier: EvalTier }>();
+    for (const [id, detail] of host.getMatchDetails?.() ?? new Map()) {
+      const reason = detail.reason ?? "";
+      const tier: EvalTier = reason.startsWith("centroid") ? "centroid"
+        : reason.startsWith("stacked") ? "stacked"
+        : reason.startsWith("head") ? "head" : "llm";
+      guesses.set(id, { guess: detail.collection ?? null, tier });
+    }
+    const { trainingSet, evalRecords } = captureLoopUpdates({
+      ts: tsStore, itemCategory, reassigned, rejects: host.store.getRejects(),
+      guesses, now: Date.now(),
+    });
+    saveTrainingSet(vault, trainingSet);
+    appendEvalRecords(vault, evalRecords);
+  } catch (e: unknown) {
+    host.log(`[loop] capture failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
 
   // ── Wave 2 D1: Append category/* tags when tagAssignments are present ────────
   // Mirrors the faithfulness contract of migrate-to-tags.mjs migrateNote:
