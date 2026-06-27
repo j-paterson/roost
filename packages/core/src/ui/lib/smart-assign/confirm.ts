@@ -13,6 +13,34 @@ import { appendCategoryTags, tagToObsidianTag } from "@/lib/category-tags";
 export interface SmartAssignConfirmStore {
   getClusterGroups: () => Array<{ uncertainItemIds?: string[] }>;
   getReassignments: () => Map<string, string>;
+  getRejects: () => Set<string>;
+}
+
+export function buildItemCategory(args: {
+  proposedFolders: { name: string; itemIds: string[] }[];
+  unsortedIds: Set<string>;
+  uncertainIds: Set<string>;
+  reassigned: Map<string, string>;
+  rejects: Set<string>;
+  isSubcat: boolean;
+  assignedSubcategories: Map<string, string | null>;
+}): Map<string, string> {
+  const { proposedFolders, unsortedIds, uncertainIds, reassigned, rejects, isSubcat, assignedSubcategories } = args;
+  const itemCategory = new Map<string, string>();
+  for (const folder of proposedFolders) {
+    for (const id of folder.itemIds) {
+      if (!unsortedIds.has(id)) continue;
+      if (uncertainIds.has(id) && !reassigned.has(id)) continue;
+      if (rejects.has(id)) continue; // rejected: wrong, no replacement → leave unsorted
+      if (isSubcat) {
+        itemCategory.set(id, folder.name);
+      } else {
+        const subcat = assignedSubcategories.get(id) ?? null;
+        itemCategory.set(id, subcat === null ? `${folder.name}\x00` : `${folder.name}\x00${subcat}`);
+      }
+    }
+  }
+  return itemCategory;
 }
 
 export interface SmartAssignConfirmHost {
@@ -70,20 +98,15 @@ export async function confirmSmartAssign(
   const isSubcat = confirmInput?.write.into === "subcategoryOf";
   const parentName = isSubcat ? (confirmInput!.write as { into: "subcategoryOf"; parent: string }).parent : null;
 
-  const itemCategory = new Map<string, string>();
-  for (const folder of proposedFolders) {
-    for (const id of folder.itemIds) {
-      if (!host.unsortedIds.has(id)) continue;
-      if (uncertainIds.has(id) && !reassigned.has(id)) continue;
-      if (isSubcat) {
-        itemCategory.set(id, folder.name);
-      } else {
-        const subcat = host.assignedSubcategories.get(id) ?? null;
-        const encoded = subcat === null ? `${folder.name}\x00` : `${folder.name}\x00${subcat}`;
-        itemCategory.set(id, encoded);
-      }
-    }
-  }
+  const itemCategory = buildItemCategory({
+    proposedFolders,
+    unsortedIds: host.unsortedIds,
+    uncertainIds,
+    reassigned,
+    rejects: host.store.getRejects(),
+    isSubcat,
+    assignedSubcategories: host.assignedSubcategories,
+  });
 
   const totalProposed = proposedFolders.reduce((n, f) => n + f.itemIds.length, 0);
   const skippedUncertain = [...uncertainIds].filter(id => !reassigned.has(id)).length;
