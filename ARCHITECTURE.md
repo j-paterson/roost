@@ -594,6 +594,33 @@ is now tier 2 of the cascade. Note: this was an *assignment* win; open-set rejec
 remains the separate, structurally-hard problem the conservative `τ` defaults manage rather
 than solve.
 
+### Rejections & the self-improving loop foundations (`training-set.ts`, `eval-log.ts`, `honesty-monitors.ts`) — 2026-06-27
+
+> Spec 2 **Plan 1 (Foundations + Observability)**. The retrain engine itself (Plan 2) is
+> not built yet — the head does **not** auto-retrain. What shipped is the deterministic
+> substrate + the user-facing rejection behavior. Spec:
+> `docs/superpowers/specs/2026-06-26-self-improving-loop-design.md`.
+
+- **Rejection capture.** In Smart Assign review, an item's gallery card can be **rejected**
+  (marked wrong *without* picking a replacement) — `GroupStore.rejectItem` / `getRejects`,
+  fired via `fireItemClick({action:"reject",…})`. On confirm, rejected items are left
+  Unsorted (skipped in `buildItemCategory`).
+- **Rejected-class suppression.** A rejection records `(roost_id ✗ category)` in the
+  per-vault **training-set store** (`pipeline/training-set.ts`, `.roost/cache/training-set.json`).
+  Next run, `clustering-step-1-score.ts` derives a `suppressionMap` and threads
+  `ScoreOpts.suppressedClasses` into the cascade, so the rejected class is **never
+  re-proposed** for that item by the head OR the centroid tier. The item flows to the
+  next-best tier or to discovery.
+- **Training-set store.** Accumulates **human-provenance signal only** (`roost_assigned_by:
+  human`): positives (corrections + explicit picks) and negatives (rejections). Auto-accepted
+  predictions are **never** recorded — the guard against feedback-loop self-reinforcement.
+  Tracks per-class eligibility (`≥5` examples → training-eligible; consumed by Plan 2).
+- **Prequential eval + honesty monitors.** On confirm, the head's pre-correction guess vs.
+  the user's final decision is logged to `.roost/cache/eval-log.jsonl` (only for
+  user-resolved items), read as a fading-window per-class accuracy segmented by tier
+  (`eval-log.ts`). `honesty-monitors.ts` flags silently-rotting classes (uncorrected past a
+  window) and per-class label-distribution drift. These inform; they do not act.
+
 ### Score-first ensemble classifier (`evaluate.ts`) — retained, off by default
 
 For each item:
