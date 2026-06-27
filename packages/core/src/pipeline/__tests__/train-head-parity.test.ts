@@ -16,10 +16,19 @@ describe("TS trainer parity vs sklearn golden", () => {
       return m;
     };
     expect(ts.text.classes).toEqual(golden.python.text.classes);
-    expect(maxAbs(ts.text.W, golden.python.text.W)).toBeLessThan(0.05);
-    expect(maxAbs(ts.vision.W, golden.python.vision.W)).toBeLessThan(0.05);
+    expect(ts.vision.classes).toEqual(golden.python.vision.classes);
+    expect(ts.meta.classes).toEqual(golden.python.meta.classes);
+    expect(maxAbs(ts.text.W, golden.python.text.W)).toBeLessThan(0.02);
+    expect(maxAbs(ts.vision.W, golden.python.vision.W)).toBeLessThan(0.02);
   });
 
+  // NOTE — known limitation: because the synthetic fixture is perfectly well-separated,
+  // 100% prediction agreement is trivially achievable and has weak discriminating power,
+  // especially for the META head.  The meta head's correctness is guaranteed by:
+  //   (a) fitLogReg parity with sklearn (verified in Task 1/3 unit tests), and
+  //   (b) correct OOF feature construction (verified in Task 2).
+  // The base-head weight-tolerance checks above carry the real regression load for
+  // catching objective-level divergence between the TS and sklearn implementations.
   it("stacked predictions agree with the sklearn head on >= 99% of rows", () => {
     const tsMem = {
       text: { classes: ts.text.classes, W: ts.text.W, b: ts.text.b, dim: ts.text.dim },
