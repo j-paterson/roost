@@ -238,6 +238,11 @@ interface ScoreOpts {
    * Setting both is a no-op for noneRefusal; fullCanon takes precedence.
    */
   fullCanon?: boolean;
+  /** Per-item set of category names the cascade must not assign (rejected by the user).
+   *  Applied at BOTH the head tier (if head picks a banned class, defer to centroid) and
+   *  the centroid tier (banned centroids are excluded before picking the top candidate).
+   *  Has no effect when undefined/absent — existing cascade behavior is fully preserved. */
+  suppressedClasses?: Map<string, Set<string>>;
 }
 
 interface ScoreResult {
@@ -658,6 +663,7 @@ export async function scoreAgainstCategories(opts: ScoreOpts): Promise<ScoreResu
       const entry = cache[id];
       if (!entry?.vec) { unmatched.push(id); continue; }
 
+      const banned = opts.suppressedClasses?.get(id);
       let tier: "stacked" | "head" | "centroid" | null = null;
       let cat = ""; let conf = 0;
       let ranked: { name: string; sim: number }[] = [];
@@ -670,12 +676,17 @@ export async function scoreAgainstCategories(opts: ScoreOpts): Promise<ScoreResu
         const r = classifyWithHead(entry.vec!, rawHead);
         if (r.confidence >= HEAD_REJECT_TAU) { tier = "head"; cat = r.category; conf = r.confidence; }
       }
+      // Suppression — if head placed the item in a banned class, defer to centroid.
+      if (tier !== null && banned?.has(cat)) { tier = null; cat = ""; conf = 0; }
 
       // Tier 2 — centroid over ALL live categories (incubating ones the head can't emit).
       if (tier === null) {
         ranked = categories
           .map(c => ({ name: c.name, sim: fusedSimilarity(entry.vec!, c.centroid, entry.clipVec, c.clipCentroid, alpha) }))
           .sort((a, b) => b.sim - a.sim);
+        // Suppression — exclude banned classes before picking the top centroid candidate
+        // so a banned class is never the top pick and never appears in topCentroids.
+        if (banned) ranked = ranked.filter(c => !banned.has(c.name));
         if (ranked.length > 0 && ranked[0].sim >= CENTROID_REJECT_TAU) {
           tier = "centroid"; cat = ranked[0].name; conf = ranked[0].sim;
         }
