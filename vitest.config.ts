@@ -43,5 +43,11 @@ export default defineConfig({
       "tests/fixtures/**/*.test.ts",
     ],
     environment: "happy-dom",
+    server: {
+      deps: {
+        // fmin@0.0.4 has extensionless ESM imports; force Vite to inline-transform it.
+        inline: ["fmin"],
+      },
+    },
   },
 });

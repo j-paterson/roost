@@ -107,3 +107,10 @@ export const EVAL_FADE_HALFLIFE_BATCHES = 5;
 export const CORRECTION_RATE_WINDOW_BATCHES = 8;
 /** Flag a class whose human-label share jumps by more than this between halves. */
 export const DRIFT_FLAG_DELTA = 0.15;
+
+// ── Retrain engine (Spec 2 Plan 2) ────────────────────────────────────────────
+export const LOGREG_C = 1.0;            // sklearn C; data-term scale, no intercept penalty
+export const LOGREG_TOL = 1e-6;         // gradient-norm convergence tolerance
+export const OOF_FOLDS = 5;             // StratifiedKFold splits for the meta head
+export const RETRAIN_SIGNAL_FLOOR = 10; // min new human labels since last train before retrain
+export const RETRAIN_CAT_MARGIN = 0.05; // max allowed per-class accuracy regression (5pp)

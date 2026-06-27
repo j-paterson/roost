@@ -84,6 +84,7 @@
   },
   "dependencies": {
     "@types/leaflet": "^1.9.21",
+    "fmin": "^0.0.4",
     "hdbscan-ts": "^1.0.17",
     "leaflet": "^1.9.4"
   },
