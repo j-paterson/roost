@@ -47,6 +47,10 @@ export interface ScoreWithSubcategoriesOpts {
    *  over classifierHead when present and class-matching. Pass 2 (subcategories) never
    *  uses heads — subcats are not in the head's class set. */
   stackedHeads?: StackedHeads | null;
+  /** Per-item suppressed class names derived from the training set. Forwarded to the
+   *  pass-1 (top-level) scoreAgainstCategories call only; suppression does not apply
+   *  to pass-2 subcategory scoring. */
+  suppressedClasses?: Map<string, Set<string>>;
 }
 
 export interface ScoreWithSubcategoriesResult {
@@ -64,7 +68,7 @@ export async function scoreWithSubcategories(
   const {
     itemIds, cache, topLevelCategories, subcatsByParent,
     vault, threshold, subcatThreshold, ollamaUrl, onProgress, onLog, stopSignal, concurrency,
-    clipFusionAlpha, embeddingOnly, classifierHead, stackedHeads,
+    clipFusionAlpha, embeddingOnly, classifierHead, stackedHeads, suppressedClasses,
   } = opts;
 
   // Total work: pass 1 = N items + pass 2 = up to N more (depends on pass-1 routing).
@@ -73,11 +77,13 @@ export async function scoreWithSubcategories(
   let done = 0;
   const reportProgress = () => onProgress?.(done, total);
 
-  // Pass 1: top-level scoring.
+  // Pass 1: top-level scoring. suppressedClasses is forwarded here only —
+  // suppression applies to top-level categories, not pass-2 subcategory scoring.
   const pass1 = await scoreAgainstCategories({
     itemIds, cache, categories: topLevelCategories, vault,
     threshold, ollamaUrl, onLog, stopSignal, concurrency,
     clipFusionAlpha, embeddingOnly, classifierHead, stackedHeads,
+    suppressedClasses,
     onProgress: (d) => { done = d; reportProgress(); },
   });
 

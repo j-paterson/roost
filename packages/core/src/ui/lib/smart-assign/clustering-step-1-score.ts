@@ -18,6 +18,7 @@ import {
   type StackedHeads,
 } from "@/pipeline/evaluate";
 import { scoreWithSubcategories } from "@/pipeline/score-with-subcategories";
+import { loadTrainingSet, suppressionMap } from "@/pipeline/training-set";
 
 import type { SmartAssignClusteringHost } from "@/ui/lib/smart-assign/clustering";
 import type { ClusteringStep0Slice, ClusteringStep1Slice } from "@/ui/lib/smart-assign/clustering-context";
@@ -132,6 +133,10 @@ export async function runClusteringStep1ScoreKnown(
     }
   }
 
+  // Build per-item suppression map from training-set rejections.
+  // suppressionMap returns Map<roostId, Set<categoryName>>; empty when no rejections exist.
+  const suppressed = suppressionMap(loadTrainingSet(host.app.vault));
+
   const isFilterMode = ctx.input.write.into === "category";
   let phase1Assignments: Map<string, string>;
   let phase1Unmatched: string[];
@@ -153,6 +158,7 @@ export async function runClusteringStep1ScoreKnown(
       embeddingOnly: host.plugin.settings.smartAssignEmbeddingOnly,
       classifierHead,
       stackedHeads,
+      suppressedClasses: suppressed,
     });
     phase1Assignments = new Map();
     const newSubcats = new Map<string, string | null>();
@@ -183,6 +189,7 @@ export async function runClusteringStep1ScoreKnown(
       embeddingOnly: host.plugin.settings.smartAssignEmbeddingOnly,
       classifierHead,
       stackedHeads,
+      suppressedClasses: suppressed,
     });
     phase1Assignments = phase1.assignments;
     phase1Unmatched = phase1.unmatched;
