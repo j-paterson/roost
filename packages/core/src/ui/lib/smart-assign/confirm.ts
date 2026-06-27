@@ -114,6 +114,7 @@ export function captureLoopUpdates(args: {
 
   // Prequential eval: for every reviewed item with a guess, compare guess vs final label.
   for (const [id, g] of guesses) {
+    if (!itemCategory.has(id) && !rejects.has(id)) continue; // user didn't resolve this item → not part of the organic holdout
     let finalLabel: string | null = null;
     if (rejects.has(id)) finalLabel = null; // rejected, no replacement
     else {
