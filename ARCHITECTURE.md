@@ -594,12 +594,13 @@ is now tier 2 of the cascade. Note: this was an *assignment* win; open-set rejec
 remains the separate, structurally-hard problem the conservative `τ` defaults manage rather
 than solve.
 
-### Rejections & the self-improving loop foundations (`training-set.ts`, `eval-log.ts`, `honesty-monitors.ts`) — 2026-06-27
+### The self-improving loop (`training-set.ts`, `eval-log.ts`, `honesty-monitors.ts`, `logreg-fit.ts`, `train-head.ts`, `acceptance-gate.ts`, `head-store.ts`, `retrain.ts`) — 2026-06-27/28
 
-> Spec 2 **Plan 1 (Foundations + Observability)**. The retrain engine itself (Plan 2) is
-> not built yet — the head does **not** auto-retrain. What shipped is the deterministic
-> substrate + the user-facing rejection behavior. Spec:
-> `docs/superpowers/specs/2026-06-26-self-improving-loop-design.md`.
+> Spec 2, both plans shipped. **Plan 1** = the deterministic substrate + rejection behavior
+> (below). **Plan 2** = the retrain engine — the head now **retrains in-process from the
+> user's confirmed labels**, **opt-in** behind `smartAssignAutoRetrain` (default **off**).
+> Spec: `docs/superpowers/specs/2026-06-26-self-improving-loop-design.md`. Training-NEGATIVES
+> (rejections as hard negatives) remain deferred — see "Out of scope" at the end of this section.
 
 - **Rejection capture.** In Smart Assign review, an item's gallery card can be **rejected**
   (marked wrong *without* picking a replacement) — `GroupStore.rejectItem` / `getRejects`,
@@ -614,12 +615,41 @@ than solve.
 - **Training-set store.** Accumulates **human-provenance signal only** (`roost_assigned_by:
   human`): positives (corrections + explicit picks) and negatives (rejections). Auto-accepted
   predictions are **never** recorded — the guard against feedback-loop self-reinforcement.
-  Tracks per-class eligibility (`≥5` examples → training-eligible; consumed by Plan 2).
+  Tracks per-class eligibility (`≥5` examples → training-eligible; consumed by the retrain engine).
 - **Prequential eval + honesty monitors.** On confirm, the head's pre-correction guess vs.
   the user's final decision is logged to `.roost/cache/eval-log.jsonl` (only for
   user-resolved items), read as a fading-window per-class accuracy segmented by tier
   (`eval-log.ts`). `honesty-monitors.ts` flags silently-rotting classes (uncorrected past a
   window) and per-class label-distribution drift. These inform; they do not act.
+
+**The retrain engine (Plan 2, opt-in `smartAssignAutoRetrain`, default off).** On confirm —
+after the capture hook persists this batch's labels, in its own try/catch (a retrain failure
+never breaks confirm) — if the flag is on and `shouldRetrain` fires (new human labels ≥
+`RETRAIN_SIGNAL_FLOOR`), `runRetrain` (`retrain.ts`) executes:
+
+1. **Train a candidate** (`train-head.ts`): build rows from the training-set's human positives
+   (eligible classes only, ≥5), fit text + vision base heads + an OOF-stacked meta head. The
+   fitter (`logreg-fit.ts`) is a TS-native multinomial logistic regression matching sklearn's
+   objective (softmax CE·C + ½‖W‖², no intercept penalty, balanced weights), optimized via the
+   `fmin` conjugate-gradient library. **Parity-tested vs scikit-learn** (`train-head-parity.test.ts`
+   against a committed golden fixture: weights within 0.02, ≥99% prediction agreement) — the
+   convex objective guarantees the same unique optimum. No Python at runtime; the encoder stays
+   frozen (only the linear head retrains).
+2. **Gate fail-closed** (`acceptance-gate.ts`): on a held-out slice (disjoint from training),
+   the candidate must not drop overall accuracy AND not regress any class beyond
+   `RETRAIN_CAT_MARGIN`. It replaces the live head **only** if it passes (or there is no current
+   head). If the holdout is empty but a head exists, retrain is skipped to protect the live head.
+3. **Atomic reversible swap** (`head-store.ts`): the 3 head JSONs are written atomically with a
+   `.prev` backup; a write failure triggers `restorePreviousHeads`. A retrain can only ever
+   improve or hold the live head — never silently degrade or corrupt it.
+
+The retrain currently runs synchronously on the confirm thread (acceptable at present scale;
+off-thread is the noted future lever).
+
+**Out of scope (deferred).** Training-NEGATIVES (feeding rejections into the retrain as hard
+negatives) — gated on an offline experiment + accumulated rejection volume; the measured
+precursor found only ~166 confident-wrong items concentrated in 2 classes, so v1 ships rejections
+as suppression + eval/monitor only. Taxonomy merge/split → a future spec.
 
 ### Score-first ensemble classifier (`evaluate.ts`) — retained, off by default
 
