@@ -674,6 +674,23 @@ negatives) — gated on an offline experiment + accumulated rejection volume; th
 precursor found only ~166 confident-wrong items concentrated in 2 classes, so v1 ships rejections
 as suppression + eval/monitor only. Taxonomy merge/split → a future spec.
 
+**Training mode (confirm/reject feed) — 2026-06-29 (`training-actions.ts`, `views/feed/training-mode.ts`).**
+A toggleable "Train" mode on the feed/reel filters to machine-introduced items
+(`roost_assigned_by !== "human"` AND a `roost_category` — `autoWithGuess`) and lets the user judge
+them one at a time with auto-advance: **Yes** (`confirmAutoItem` → a `source:"confirm"` positive +
+stamp `roost_assigned_by:human`), **No** (`rejectAutoItem` → `addRejection` + fully unsort the item,
+re-guessed next run with that class suppressed), **Recategorize** (the existing move modal → a
+correction), **Skip** (session-local). This is the only path that captures *agreement* — a confirm
+is an `X→X` provenance-only transition that `classifyTransition` maps to `none`, so neither organic
+capture nor Smart-Assign confirm could represent it before. It reuses the SAME store
+(`addPositive`/`addRejection`) and the same snapshot pre-seed own-write guard as everything else —
+no parallel system. Two safeguards keep the new signal honest: a **per-class cap** —
+`selectTrainingPositives` in `train-head.ts` admits confirmed positives only up to
+`CONFIRM_CAP_RATIO × corrections` (a class with 0 corrections admits 0 confirms, so confirms can
+amplify but never build/dominate a class) — and an **eval `mode:"review"` flag** on training-mode
+records, kept out of the headline accuracy via `excludeReview`. Spec:
+`2026-06-29-training-mode-confirm-loop-design.md`.
+
 ### Score-first ensemble classifier (`evaluate.ts`) — retained, off by default
 
 For each item:
