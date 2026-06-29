@@ -151,10 +151,11 @@ function renderFeedExpandedItem(
     ? container.createDiv({ cls: opts.frameClass })
     : container;
   const inner = mountParent.createDiv({ cls: opts.cardClass });
-  const actions = mountFeedActionsRow(inner, entry, ctx);
+  // In training mode only the circular confirm/reject bar shows — hide the actions row.
+  const actions = ctx.trainingMode ? null : mountFeedActionsRow(inner, entry, ctx);
   renderExpandedCard(
     inner,
-    entryToExpandedCardData(entry, feedResolvers(ctx), [actions]),
+    entryToExpandedCardData(entry, feedResolvers(ctx), actions ? [actions] : []),
   );
   // Mount on the slot `container` (not `inner`) so the bar overlays at the SAME
   // absolute position for every item type (tweet/image/video), independent of content.
@@ -235,14 +236,17 @@ function renderFeedTikTok(
   })();
 
   const roostId = getRoostId(entry);
-  const rail = container.createDiv({ cls: "roost-feed-tiktok-rail" });
-  const addRail = (label: string, action: "move" | "open" | "delete") => {
-    const btn = rail.createDiv({ cls: `roost-feed-rail-btn roost-feed-rail-${action}`, text: label });
-    btn.addEventListener("click", (e) => { e.stopPropagation(); ctx.onAction(action, roostId); });
-  };
-  addRail("Move", "move");
-  addRail("Note", "open");
-  addRail("Delete", "delete");
+  // In training mode only the circular confirm/reject bar shows — hide the action rail.
+  if (!ctx.trainingMode) {
+    const rail = container.createDiv({ cls: "roost-feed-tiktok-rail" });
+    const addRail = (label: string, action: "move" | "open" | "delete") => {
+      const btn = rail.createDiv({ cls: `roost-feed-rail-btn roost-feed-rail-${action}`, text: label });
+      btn.addEventListener("click", (e) => { e.stopPropagation(); ctx.onAction(action, roostId); });
+    };
+    addRail("Move", "move");
+    addRail("Note", "open");
+    addRail("Delete", "delete");
+  }
 
   const caption = container.createDiv({ cls: "roost-feed-tiktok-caption" });
   const author = getNoteAuthor(entry);

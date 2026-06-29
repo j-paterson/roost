@@ -176,6 +176,10 @@ export class GalleryFeedModeController {
     }
     if (this.inFlight.has(roostId)) return;
     this.inFlight.add(roostId);
+    // Drop the item from the queue immediately (like skip): the frontmatter change is
+    // async and the Bases data refreshes later (and can even change scope), so we can't
+    // rely on it disappearing from getScopedEntries() in time for a deterministic advance.
+    this.skipped.add(roostId);
     const p = action === "confirm" ? this.host.confirmAuto(roostId) : this.host.rejectAuto(roostId);
     void p.finally(() => { this.inFlight.delete(roostId); this.advanceAfterAction(roostId); });
   }
