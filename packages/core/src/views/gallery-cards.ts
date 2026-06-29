@@ -128,10 +128,15 @@ export function hydrateGalleryCard(
       handlers.onFeedSelect(roostIdVal);
       return;
     }
-    // Free-select mode: single click selects the card.
+    // Free-select mode: single click selects the card. A PLAIN click (no modifier)
+    // also opens it inline; ⌘/⌃/⇧-clicks are pure multiselect and do not open.
     if (roostIdVal && handlers.onSelect) {
       e.stopPropagation();
       handlers.onSelect(roostIdVal, e);
+      const modified = e.metaKey || e.ctrlKey || e.shiftKey;
+      if (!modified && !window.getSelection()?.toString()) {
+        handlers.onExpand(el, entry);
+      }
       return;
     }
     // Fallback (onSelect not wired): collapse expanded card on click.
