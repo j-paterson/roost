@@ -1,6 +1,7 @@
-import { describe, it, expect } from "vitest";
-import { seedPositives, humanLabelsFromFrontmatter } from "@/pipeline/training-set-seed";
+import { describe, it, expect, vi } from "vitest";
+import { seedPositives, humanLabelsFromFrontmatter, seedTrainingSetFromVault } from "@/pipeline/training-set-seed";
 import { emptyTrainingSet, addRejection } from "@/pipeline/training-set";
+import * as store from "@/pipeline/training-set";
 
 describe("seedPositives", () => {
   it("seeds each label as a correction positive at seedTs", () => {
@@ -35,6 +36,34 @@ describe("seedPositives", () => {
     seedPositives([{ id: "a", category: "Spicy" }], ts0, 1);
     expect(ts0.positives["a"]).toEqual({ category: "Spicy", ts: 1 }); // promoted to correction (no source)
     expect(ts0.rejections["z"]).toEqual(["Spicy"]); // rejection untouched
+  });
+});
+
+describe("seedTrainingSetFromVault", () => {
+  it("collects human labels from the sync folder and seeds them into the store", () => {
+    const files = [
+      { path: "Bookmarks/a.md" }, { path: "Bookmarks/b.md" }, { path: "Other/c.md" },
+    ];
+    const fmByPath: Record<string, Record<string, unknown>> = {
+      "Bookmarks/a.md": { roost_id: "a", roost_category: "Tech", roost_assigned_by: "human" },
+      "Bookmarks/b.md": { roost_id: "b", roost_category: "Art", roost_assigned_by: "auto" }, // not human
+      "Other/c.md": { roost_id: "c", roost_category: "Tech", roost_assigned_by: "human" },   // wrong folder
+    };
+    const app = {
+      vault: { getMarkdownFiles: () => files },
+      metadataCache: { getFileCache: (f: { path: string }) => ({ frontmatter: fmByPath[f.path] }) },
+    } as unknown as import("obsidian").App;
+
+    const empty = store.emptyTrainingSet();
+    const loadSpy = vi.spyOn(store, "loadTrainingSet").mockReturnValue(empty);
+    const saveSpy = vi.spyOn(store, "saveTrainingSet").mockImplementation(() => {});
+
+    const res = seedTrainingSetFromVault(app, "Bookmarks");
+
+    expect(res).toEqual({ seeded: 1, byClass: { Tech: 1 } }); // only Bookmarks/a.md qualifies
+    expect(empty.positives["a"]).toEqual({ category: "Tech", ts: 1 });
+    expect(saveSpy).toHaveBeenCalledOnce();
+    loadSpy.mockRestore(); saveSpy.mockRestore();
   });
 });
 

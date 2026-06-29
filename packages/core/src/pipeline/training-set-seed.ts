@@ -1,5 +1,6 @@
 import type { App } from "obsidian";
-import { type TrainingSet, addPositive } from "@/pipeline/training-set";
+import { type TrainingSet, addPositive, loadTrainingSet, saveTrainingSet } from "@/pipeline/training-set";
+import { SEED_TS } from "@/config";
 
 export interface SeedLabel {
   id: string;
@@ -40,6 +41,18 @@ export function humanLabelsFromFrontmatter(
     out.push({ id, category: raw });
   }
   return out;
+}
+
+/** Seed the TrainingSet store from every sync-folder human label. Idempotent. */
+export function seedTrainingSetFromVault(
+  app: App,
+  syncFolder: string,
+): { seeded: number; byClass: Record<string, number> } {
+  const labels = collectHumanLabels(app, syncFolder);
+  const ts = loadTrainingSet(app.vault);
+  const { seeded, byClass } = seedPositives(labels, ts, SEED_TS);
+  saveTrainingSet(app.vault, ts);
+  return { seeded, byClass };
 }
 
 /** Read sync-folder markdown frontmatter and collect human-labeled seed labels. */
