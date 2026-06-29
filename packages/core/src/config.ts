@@ -114,3 +114,10 @@ export const LOGREG_TOL = 1e-6;         // gradient-norm convergence tolerance
 export const OOF_FOLDS = 5;             // StratifiedKFold splits for the meta head
 export const RETRAIN_SIGNAL_FLOOR = 10; // min new human labels since last train before retrain
 export const RETRAIN_CAT_MARGIN = 0.05; // max allowed per-class accuracy regression (5pp)
+
+// ── Retrain gate (Spec 2 amendment) ───────────────────────────────────────────
+export const GATE_EPS = 0;               // non-regression tolerance (overall & macro)
+export const GATE_CATASTROPHIC_DROP = 0.15; // a well-supported class dropping >this → reject
+export const GATE_MIN_SUPPORT = 20;      // min holdout items for the catastrophic guard to apply
+export const GATE_KFOLDS = 3;            // CV folds averaged for the gate decision
+export const GATE_OOF = 3;              // OOF folds for throwaway gate models (cheaper than OOF_FOLDS)
