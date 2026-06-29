@@ -173,7 +173,7 @@ export const DEFAULT_SETTINGS: RoostSettings = {
   smartAssignClassifierHead: true,
   smartAssignTags: false,
   smartAssignStacking: true,
-  smartAssignAutoRetrain: false,
+  smartAssignAutoRetrain: true,
   uncensoredCategories: [],
   facetCategories: [],
   anthropicApiKey: "",
