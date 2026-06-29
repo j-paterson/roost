@@ -2,12 +2,8 @@
  * Bookmark extraction helpers — pure functions, no platform deps.
  */
 import { roostUnwrapTweet, type RawApiData } from "./normalize";
-import {
-  extractArticleContent,
-  renderArticleNoteBody,
-  renderArticleStubBody,
-  type ArticleResultRaw,
-} from "@/lib/article-extract";
+import { getPlatform } from "@/platforms/registry";
+import type { Platform } from "@/types/sync";
 
 /**
  * Minimum shape needed by extract helpers — a superset of NormalizedRecord
@@ -37,9 +33,10 @@ export function getBookmarkPlatform(record: BookmarkRecord): string {
 
 export function getBookmarkItemId(record: BookmarkRecord): string | null {
   const platform = getBookmarkPlatform(record);
+  if (platform === "tiktok" || platform === "twitter") {
+    return getPlatform(platform as Platform).parse.id(record);
+  }
   const raw = getBookmarkRawData(record);
-  if (platform === "tiktok") return record?.itemId || raw?.id || raw?.video?.id || null;
-  if (platform === "twitter") return record?.itemId || raw?.rest_id || raw?.legacy?.id_str || null;
   return record?.itemId || record?.castHash || raw?.hash || null;
 }
 
@@ -57,11 +54,11 @@ function getTwitterUserCore(raw: RawApiData): RawApiData | null {
   return getTwitterUser(raw)?.core || null;
 }
 
-function getTwitterUserName(raw: RawApiData): string | null {
+export function getTwitterUserName(raw: RawApiData): string | null {
   return getTwitterUserCore(raw)?.name || getTwitterUserLegacy(raw)?.name || null;
 }
 
-function getTwitterUserScreenName(raw: RawApiData): string | null {
+export function getTwitterUserScreenName(raw: RawApiData): string | null {
   return (
     getTwitterUserCore(raw)?.screen_name ||
     getTwitterUserLegacy(raw)?.screen_name ||
@@ -135,7 +132,7 @@ export function getTweetMediaUrls(tweet: RawApiData | null): string[] {
   return urls;
 }
 
-function expandTweetUrls(tweet: RawApiData | null): string {
+export function expandTweetUrls(tweet: RawApiData | null): string {
   let text = tweet?.note_tweet?.note_tweet_results?.result?.text || tweet?.legacy?.full_text || "";
   for (const u of (tweet?.legacy?.entities?.urls || [])) {
     if (u.url && u.expanded_url) text = text.replace(u.url, u.expanded_url);
@@ -146,47 +143,27 @@ function expandTweetUrls(tweet: RawApiData | null): string {
 }
 
 export function extractBookmarkText(record: BookmarkRecord): string {
+  const platform = getBookmarkPlatform(record);
+  if (platform === "tiktok" || platform === "twitter") {
+    return getPlatform(platform as Platform).parse.caption(record);
+  }
   const raw = getBookmarkRawData(record);
   if (!raw) return "";
-  if (getBookmarkPlatform(record) === "tiktok") return raw.desc || "";
-  if (getBookmarkPlatform(record) === "twitter") {
-    // Article path — runs BEFORE the tweet text path.
-    // Articles can be the bookmark itself or appear under quoted_status_result.
-    const tweetForArticle = raw as RawApiData;
-    const articleResult: ArticleResultRaw | null =
-      (tweetForArticle as RawApiData & { article?: { article_results?: { result?: ArticleResultRaw } } })
-        .article?.article_results?.result ??
-      (tweetForArticle as RawApiData & { quoted_status_result?: { result?: { article?: { article_results?: { result?: ArticleResultRaw } } } } })
-        .quoted_status_result?.result?.article?.article_results?.result ??
-      null;
-
-    if (articleResult) {
-      const parsed = extractArticleContent(articleResult);
-      if (parsed) return renderArticleNoteBody(parsed);
-      return renderArticleStubBody(articleResult);
-    }
-
-    return expandTweetUrls(roostUnwrapTweet(raw));
-  }
   return raw.text || raw.body?.text || "";
 }
 
 export function extractBookmarkAuthor(record: BookmarkRecord): string {
-  const raw = getBookmarkRawData(record);
-  if (!raw) return "Unknown";
-  if (getBookmarkPlatform(record) === "tiktok") return raw.author?.nickname || raw.author?.uniqueId || "Unknown";
-  if (getBookmarkPlatform(record) === "twitter") {
-    return getTwitterUserName(raw) || getTwitterUserScreenName(raw) || "Unknown";
+  const platform = getBookmarkPlatform(record);
+  if (platform === "tiktok" || platform === "twitter") {
+    return getPlatform(platform as Platform).parse.authorName(record);
   }
   return "Unknown";
 }
 
 export function extractBookmarkAuthorUsername(record: BookmarkRecord): string | null {
-  const raw = getBookmarkRawData(record);
-  if (!raw) return null;
-  if (getBookmarkPlatform(record) === "tiktok") return raw.author?.uniqueId || null;
-  if (getBookmarkPlatform(record) === "twitter") {
-    return getTwitterUserScreenName(raw);
+  const platform = getBookmarkPlatform(record);
+  if (platform === "tiktok" || platform === "twitter") {
+    return getPlatform(platform as Platform).parse.authorHandle(record);
   }
   return null;
 }
@@ -197,18 +174,9 @@ export function buildTikTokVideoUrl(handle: string, itemId: string): string {
 }
 
 export function extractBookmarkUrl(record: BookmarkRecord): string | null {
-  const raw = getBookmarkRawData(record);
-  if (!raw) return null;
   const platform = getBookmarkPlatform(record);
-  const username = extractBookmarkAuthorUsername(record);
-  const itemId = getBookmarkItemId(record);
-  if (platform === "tiktok") {
-    if (username && itemId) return buildTikTokVideoUrl(username, itemId);
-    return null;
-  }
-  if (platform === "twitter") {
-    if (username && itemId) return `https://x.com/${username}/status/${itemId}`;
-    return null;
+  if (platform === "tiktok" || platform === "twitter") {
+    return getPlatform(platform as Platform).parse.url(record);
   }
   return null;
 }

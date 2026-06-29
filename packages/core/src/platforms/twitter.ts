@@ -7,12 +7,17 @@
  */
 import type { PlatformDescriptor } from "./descriptor";
 import { syncTwitter } from "@/sync/twitter-sync";
+import { roostUnwrapTweet } from "@/lib/normalize";
 import {
-  getBookmarkItemId,
-  extractBookmarkText,
-  extractBookmarkAuthor,
-  extractBookmarkAuthorUsername,
-  extractBookmarkUrl,
+  extractArticleContent,
+  renderArticleNoteBody,
+  renderArticleStubBody,
+  type ArticleResultRaw,
+} from "@/lib/article-extract";
+import {
+  getTwitterUserName,
+  getTwitterUserScreenName,
+  expandTweetUrls,
   extractTwitterMedia,
 } from "@/lib/extract";
 // @ts-ignore — raw probe loaded as string by esbuild/vitest rawProbePlugin
@@ -34,11 +39,48 @@ export const twitter: PlatformDescriptor = {
   sync: (wc, webviewEl, opts, onProgress, onRecords, onLog) =>
     syncTwitter(wc, webviewEl, opts, onProgress, onRecords, onLog),
   parse: {
-    id: (record) => getBookmarkItemId(record),
-    caption: (record) => extractBookmarkText(record),
-    authorName: (record) => extractBookmarkAuthor(record),
-    authorHandle: (record) => extractBookmarkAuthorUsername(record),
-    url: (record) => extractBookmarkUrl(record),
+    id: (record) => {
+      const raw = record?.rawData || record?.castData || null;
+      return record?.itemId || raw?.rest_id || raw?.legacy?.id_str || null;
+    },
+    caption: (record) => {
+      const raw = record?.rawData || record?.castData || null;
+      if (!raw) return "";
+      // Article path — runs BEFORE the tweet text path.
+      // Articles can be the bookmark itself or appear under quoted_status_result.
+      const articleResult: ArticleResultRaw | null =
+        (raw as typeof raw & { article?: { article_results?: { result?: ArticleResultRaw } } })
+          .article?.article_results?.result ??
+        (raw as typeof raw & { quoted_status_result?: { result?: { article?: { article_results?: { result?: ArticleResultRaw } } } } })
+          .quoted_status_result?.result?.article?.article_results?.result ??
+        null;
+
+      if (articleResult) {
+        const parsed = extractArticleContent(articleResult);
+        if (parsed) return renderArticleNoteBody(parsed);
+        return renderArticleStubBody(articleResult);
+      }
+
+      return expandTweetUrls(roostUnwrapTweet(raw));
+    },
+    authorName: (record) => {
+      const raw = record?.rawData || record?.castData || null;
+      if (!raw) return "Unknown";
+      return getTwitterUserName(raw) || getTwitterUserScreenName(raw) || "Unknown";
+    },
+    authorHandle: (record) => {
+      const raw = record?.rawData || record?.castData || null;
+      if (!raw) return null;
+      return getTwitterUserScreenName(raw);
+    },
+    url: (record) => {
+      const raw = record?.rawData || record?.castData || null;
+      if (!raw) return null;
+      const username = getTwitterUserScreenName(raw);
+      const itemId = record?.itemId || raw?.rest_id || raw?.legacy?.id_str || null;
+      if (username && itemId) return `https://x.com/${username}/status/${itemId}`;
+      return null;
+    },
     media: (record) => extractTwitterMedia(record),
   },
 };

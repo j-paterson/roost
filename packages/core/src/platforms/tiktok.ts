@@ -8,11 +8,6 @@
 import type { PlatformDescriptor } from "./descriptor";
 import { syncTikTok } from "@/sync/tiktok-sync";
 import {
-  getBookmarkItemId,
-  extractBookmarkText,
-  extractBookmarkAuthor,
-  extractBookmarkAuthorUsername,
-  extractBookmarkUrl,
   extractTikTokMedia,
   extractTikTokSubtitleUrl,
 } from "@/lib/extract";
@@ -35,11 +30,33 @@ export const tiktok: PlatformDescriptor = {
   sync: (wc, webviewEl, opts, onProgress, onRecords, onLog) =>
     syncTikTok(wc, webviewEl, opts, onProgress, onRecords, onLog),
   parse: {
-    id: (record) => getBookmarkItemId(record),
-    caption: (record) => extractBookmarkText(record),
-    authorName: (record) => extractBookmarkAuthor(record),
-    authorHandle: (record) => extractBookmarkAuthorUsername(record),
-    url: (record) => extractBookmarkUrl(record),
+    id: (record) => {
+      const raw = record?.rawData || record?.castData || null;
+      return record?.itemId || raw?.id || raw?.video?.id || null;
+    },
+    caption: (record) => {
+      const raw = record?.rawData || record?.castData || null;
+      if (!raw) return "";
+      return raw.desc || "";
+    },
+    authorName: (record) => {
+      const raw = record?.rawData || record?.castData || null;
+      if (!raw) return "Unknown";
+      return raw.author?.nickname || raw.author?.uniqueId || "Unknown";
+    },
+    authorHandle: (record) => {
+      const raw = record?.rawData || record?.castData || null;
+      if (!raw) return null;
+      return raw.author?.uniqueId || null;
+    },
+    url: (record) => {
+      const raw = record?.rawData || record?.castData || null;
+      if (!raw) return null;
+      const username = raw.author?.uniqueId || null;
+      const itemId = record?.itemId || raw?.id || raw?.video?.id || null;
+      if (username && itemId) return `https://www.tiktok.com/@${username}/video/${itemId}`;
+      return null;
+    },
     media: (record) => extractTikTokMedia(record),
     subtitleUrl: (record) => extractTikTokSubtitleUrl(record),
   },
