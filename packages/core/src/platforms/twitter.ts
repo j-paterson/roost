@@ -19,7 +19,7 @@ import {
   getTwitterUserScreenName,
   expandTweetUrls,
   extractTwitterMedia,
-} from "@/lib/extract";
+} from "@/lib/twitter-helpers";
 // @ts-ignore — raw probe loaded as string by esbuild/vitest rawProbePlugin
 import twitterProbeSource from "../probes/twitter-probe.probe";
 

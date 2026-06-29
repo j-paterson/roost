@@ -8,7 +8,8 @@
  */
 import type { Platform, ElectronWebview, StopSignal, SyncPhaseProgress } from "@/types/sync";
 import type { NormalizedRecord } from "@/lib/normalize";
-import type { BookmarkRecord, extractTikTokMedia, extractTwitterMedia } from "@/lib/extract";
+import type { BookmarkRecord, extractTwitterMedia } from "@/lib/twitter-helpers";
+import type { extractTikTokMedia } from "@/lib/tiktok-helpers";
 
 /** Convenience aliases for the per-platform media shapes. */
 export type TikTokMedia = ReturnType<typeof extractTikTokMedia>;

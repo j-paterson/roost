@@ -6,7 +6,7 @@ import type { EmbeddingCacheEntry } from "@/types/roost";
 import { vaultBasePath } from "@/lib/vault-utils";
 import { cacheDir, cachePath } from "@/lib/roost-paths";
 import { getActiveProvider } from "@/lib/llm-provider";
-import { stripMediaUrls, getTweetMediaUrls } from "@/lib/extract";
+import { stripMediaUrls, getTweetMediaUrls } from "@/lib/twitter-helpers";
 import * as fs from "fs";
 import * as path from "path";
 

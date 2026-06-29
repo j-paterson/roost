@@ -10,7 +10,7 @@ import { syncTikTok } from "@/sync/tiktok-sync";
 import {
   extractTikTokMedia,
   extractTikTokSubtitleUrl,
-} from "@/lib/extract";
+} from "@/lib/tiktok-helpers";
 // @ts-ignore — raw probe loaded as string by esbuild/vitest rawProbePlugin
 import tiktokProbeSource from "../probes/tiktok-probe.probe";
 
