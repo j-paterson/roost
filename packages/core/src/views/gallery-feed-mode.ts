@@ -60,6 +60,7 @@ export class GalleryFeedModeController {
   private feedSyncUnsub: (() => void) | null = null;
   private lastFeedFilterKey: string | null = null;
   private skipped = new Set<string>();
+  private inFlight = new Set<string>();
   private lastActiveRoostId: string | null = null;
   private keydownHandler: ((e: KeyboardEvent) => void) | null = null;
   private lastTrainingEntries: BasesEntry[] = [];
@@ -173,8 +174,10 @@ export class GalleryFeedModeController {
       this.advanceAfterAction(roostId);
       return;
     }
+    if (this.inFlight.has(roostId)) return;
+    this.inFlight.add(roostId);
     const p = action === "confirm" ? this.host.confirmAuto(roostId) : this.host.rejectAuto(roostId);
-    void p.finally(() => this.advanceAfterAction(roostId));
+    void p.finally(() => { this.inFlight.delete(roostId); this.advanceAfterAction(roostId); });
   }
 
   private registerKeyboard(): void {
@@ -214,10 +217,11 @@ export class GalleryFeedModeController {
       },
     });
 
+    const self = this;
     const ctx: FeedRenderContext = {
       app: this.host.app,
       imagePropId: this.host.getImagePropId(),
-      trainingMode: this.trainingMode,
+      get trainingMode() { return self.trainingMode; },
       onTrainingAction: (action, roostId) => {
         this.handleTrainingAction(action, roostId);
       },
