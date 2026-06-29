@@ -4,7 +4,7 @@
  * Moved here from lib/extract.ts to break the extract.ts → registry → twitter.ts → extract.ts
  * circular import. All functions are self-contained with no platform registry dependencies.
  */
-import { roostUnwrapTweet, type RawApiData } from "./normalize";
+import { roostUnwrapTweet, type RawApiData } from "./normalize-helpers";
 import {
   extractArticleContent,
   renderArticleNoteBody,

@@ -1,7 +1,8 @@
 /**
  * X/Twitter sync orchestrator.
  */
-import { roostNormalize, roostUnwrapTweet, type NormalizedRecord } from "../lib/normalize";
+import { roostUnwrapTweet } from "@/lib/normalize-helpers";
+import { roostNormalize, type NormalizedRecord } from "../lib/normalize";
 import type { StopSignal, SyncPhaseProgress, ElectronWebview } from "@/types/sync";
 import { SYNC_BATCH_SIZE, EARLY_OUT_THRESHOLD } from "@/config";
 import { ThreadFetcher } from "./thread-fetcher";

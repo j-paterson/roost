@@ -7,9 +7,8 @@
  * reconstruct the self-thread (same-author reply chain).
  */
 import type { ElectronWebview, StopSignal } from "@/types/sync";
-import type { RawApiData } from "@/lib/normalize";
+import { roostUnwrapTweet, type RawApiData } from "@/lib/normalize-helpers";
 import { getConversationId, getTweetAuthorId, isSelfThreadTail } from "@/lib/extract";
-import { roostUnwrapTweet } from "@/lib/normalize";
 
 const BOOTSTRAP_WAIT_MS = 8000;
 const RL_INITIAL_COOLDOWN_MS = 30_000;

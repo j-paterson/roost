@@ -13,7 +13,8 @@
  * See plans/023-sync-parser-tests.md for the full plan.
  */
 import { describe, it, expect } from "vitest";
-import { roostNormalize, roostUnwrapTweet } from "@/lib/normalize";
+import { roostUnwrapTweet } from "@/lib/normalize-helpers";
+import { roostNormalize } from "@/lib/normalize";
 import {
   isSelfThreadTail,
   getTweetAuthorId,

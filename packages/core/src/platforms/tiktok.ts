@@ -15,7 +15,7 @@ import {
   roostParseEpoch,
   roostTrimTikTok,
   roostBookmarkId,
-} from "@/lib/normalize";
+} from "@/lib/normalize-helpers";
 // @ts-ignore — raw probe loaded as string by esbuild/vitest rawProbePlugin
 import tiktokProbeSource from "../probes/tiktok-probe.probe";
 

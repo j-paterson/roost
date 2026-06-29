@@ -11,7 +11,7 @@ import {
   roostUnwrapTweet,
   roostParseTwitterDate,
   roostBookmarkId,
-} from "@/lib/normalize";
+} from "@/lib/normalize-helpers";
 import {
   extractArticleContent,
   renderArticleNoteBody,

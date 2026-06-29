@@ -315,7 +315,7 @@ function platformAndId(roostId: string): { platform: Platform; id: string } | nu
 
 /**
  * Read the raw sync sidecar JSON for a roostId. Returns null if missing,
- * unreadable, malformed, or the platform isn't twitter/tiktok.
+ * unreadable, malformed, or the platform isn't a registered platform (twitter, tiktok).
  */
 export function readRawJson(
   vault: Vault,
