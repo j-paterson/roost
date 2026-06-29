@@ -67,6 +67,10 @@ packages/core/src/
 │   ├── hub/                         # Hub dashboard (hub-body, integrations + pipelines panels)
 │   ├── hooks/                       # use-smart-assign, use-roost-pipeline-rows, …
 │   └── lib/group-store.ts           # Smart Assign proposal tree state
+├── platforms/                       # PlatformDescriptor registry (2026-06-29) — one
+│   ├── descriptor.ts                #   module per sync platform = config+auth+sync+
+│   ├── registry.ts                  #   card+parsers. getPlatform()/enabledPlatforms().
+│   └── tiktok.ts, twitter.ts        #   "add a platform = one descriptor". eagle = special case.
 ├── sync/
 │   ├── tiktok-sync.ts, twitter-sync.ts, run-platform-sync.ts
 │   ├── vault-writer.ts              # Notes + media + scanIncompleteIds buckets
