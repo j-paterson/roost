@@ -56,6 +56,7 @@ export class GalleryFeedModeController {
 
   private feedSplitMount: FeedSplitMount | null = null;
   private feedHandle: FeedPanelHandle | null = null;
+  private feedTrainToggle: HTMLButtonElement | null = null;
   private readonly feedSync: FeedSync = createFeedSync();
   private feedSyncUnsub: (() => void) | null = null;
   private lastFeedFilterKey: string | null = null;
@@ -122,6 +123,7 @@ export class GalleryFeedModeController {
       }
       this.lastTrainingEntries = [];
     }
+    this.syncFeedTrainToggle();
     this.host.onViewModeChanged();
   }
 
@@ -249,12 +251,16 @@ export class GalleryFeedModeController {
     const initialEntries = this.trainingMode ? this.trainingEntries() : this.host.getScopedEntries();
     if (this.trainingMode) this.lastTrainingEntries = initialEntries;
 
+    // Mount the scroller into a child host so the in-pane Train toggle can sit as an
+    // absolute overlay on the pane (mountFeedPanel turns its container into the scroller).
+    const scrollHost = this.feedSplitMount.rightPane.createDiv();
     this.feedHandle = mountFeedPanel(
-      this.feedSplitMount.rightPane,
+      scrollHost,
       ctx,
       this.feedSync,
       initialEntries,
     );
+    this.mountFeedTrainToggle(this.feedSplitMount.rightPane);
 
     this.feedSyncUnsub = this.feedSync.subscribe((roostId, source) => {
       this.lastActiveRoostId = roostId;
@@ -273,9 +279,27 @@ export class GalleryFeedModeController {
     this.feedSyncUnsub = null;
     this.feedHandle?.dispose();
     this.feedHandle = null;
+    this.feedTrainToggle = null; // torn down with the split DOM
     this.feedSplitMount?.teardown();
     this.feedSplitMount = null;
     this.applyFeedActiveHighlight(null);
+  }
+
+  /** In-pane Train toggle: overlaid on the feed pane so training can be toggled from
+   *  inside the feed (the gallery-toolbar button remains the entry point from grid view). */
+  private mountFeedTrainToggle(pane: HTMLElement): void {
+    const btn = pane.createEl("button", { cls: "roost-feed-train-toggle" });
+    btn.addEventListener("click", () => this.setTrainingMode(!this.trainingMode));
+    this.feedTrainToggle = btn;
+    this.syncFeedTrainToggle();
+  }
+
+  private syncFeedTrainToggle(): void {
+    const btn = this.feedTrainToggle;
+    if (!btn) return;
+    btn.classList.toggle("is-active", this.trainingMode);
+    btn.setText(this.trainingMode ? "✓ Training" : "Train");
+    btn.title = this.trainingMode ? "Exit training mode" : "Enter training mode";
   }
 
   private applyFeedActiveHighlight(roostId: string | null): void {
