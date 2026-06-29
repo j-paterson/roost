@@ -10,11 +10,17 @@ export function registerSeedCommands(plugin: RoostCommandHost): void {
     id: "seed-training-set",
     name: "Seed training set from existing labels",
     callback: () => {
-      const { seeded, byClass } = seedTrainingSetFromVault(plugin.app, plugin.settings.syncFolder);
-      const classes = Object.keys(byClass).length;
-      const msg = `Seeded ${seeded} human labels across ${classes} categories into the training set.`;
-      plugin.fireLog(msg);
-      new Notice(msg);
+      try {
+        const { seeded, byClass } = seedTrainingSetFromVault(plugin.app, plugin.settings.syncFolder);
+        const classes = Object.keys(byClass).length;
+        const msg = `Seeded ${seeded} human labels across ${classes} categories into the training set.`;
+        plugin.fireLog(msg);
+        new Notice(msg);
+      } catch (e) {
+        const msg = `Seed training set failed: ${e instanceof Error ? e.message : String(e)}`;
+        plugin.fireLog(msg);
+        new Notice(msg);
+      }
     },
   });
 }
