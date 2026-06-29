@@ -183,7 +183,14 @@ export function runRetrain(vault: Vault, log: (m: string) => void): RetrainOutco
     } catch {
       log("[retrain] restore also failed — manual inspection needed");
     }
-    const outcome: RetrainOutcome = { ran: true, swapped: false, reason: "write failed, restored previous" };
+    const outcome: RetrainOutcome = {
+      ran: true,
+      swapped: false,
+      reason: "write failed, restored previous",
+      avgOverallDelta: foldDecision?.avgOverallDelta,
+      avgMacroDelta: foldDecision?.avgMacroDelta,
+      catastrophic: foldDecision?.catastrophicClasses,
+    };
     appendRetrainLog(vault, { ts: Date.now(), ...outcome });
     return outcome;
   }

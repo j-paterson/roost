@@ -17,7 +17,7 @@ import { buildClusteringContext } from "@/ui/lib/smart-assign/clustering-context
 import { loadTagDetectors, scoreWithTagDetectors, type TagAssignment } from "@/pipeline/evaluate";
 import { augmentUncensoredAssignments } from "@/pipeline/uncensored-augment";
 import { buildFileIndex, vaultBasePath } from "@/lib/vault-utils";
-import { runRetrain, shouldRetrain, newLabelsSince } from "@/pipeline/retrain";
+import { runRetrain, shouldRetrain, newLabelsSince, type RetrainOutcome } from "@/pipeline/retrain";
 import { loadTrainingSet } from "@/pipeline/training-set";
 import { loadRetrainMeta } from "@/pipeline/head-store";
 
@@ -61,6 +61,33 @@ export interface SmartAssignClusteringHost {
 }
 
 /**
+ * Pure helper: map a RetrainOutcome to a user-visible Notice string, or null if
+ * no Notice should be shown (outcome.ran === false).
+ *
+ * Extracted for testability — no Obsidian runtime dependency. The three-way
+ * branch on reason ensures a disk write failure never shows the user a misleading
+ * quality-regression message.
+ */
+export function retrainNoticeMessage(outcome: RetrainOutcome): string | null {
+  if (!outcome.ran) return null;
+  if (outcome.swapped) {
+    const pct =
+      outcome.avgMacroDelta !== undefined
+        ? `+${(outcome.avgMacroDelta * 100).toFixed(1)}%`
+        : "+?%";
+    return `Classifier improved (${pct} macro)`;
+  }
+  if (outcome.reason === "write failed, restored previous") {
+    return "Retrain failed (write error) — kept current head";
+  }
+  const regressor =
+    outcome.catastrophic && outcome.catastrophic.length > 0
+      ? outcome.catastrophic.join(", ")
+      : "overall/macro";
+  return `Retrain skipped — would regress ${regressor}`;
+}
+
+/**
  * Self-Improving Loop: attempt a retrain BEFORE step-1 scoring so the current
  * run benefits from the improved head. Runs only when smartAssignAutoRetrain is
  * enabled, the trigger threshold is met, and is wrapped in its own try/catch so
@@ -76,21 +103,8 @@ export function maybeRetrainAtRunStart(host: Pick<SmartAssignClusteringHost, "ap
     const since = loadRetrainMeta(vault).lastRetrainTs;
     if (shouldRetrain({ newLabelsSinceLastTrain: newLabelsSince(ts, since), newlyEligibleCount: 0 })) {
       const outcome = runRetrain(vault, host.log);
-      if (outcome.ran) {
-        if (outcome.swapped) {
-          const pct =
-            outcome.avgMacroDelta !== undefined
-              ? `+${(outcome.avgMacroDelta * 100).toFixed(1)}%`
-              : "+?%";
-          new Notice(`Classifier improved (${pct} macro)`);
-        } else {
-          const regressor =
-            outcome.catastrophic && outcome.catastrophic.length > 0
-              ? outcome.catastrophic.join(", ")
-              : "overall/macro";
-          new Notice(`Retrain skipped — would regress ${regressor}`);
-        }
-      }
+      const msg = retrainNoticeMessage(outcome);
+      if (msg) new Notice(msg);
     }
   } catch (e: unknown) {
     host.log(`[retrain] failed (kept current head): ${e instanceof Error ? e.message : String(e)}`);

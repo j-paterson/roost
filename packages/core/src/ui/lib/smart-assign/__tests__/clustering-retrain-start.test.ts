@@ -28,7 +28,8 @@ import { runRetrain, shouldRetrain, newLabelsSince } from "@/pipeline/retrain";
 import { loadTrainingSet } from "@/pipeline/training-set";
 import { loadRetrainMeta } from "@/pipeline/head-store";
 import type { TrainingSet } from "@/pipeline/training-set";
-import { maybeRetrainAtRunStart } from "@/ui/lib/smart-assign/clustering";
+import { maybeRetrainAtRunStart, retrainNoticeMessage } from "@/ui/lib/smart-assign/clustering";
+import type { RetrainOutcome } from "@/pipeline/retrain";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -121,5 +122,58 @@ describe("maybeRetrainAtRunStart", () => {
 
     expect(() => maybeRetrainAtRunStart(host)).not.toThrow();
     expect(host.log).toHaveBeenCalledWith(expect.stringContaining("retrain boom"));
+  });
+});
+
+// ── retrainNoticeMessage — pure helper, no Obsidian runtime needed ────────────
+
+describe("retrainNoticeMessage", () => {
+  it("returns null when outcome.ran is false (not triggered)", () => {
+    const outcome: RetrainOutcome = { ran: false, swapped: false, reason: "no eligible training data" };
+    expect(retrainNoticeMessage(outcome)).toBeNull();
+  });
+
+  it("returns improvement string on swap with macro delta", () => {
+    const outcome: RetrainOutcome = { ran: true, swapped: true, reason: "gate passed", avgMacroDelta: 0.034 };
+    expect(retrainNoticeMessage(outcome)).toBe("Classifier improved (+3.4% macro)");
+  });
+
+  it("returns improvement string with +?% when avgMacroDelta is undefined", () => {
+    const outcome: RetrainOutcome = { ran: true, swapped: true, reason: "first head" };
+    expect(retrainNoticeMessage(outcome)).toBe("Classifier improved (+?% macro)");
+  });
+
+  it("returns write-error string (NOT would-regress) when reason is 'write failed, restored previous'", () => {
+    const outcome: RetrainOutcome = {
+      ran: true,
+      swapped: false,
+      reason: "write failed, restored previous",
+      avgMacroDelta: -0.05,
+      catastrophic: [],
+    };
+    const msg = retrainNoticeMessage(outcome);
+    expect(msg).toBe("Retrain failed (write error) — kept current head");
+    expect(msg).not.toContain("would regress");
+  });
+
+  it("returns would-regress with catastrophic classes on gate failure", () => {
+    const outcome: RetrainOutcome = {
+      ran: true,
+      swapped: false,
+      reason: "gate failed",
+      catastrophic: ["nsfw", "violence"],
+    };
+    expect(retrainNoticeMessage(outcome)).toBe("Retrain skipped — would regress nsfw, violence");
+  });
+
+  it("returns would-regress with 'overall/macro' fallback when catastrophic is empty", () => {
+    const outcome: RetrainOutcome = {
+      ran: true,
+      swapped: false,
+      reason: "gate failed",
+      catastrophic: [],
+      avgMacroDelta: -0.02,
+    };
+    expect(retrainNoticeMessage(outcome)).toBe("Retrain skipped — would regress overall/macro");
   });
 });

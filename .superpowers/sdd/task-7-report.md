@@ -1,70 +1,47 @@
-# Task 7 Report — Per-item rejected-class suppression in the cascade
+# Task 7 Report: Observability — retrain-log + notice
 
 ## Status: DONE
 
-**Commit:** `1a9573e`
+**Commit:** `8fff93a`
 
 ---
 
-## TDD Red/Green
+## TDD Red/Green for parseRetrainLines
 
-### Red (failing test output)
-```
-FAIL  packages/core/src/pipeline/__tests__/evaluate-suppression.test.ts
-AssertionError: expected 'Tech' not to be 'Tech' // Object.is equality
-```
-`suppressedClasses` did not exist yet; centroid assigned Tech (nearest centroid, sim=1.0 >= CENTROID_REJECT_TAU).
+### Red
+Test at `packages/core/src/pipeline/__tests__/retrain-log.test.ts` importing `parseRetrainLines` from non-existent `@/pipeline/retrain-log` — vitest failed with module-not-found (TransformPluginContext error), 0 tests run.
 
-### Green (passing)
-```
-Test Files  3 passed (3)
-     Tests  8 passed (8)
-```
-After implementation: `x` is unmatched (Tech suppressed, Food has sim=0 < CENTROID_REJECT_TAU).
+### Green
+After creating `retrain-log.ts`, all 3 tests passed in 208ms (valid+garbage parse, empty string, optional delta fields).
 
 ---
 
-## Exact lines changed in evaluate.ts
+## RetrainOutcome + log wiring
 
-### ScoreOpts interface (after `fullCanon?: boolean;`):
-```ts
-/** Per-item set of category names the cascade must not assign (rejected by the user).
- *  Applied at BOTH the head tier (if head picks a banned class, defer to centroid) and
- *  the centroid tier (banned centroids are excluded before picking the top candidate).
- *  Has no effect when undefined/absent — existing cascade behavior is fully preserved. */
-suppressedClasses?: Map<string, Set<string>>;
-```
+`RetrainOutcome` gains `avgOverallDelta?`, `avgMacroDelta?`, `catastrophic?: string[]`. `appendRetrainLog` is called on all 6 return paths of `runRetrain`:
 
-### embeddingOnly cascade block — per-item loop, after vec guard (real local variable names):
-```ts
-const banned = opts.suppressedClasses?.get(id);
-```
-
-### Head tier suppression (after the stacked/head assignment blocks):
-```ts
-// Suppression — if head placed the item in a banned class, defer to centroid.
-if (tier !== null && banned?.has(cat)) { tier = null; cat = ""; conf = 0; }
-```
-
-### Centroid tier suppression (after building `ranked`, before picking `ranked[0]`):
-```ts
-// Suppression — exclude banned classes before picking the top centroid candidate
-// so a banned class is never the top pick and never appears in topCentroids.
-if (banned) ranked = ranked.filter(c => !banned.has(c.name));
-```
-`ranked` is then used by the existing `ranked[0].sim >= CENTROID_REJECT_TAU` pick and by the `topCentroids` slice — both naturally see the filtered list.
+| Path | ran | swapped | delta fields |
+|---|---|---|---|
+| no eligible data | false | false | none |
+| no gate folds | false | false | none |
+| gate failed | true | false | avgOverallDelta, avgMacroDelta, catastrophic from foldDecision |
+| trainer returned null | false | false | none |
+| write failed, restored | true | false | none |
+| swapped (gate passed / first head) | true | true | from foldDecision where available |
 
 ---
 
-## How head-tier AND centroid-tier suppression was confirmed
+## Notice wiring
 
-**Centroid-tier** (direct test): `evaluate-suppression.test.ts` — no `classifierHead` or `stackedHeads`, so `rawHead === null` and `rawStackedHeads === null`; item goes straight to centroid tier. Tech centroid is nearest (sim=1.0); suppression filter removes it from `ranked`; next candidate Food has sim=0 < CENTROID_REJECT_TAU -> item is unmatched.
+`Notice` imported from `"obsidian"` in `clustering.ts`. `maybeRetrainAtRunStart` now captures the `runRetrain` return; when `outcome.ran`:
+- swap: `"Classifier improved (+X.X% macro)"` using `outcome.avgMacroDelta`
+- reject: `"Retrain skipped — would regress {catastrophic list or 'overall/macro'}"` 
 
-**Head-tier** (structural confirmation): the suppression check `if (tier !== null && banned?.has(cat)) { tier = null; ... }` is inserted immediately after the stacked/head assignment blocks. If either head assigns a banned class, the check clears `tier` to `null`, which causes the `if (tier === null)` centroid block to run. The centroid block's filter then also applies. Cross-tier suppression is guaranteed by the two independent checks in sequence.
+All inside the existing try/catch — notice failure cannot break the run.
 
 ---
 
-## TypeScript result
+## tsc result
 
 ```
 npx tsc --noEmit -p tsconfig.json
@@ -73,83 +50,61 @@ npx tsc --noEmit -p tsconfig.json
 
 ---
 
-## Full pipeline test suite
+## Full suite result
 
 ```
-Test Files  59 passed (59)
-     Tests  690 passed (690)
-Duration  2.70s
+Test Files  192 passed | 1 skipped (193)
+Tests       1734 passed | 8 skipped (1742)
+Duration    7.17s
 ```
 
-All pre-existing tests unchanged.
+Zero failures. New test file adds 3 tests to the passing count.
 
 ---
 
-## Head-tier test (follow-up)
+## Concerns
 
-### Test code added to `packages/core/src/pipeline/__tests__/evaluate-suppression.test.ts`
+None. The deferred class-keeps-blocking honesty flag was not added per spec (YAGNI; retrain-log carries the data to add it later).
 
-```typescript
-describe("scoreAgainstCategories suppression (head tier)", () => {
-  beforeEach(() => __resetScoreCacheForTests());
+---
 
-  it("does not assign a suppressed class when the stacked head confidently predicts it; falls through to centroid fallback", async () => {
-    // Stacked head with classes ["A","B","C"]: item vec at dim-0 fires "A" with
-    // conf ≈ 1.0, well above HEAD_REJECT_TAU=0.6149.
-    const stacked = mkStackedHeads(["A", "B", "C"]);
+## Notice fix
 
-    // Item "x": unit vector at dim 0 → head emits "A" confidently.
-    const cache: Record<string, EmbeddingCacheEntry> = {
-      x: { vision: null, vec: [9, 0, 0, 0], vecText: [9, 0, 0, 0], summary: "s", category: null },
-    };
+### FIX 1 — Distinct write-error Notice (`clustering.ts`)
 
-    // Categories: "A" (same centroid direction as item) and "B" (fallback).
-    // Both centroids align with item so after "A" is suppressed from ranked,
-    // "B" remains at sim=1.0 ≥ CENTROID_REJECT_TAU=0.50 → centroid fallback.
-    const cats: CategoryDef[] = [
-      { name: "A", description: "", centroid: unit(0) },
-      { name: "B", description: "", centroid: unit(0) },
-    ];
+Extracted a pure helper `retrainNoticeMessage(outcome: RetrainOutcome): string | null` from the inline Notice logic in `maybeRetrainAtRunStart`. The helper implements a 3-way branch:
 
-    // Control: WITHOUT suppression → head tier fires and assigns "A".
-    const resControl = await scoreAgainstCategories({
-      itemIds: ["x"], cache, categories: cats,
-      embeddingOnly: true, stackedHeads: stacked,
-    });
-    expect(resControl.assignments.get("x")).toBe("A");
+| `outcome` condition | Notice string |
+|---|---|
+| `!ran` | `null` (no notice) |
+| `swapped` | `"Classifier improved (+X.X% macro)"` |
+| `!swapped && reason === "write failed, restored previous"` | `"Retrain failed (write error) — kept current head"` |
+| `!swapped` otherwise (gate rejected) | `"Retrain skipped — would regress {classes or 'overall/macro'}"` |
 
-    // WITH suppression: "A" is banned for item "x".
-    // Head emits "A" → suppression drops it → centroid tier picks "B" → assigned "B".
-    const res = await scoreAgainstCategories({
-      itemIds: ["x"], cache, categories: cats,
-      embeddingOnly: true, stackedHeads: stacked,
-      suppressedClasses: new Map([["x", new Set(["A"])]]),
-    });
-    expect(res.assignments.get("x")).not.toBe("A");
-    expect(res.assignments.get("x")).toBe("B");
-    expect(res.unmatched).not.toContain("x");
-  });
-});
-```
+`maybeRetrainAtRunStart` now calls `const msg = retrainNoticeMessage(outcome); if (msg) new Notice(msg);` — the Notice path is still inside the existing try/catch, so a Notice failure cannot break the run. `RetrainOutcome` type is imported via named type import.
 
-### Run output
+### FIX 2 — Gate deltas on write-fail path (`retrain.ts`)
+
+The write-fail return path now spreads `foldDecision?.avgOverallDelta`, `foldDecision?.avgMacroDelta`, and `foldDecision?.catastrophicClasses` into both the returned `RetrainOutcome` and the `appendRetrainLog` record. This matches what the gate-pass and gate-fail paths already do, so the log no longer loses gate metrics that were good enough to trigger a swap attempt.
+
+### New tests (`clustering-retrain-start.test.ts`)
+
+Six `retrainNoticeMessage` cases added:
+
+- `ran: false` → `null`
+- swap with macro delta → `"Classifier improved (+3.4% macro)"`
+- swap without delta → `"Classifier improved (+?% macro)"`
+- write-fail reason → `"Retrain failed (write error)…"` (asserts NOT "would regress")
+- gate-fail with catastrophic classes → `"Retrain skipped — would regress nsfw, violence"`
+- gate-fail with empty catastrophic → `"Retrain skipped — would regress overall/macro"`
+
+### Run result
 
 ```
-Test Files  1 passed (1)
-     Tests  2 passed (2)
-Duration  274ms
+npx tsc --noEmit   → clean (no output)
+npx vitest run     → Test Files 192 passed | 1 skipped (193)
+                     Tests      1740 passed | 8 skipped (1748)
+                     Duration   7.19s
 ```
 
-Full pipeline suite:
-
-```
-Test Files  59 passed (59)
-     Tests  691 passed (691)
-Duration  2.55s
-```
-
-TypeScript: clean (`npx tsc --noEmit -p tsconfig.json` — no output).
-
-### Production code changed
-
-None. Only `packages/core/src/pipeline/__tests__/evaluate-suppression.test.ts` was modified.
++6 tests vs. prior baseline (1734 → 1740).
