@@ -53,6 +53,7 @@ describe("humanLabelsFromFrontmatter", () => {
       { roost_category: "Tech", roost_assigned_by: "human" },                  // no roost_id
       { roost_id: "e1", roost_category: "  ", roost_assigned_by: "human" },     // empty
       { roost_id: "e2", roost_category: "null", roost_assigned_by: "human" },   // sentinel
+      { roost_id: "e5", roost_category: "undefined", roost_assigned_by: "human" }, // sentinel
       { roost_id: "e3", roost_assigned_by: "human" },                          // absent category
       undefined,                                                               // no frontmatter
     ]);
