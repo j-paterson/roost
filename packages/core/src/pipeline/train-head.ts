@@ -6,7 +6,7 @@ import { loadEmbeddingCache } from "@/pipeline/shared";
 import { TRAIN_ELIGIBILITY_MIN, OOF_FOLDS } from "@/config";
 
 export interface TrainingRow {
-  id: string; vecText: number[]; vecVision: number[]; category: string;
+  id: string; vecText: number[]; vecVision: number[]; category: string; ts: number;
 }
 
 export function buildTrainingRows(vault: Vault): TrainingRow[] {
@@ -14,13 +14,13 @@ export function buildTrainingRows(vault: Vault): TrainingRow[] {
   const eligible = new Set(eligibleCategories(ts, TRAIN_ELIGIBILITY_MIN));
   const cache = loadEmbeddingCache(vault);
   const rows: TrainingRow[] = [];
-  for (const [id, { category }] of Object.entries(ts.positives)) {
+  for (const [id, { category, ts: at }] of Object.entries(ts.positives)) {
     if (!eligible.has(category)) continue;
     const e = cache[id];
     if (!e) continue;
     const vecVision = e.vec; const vecText = e.vecText ?? e.vec;
     if (!vecVision || !vecText) continue;
-    rows.push({ id, vecText, vecVision, category });
+    rows.push({ id, vecText, vecVision, category, ts: at });
   }
   return rows;
 }

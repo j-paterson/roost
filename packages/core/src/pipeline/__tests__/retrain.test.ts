@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { Vault } from "obsidian";
-import { shouldRetrain, decideSwap, runRetrain } from "@/pipeline/retrain";
+import { shouldRetrain, decideSwap, decideFromFolds, runRetrain } from "@/pipeline/retrain";
 import type { StackedHeads } from "@/pipeline/classifier-head";
 import type { GateResult } from "@/pipeline/acceptance-gate";
 import type { ClassifierHeadData, MetaHeadData } from "@/pipeline/classifier-head";
@@ -23,27 +23,33 @@ vi.mock("@/pipeline/acceptance-gate", () => ({
 vi.mock("@/pipeline/head-store", () => ({
   writeStackedHeads: vi.fn(),
   restorePreviousHeads: vi.fn(),
+  loadRetrainMeta: vi.fn(),
+  saveRetrainMeta: vi.fn(),
 }));
 
 // Import after mocks so we get the mocked versions for vi.mocked() assertions.
 import { buildTrainingRows, trainStackedHeadsFromRows } from "@/pipeline/train-head";
 import { loadStackedHeads } from "@/pipeline/classifier-head";
 import { evaluateGate } from "@/pipeline/acceptance-gate";
-import { writeStackedHeads, restorePreviousHeads } from "@/pipeline/head-store";
+import { writeStackedHeads, restorePreviousHeads, loadRetrainMeta, saveRetrainMeta } from "@/pipeline/head-store";
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 
-/** 5 rows for one class so splitHoldout's every-5th rule yields 1 holdout sample. */
-const fakeRows = Array.from({ length: 5 }, (_, i) => ({
-  id: `item${i}`,
-  vecText: [1, 0],
-  vecVision: [0, 1],
-  category: "catA",
-}));
+const FAKE_LAST_RETRAIN_TS = 1000;
+
+/**
+ * 3 rows for one class: with GATE_KFOLDS=3, each fold gets exactly 1 holdout item.
+ * All have ts <= FAKE_LAST_RETRAIN_TS so baseline rows are always non-empty.
+ */
+const fakeRows = [
+  { id: "item0", vecText: [1, 0], vecVision: [0, 1], category: "catA", ts: 100 },
+  { id: "item1", vecText: [1, 0], vecVision: [0, 1], category: "catA", ts: 200 },
+  { id: "item2", vecText: [1, 0], vecVision: [0, 1], category: "catA", ts: 300 },
+];
 
 const fakeCandidateData: { text: ClassifierHeadData; vision: ClassifierHeadData; meta: MetaHeadData } = {
-  text:   { classes: ["catA"], W: [[1, 0]], b: [0], dim: 2, norm: "l2",   trainedOn: 4, version: 1 },
-  vision: { classes: ["catA"], W: [[1, 0]], b: [0], dim: 2, norm: "l2",   trainedOn: 4, version: 1 },
+  text:   { classes: ["catA"], W: [[1, 0]], b: [0], dim: 2, norm: "l2",   trainedOn: 3, version: 1 },
+  vision: { classes: ["catA"], W: [[1, 0]], b: [0], dim: 2, norm: "l2",   trainedOn: 3, version: 1 },
   meta:   { classes: ["catA"], W: [[1, 1]], b: [0], inDim: 2, norm: "none", version: 1 },
 };
 
@@ -54,11 +60,15 @@ const fakeCurrentHeads: StackedHeads = {
 };
 
 const gatePass: GateResult = {
-  pass: true, overallCurrent: 0.8, overallCandidate: 0.9, perClass: {}, failures: [],
+  pass: true, overallCurrent: 0.8, overallCandidate: 0.9,
+  macroCurrent: 0.8, macroCandidate: 0.9,
+  catastrophic: [], failures: [],
 };
 
 const gateFail: GateResult = {
-  pass: false, overallCurrent: 0.9, overallCandidate: 0.7, perClass: {}, failures: ["overall regressed -20.0pp"],
+  pass: false, overallCurrent: 0.9, overallCandidate: 0.7,
+  macroCurrent: 0.9, macroCandidate: 0.7,
+  catastrophic: [], failures: ["macro-recall regressed -20.0pp"],
 };
 
 const mockVault = {} as unknown as Vault;
@@ -90,8 +100,14 @@ describe("shouldRetrain", () => {
 
 describe("decideSwap", () => {
   it("swaps when the gate passes, keeps when it fails", () => {
-    expect(decideSwap({ pass: true, overallCurrent: 0.5, overallCandidate: 0.6, perClass: {}, failures: [] }).swapped).toBe(true);
-    expect(decideSwap({ pass: false, overallCurrent: 0.6, overallCandidate: 0.5, perClass: {}, failures: ["x"] }).swapped).toBe(false);
+    expect(decideSwap({
+      pass: true, overallCurrent: 0.5, overallCandidate: 0.6,
+      macroCurrent: 0.5, macroCandidate: 0.6, catastrophic: [], failures: [],
+    }).swapped).toBe(true);
+    expect(decideSwap({
+      pass: false, overallCurrent: 0.6, overallCandidate: 0.5,
+      macroCurrent: 0.6, macroCandidate: 0.5, catastrophic: [], failures: ["x"],
+    }).swapped).toBe(false);
   });
 
   it("swaps when there is no current head (first-ever train)", () => {
@@ -103,9 +119,32 @@ describe("decideSwap", () => {
       pass: false,
       overallCurrent: 0.5,
       overallCandidate: 0.9,
-      perClass: { "catA": { current: 0.9, candidate: 0.7, delta: -0.2 } },
-      failures: ["class catA regressed -20.0pp"],
+      macroCurrent: 0.9,
+      macroCandidate: 0.7,
+      catastrophic: ["catA"],
+      failures: ["class catA collapsed -20.0pp"],
     }).swapped).toBe(false);
+  });
+});
+
+// ── decideFromFolds ────────────────────────────────────────────────────────────
+
+function gr(ovC: number, ovK: number, maC: number, maK: number, cata: string[] = []): GateResult {
+  return { pass: true, overallCurrent: ovC, overallCandidate: ovK, macroCurrent: maC, macroCandidate: maK, catastrophic: cata, failures: [] };
+}
+
+describe("decideFromFolds", () => {
+  it("passes when avg overall & macro both non-negative and no majority catastrophe", () => {
+    const r = decideFromFolds([gr(.6,.63,.6,.66), gr(.6,.62,.6,.65), gr(.6,.64,.6,.67)], 0);
+    expect(r.pass).toBe(true); expect(r.avgMacroDelta).toBeGreaterThan(0);
+  });
+  it("rejects when avg macro regresses", () => {
+    const r = decideFromFolds([gr(.66,.65,.65,.63), gr(.66,.64,.65,.62), gr(.66,.65,.65,.64)], 0);
+    expect(r.pass).toBe(false);
+  });
+  it("rejects when a class is catastrophic in a majority of folds", () => {
+    const r = decideFromFolds([gr(.6,.62,.6,.63,["X"]), gr(.6,.62,.6,.63,["X"]), gr(.6,.62,.6,.63)], 0);
+    expect(r.catastrophicClasses).toContain("X"); expect(r.pass).toBe(false);
   });
 });
 
@@ -114,17 +153,18 @@ describe("decideSwap", () => {
 describe("runRetrain", () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it("gate passes → writeStackedHeads called once; result {ran:true, swapped:true}", () => {
+  it("gate passes → writeStackedHeads called once, saveRetrainMeta called once; result {ran:true, swapped:true}", () => {
     vi.mocked(buildTrainingRows).mockReturnValue(fakeRows);
     vi.mocked(trainStackedHeadsFromRows).mockReturnValue(fakeCandidateData);
     vi.mocked(loadStackedHeads).mockReturnValue(fakeCurrentHeads);
+    vi.mocked(loadRetrainMeta).mockReturnValue({ lastRetrainTs: FAKE_LAST_RETRAIN_TS });
     vi.mocked(evaluateGate).mockReturnValue(gatePass);
-    // writeStackedHeads and restorePreviousHeads are already vi.fn() (no-op by default)
 
     const result = runRetrain(mockVault, () => {});
 
     expect(result).toMatchObject({ ran: true, swapped: true, reason: "gate passed" });
     expect(vi.mocked(writeStackedHeads)).toHaveBeenCalledOnce();
+    expect(vi.mocked(saveRetrainMeta)).toHaveBeenCalledOnce();
     expect(vi.mocked(restorePreviousHeads)).not.toHaveBeenCalled();
   });
 
@@ -132,31 +172,28 @@ describe("runRetrain", () => {
     vi.mocked(buildTrainingRows).mockReturnValue(fakeRows);
     vi.mocked(trainStackedHeadsFromRows).mockReturnValue(fakeCandidateData);
     vi.mocked(loadStackedHeads).mockReturnValue(fakeCurrentHeads);
+    vi.mocked(loadRetrainMeta).mockReturnValue({ lastRetrainTs: FAKE_LAST_RETRAIN_TS });
     vi.mocked(evaluateGate).mockReturnValue(gateFail);
 
     const result = runRetrain(mockVault, () => {});
 
     expect(result).toMatchObject({ ran: true, swapped: false, reason: "gate failed" });
     expect(vi.mocked(writeStackedHeads)).not.toHaveBeenCalled();
+    expect(vi.mocked(saveRetrainMeta)).not.toHaveBeenCalled();
     expect(vi.mocked(restorePreviousHeads)).not.toHaveBeenCalled();
   });
 
-  it("holdout empty with existing head → skips retrain to protect live head; writeStackedHeads NOT called", () => {
-    // 3 rows of one class: n values are 0,1,2 — none satisfy n%5===4 → holdout is empty.
-    const sparseRows = Array.from({ length: 3 }, (_, i) => ({
-      id: `sparse${i}`,
-      vecText: [1, 0],
-      vecVision: [0, 1],
-      category: "catA",
-    }));
-    vi.mocked(buildTrainingRows).mockReturnValue(sparseRows);
+  it("no baseline rows for any fold → protects live head; result {ran:false, swapped:false, reason:'no gate folds'}", () => {
+    // All rows have ts > lastRetrainTs → baselineRows empty for every fold → no usable folds.
+    const futureRows = fakeRows.map((r) => ({ ...r, ts: 9999 }));
+    vi.mocked(buildTrainingRows).mockReturnValue(futureRows);
     vi.mocked(loadStackedHeads).mockReturnValue(fakeCurrentHeads);
-    // trainStackedHeadsFromRows should NOT be reached, but mock defensively.
+    vi.mocked(loadRetrainMeta).mockReturnValue({ lastRetrainTs: 0 });
     vi.mocked(trainStackedHeadsFromRows).mockReturnValue(fakeCandidateData);
 
     const result = runRetrain(mockVault, () => {});
 
-    expect(result).toEqual({ ran: false, swapped: false, reason: "holdout empty, cannot gate" });
+    expect(result).toEqual({ ran: false, swapped: false, reason: "no gate folds" });
     expect(vi.mocked(writeStackedHeads)).not.toHaveBeenCalled();
   });
 
@@ -164,6 +201,7 @@ describe("runRetrain", () => {
     vi.mocked(buildTrainingRows).mockReturnValue(fakeRows);
     vi.mocked(trainStackedHeadsFromRows).mockReturnValue(fakeCandidateData);
     vi.mocked(loadStackedHeads).mockReturnValue(fakeCurrentHeads);
+    vi.mocked(loadRetrainMeta).mockReturnValue({ lastRetrainTs: FAKE_LAST_RETRAIN_TS });
     vi.mocked(evaluateGate).mockReturnValue(gatePass);
     vi.mocked(writeStackedHeads).mockImplementation(() => { throw new Error("disk full"); });
 
@@ -172,5 +210,6 @@ describe("runRetrain", () => {
 
     expect(result).toMatchObject({ ran: true, swapped: false, reason: "write failed, restored previous" });
     expect(vi.mocked(restorePreviousHeads)).toHaveBeenCalledOnce();
+    expect(vi.mocked(saveRetrainMeta)).not.toHaveBeenCalled();
   });
 });

@@ -9,7 +9,7 @@ function rows() {
   for (const c of ["A", "B", "C"]) for (let k = 0; k < 9; k++) {
     const vt = [0, 0, 0, 0]; vt[ax[c]] = 3 + (k % 3) * 0.01;
     const vv = [0, 0, 0, 0]; vv[ax[c]] = 3 + (k % 3) * 0.01;
-    out.push({ id: `${c}${k}`, vecText: vt, vecVision: vv, category: c });
+    out.push({ id: `${c}${k}`, vecText: vt, vecVision: vv, category: c, ts: 0 });
   }
   return out;
 }

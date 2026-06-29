@@ -5,7 +5,7 @@ import { classifyStacked } from "@/pipeline/classifier-head";
 
 describe("TS trainer parity vs sklearn golden", () => {
   // TrainingRow requires an id field; add synthetic ids since trainStackedHeadsFromRows doesn't use them.
-  const rows = golden.rows.map((r, i) => ({ ...r, id: String(i) }));
+  const rows = golden.rows.map((r, i) => ({ ...r, id: String(i), ts: 0 }));
   const ts = trainStackedHeadsFromRows(rows)!;
 
   it("base-head weights match sklearn within tolerance", () => {

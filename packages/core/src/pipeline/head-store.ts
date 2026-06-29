@@ -79,3 +79,22 @@ export function restorePreviousHeads(vault: Vault): boolean {
   }
   return restored;
 }
+
+const META_FILE = "retrain-meta.json";
+
+export function loadRetrainMeta(vault: Vault): { lastRetrainTs: number } {
+  const root = vaultBasePath(vault);
+  if (!root) return { lastRetrainTs: 0 };
+  try {
+    return JSON.parse(fs.readFileSync(cachePath(root, META_FILE), "utf8")) as { lastRetrainTs: number };
+  } catch {
+    return { lastRetrainTs: 0 };
+  }
+}
+
+export function saveRetrainMeta(vault: Vault, meta: { lastRetrainTs: number }): void {
+  const root = vaultBasePath(vault);
+  if (!root) return;
+  fs.mkdirSync(cacheDir(root), { recursive: true });
+  fs.writeFileSync(cachePath(root, META_FILE), JSON.stringify(meta));
+}

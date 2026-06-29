@@ -113,7 +113,6 @@ export const LOGREG_C = 1.0;            // sklearn C; data-term scale, no interc
 export const LOGREG_TOL = 1e-6;         // gradient-norm convergence tolerance
 export const OOF_FOLDS = 5;             // StratifiedKFold splits for the meta head
 export const RETRAIN_SIGNAL_FLOOR = 10; // min new human labels since last train before retrain
-export const RETRAIN_CAT_MARGIN = 0.05; // max allowed per-class accuracy regression (5pp)
 
 // ── Retrain gate (Spec 2 amendment) ───────────────────────────────────────────
 export const GATE_EPS = 0;               // non-regression tolerance (overall & macro)

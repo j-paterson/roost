@@ -1,9 +1,9 @@
 import type { Vault } from "obsidian";
 import { buildTrainingRows, trainStackedHeadsFromRows, type TrainingRow } from "@/pipeline/train-head";
 import { evaluateGate, type GateResult, type GateSample } from "@/pipeline/acceptance-gate";
-import { writeStackedHeads, restorePreviousHeads } from "@/pipeline/head-store";
-import { loadStackedHeads, type StackedHeads } from "@/pipeline/classifier-head";
-import { RETRAIN_SIGNAL_FLOOR } from "@/config";
+import { writeStackedHeads, restorePreviousHeads, loadRetrainMeta, saveRetrainMeta } from "@/pipeline/head-store";
+import { loadStackedHeads, type StackedHeads, type ClassifierHeadData, type MetaHeadData } from "@/pipeline/classifier-head";
+import { RETRAIN_SIGNAL_FLOOR, GATE_KFOLDS, GATE_EPS } from "@/config";
 
 /**
  * Pure trigger: fire when we have enough new human labels OR a category
@@ -29,17 +29,58 @@ export function decideSwap(gate: GateResult | null): { swapped: boolean } {
 }
 
 /**
- * Hold out ~20% per class (deterministic: every 5th row per class) for the
- * acceptance gate.  The remaining rows form the training set.
+ * Aggregate k-fold gate results into a single pass/fail decision.
+ * Pass when avg overall delta >= -eps AND avg macro delta >= -eps AND no class
+ * is catastrophic in a majority of folds.
  */
-function splitHoldout(rows: TrainingRow[]): { train: TrainingRow[]; holdout: GateSample[] } {
+export function decideFromFolds(
+  folds: GateResult[],
+  eps: number,
+): { pass: boolean; avgOverallDelta: number; avgMacroDelta: number; catastrophicClasses: string[] } {
+  const n = folds.length || 1;
+  const avgOverallDelta = folds.reduce((a, f) => a + (f.overallCandidate - f.overallCurrent), 0) / n;
+  const avgMacroDelta = folds.reduce((a, f) => a + (f.macroCandidate - f.macroCurrent), 0) / n;
+  const counts = new Map<string, number>();
+  for (const f of folds) for (const c of f.catastrophic) counts.set(c, (counts.get(c) ?? 0) + 1);
+  const majority = Math.ceil(folds.length / 2);
+  const catastrophicClasses = [...counts.entries()].filter(([, k]) => k >= majority).map(([c]) => c);
+  const pass =
+    folds.length > 0 &&
+    avgOverallDelta >= -eps &&
+    avgMacroDelta >= -eps &&
+    catastrophicClasses.length === 0;
+  return { pass, avgOverallDelta, avgMacroDelta, catastrophicClasses };
+}
+
+/** Convert on-disk head data to the in-memory StackedHeads inference shape. */
+function toStacked(d: {
+  text: ClassifierHeadData;
+  vision: ClassifierHeadData;
+  meta: MetaHeadData;
+}): StackedHeads {
+  return {
+    text: { classes: d.text.classes, W: d.text.W, b: d.text.b, dim: d.text.dim },
+    vision: { classes: d.vision.classes, W: d.vision.W, b: d.vision.b, dim: d.vision.dim },
+    meta: { classes: d.meta.classes, W: d.meta.W, b: d.meta.b, inDim: d.meta.inDim },
+  };
+}
+
+/**
+ * Stratified k-fold split: fold k's holdout = every item whose per-class index % K === k.
+ * Deterministic given the order rows appear in the array.
+ */
+function kfoldSplit(
+  rows: TrainingRow[],
+  K: number,
+  k: number,
+): { train: TrainingRow[]; holdout: GateSample[] } {
   const train: TrainingRow[] = [];
   const holdout: GateSample[] = [];
   const seen = new Map<string, number>();
   for (const r of rows) {
     const n = seen.get(r.category) ?? 0;
     seen.set(r.category, n + 1);
-    if (n % 5 === 4) {
+    if (n % K === k) {
       holdout.push({ vecText: r.vecText, vecVision: r.vecVision, truth: r.category });
     } else {
       train.push(r);
@@ -49,15 +90,16 @@ function splitHoldout(rows: TrainingRow[]): { train: TrainingRow[]; holdout: Gat
 }
 
 /**
- * Full retrain orchestration:
+ * Full retrain orchestration with fair fresh baseline + k-fold averaged gate decision:
  *   1. Build training rows from vault
- *   2. Split ~20% holdout (deterministic, every 5th per class)
- *   3. Train candidate on remaining rows
- *   4. If a current head exists and holdout is non-empty, gate candidate vs current
- *   5. decideSwap (fail-closed: no current head → swap; gate.pass → swap; else keep)
- *   6. On swap: writeStackedHeads — partial-write recovery: if write throws,
- *      restorePreviousHeads + return reason "write failed, restored previous"
- *   7. On keep: log and return
+ *   2. Load lastRetrainTs watermark and current head
+ *   3. If a current head exists: for GATE_KFOLDS stratified folds, train a FRESH
+ *      baseline on rows with ts <= lastRetrainTs (excl. holdout), train candidate on
+ *      all train rows, call evaluateGate; collect GateResults across folds
+ *   4. decideFromFolds → swap/keep (fail-closed)
+ *   5. On swap: train on ALL rows, writeStackedHeads, saveRetrainMeta
+ *      Partial-write recovery: if write throws, restorePreviousHeads
+ *   6. First-train (no current head): swap unconditionally
  */
 export function runRetrain(vault: Vault, log: (m: string) => void): RetrainOutcome {
   const rows = buildTrainingRows(vault);
@@ -65,87 +107,56 @@ export function runRetrain(vault: Vault, log: (m: string) => void): RetrainOutco
     return { ran: false, swapped: false, reason: "no eligible training data" };
   }
 
-  // Load current head early so the holdout-empty guard can reference it.
+  const lastRetrainTs = loadRetrainMeta(vault).lastRetrainTs;
   const current = loadStackedHeads(vault);
-  const { train, holdout } = splitHoldout(rows);
 
-  // Guard: if a live head exists but the holdout is empty (e.g. sparse embedding
-  // cache with < 5 rows per class), we cannot validate the candidate — skip to
-  // protect the live head.  First-train (current === null) still proceeds.
-  if (current && holdout.length === 0) {
-    log("[retrain] holdout empty (sparse embedding cache?) — skipping retrain to protect live head");
-    return { ran: false, swapped: false, reason: "holdout empty, cannot gate" };
-  }
-
-  const candidateData = trainStackedHeadsFromRows(train);
-  if (!candidateData) {
-    return { ran: false, swapped: false, reason: "trainer returned null" };
-  }
-
-  // Build StackedHeads (inference shape) from candidateData (on-disk shape).
-  const candidate: StackedHeads = {
-    text: {
-      classes: candidateData.text.classes,
-      W: candidateData.text.W,
-      b: candidateData.text.b,
-      dim: candidateData.text.dim,
-    },
-    vision: {
-      classes: candidateData.vision.classes,
-      W: candidateData.vision.W,
-      b: candidateData.vision.b,
-      dim: candidateData.vision.dim,
-    },
-    meta: {
-      classes: candidateData.meta.classes,
-      W: candidateData.meta.W,
-      b: candidateData.meta.b,
-      inDim: candidateData.meta.inDim,
-    },
-  };
-
-  let gate: GateResult | null = null;
-  if (current && holdout.length > 0) {
-    gate = evaluateGate(current, candidate, holdout);
-  }
-
-  const { swapped } = decideSwap(gate);
-
-  if (swapped) {
-    // Partial-write recovery: if writeStackedHeads throws mid-loop (writes 3 files),
-    // it may leave a MIXED state.  Catch and restore to prevent a corrupt head.
-    try {
-      writeStackedHeads(vault, candidateData);
-    } catch (writeErr) {
-      const msg = writeErr instanceof Error ? writeErr.message : String(writeErr);
-      log(`[retrain] write failed (${msg}), restoring previous head`);
-      try {
-        restorePreviousHeads(vault);
-      } catch {
-        // Restore is best-effort; log but do not re-throw.
-        log("[retrain] restore also failed — vault may need manual inspection");
-      }
-      return { ran: true, swapped: false, reason: "write failed, restored previous" };
+  let foldDecision: ReturnType<typeof decideFromFolds> | null = null;
+  if (current) {
+    const folds: GateResult[] = [];
+    for (let k = 0; k < GATE_KFOLDS; k++) {
+      const { train, holdout } = kfoldSplit(rows, GATE_KFOLDS, k);
+      if (holdout.length === 0) continue;
+      const baselineRows = train.filter((r) => r.ts <= lastRetrainTs);
+      if (baselineRows.length === 0) continue; // nothing "before" → can't form a fair baseline this fold
+      const baseData = trainStackedHeadsFromRows(baselineRows);
+      const candData = trainStackedHeadsFromRows(train);
+      if (!baseData || !candData) continue;
+      folds.push(evaluateGate(toStacked(baseData), toStacked(candData), holdout));
     }
-    const classCount = candidate.meta.classes.length;
-    const gateMsg = gate
-      ? ` overall ${(gate.overallCurrent * 100).toFixed(1)}→${(gate.overallCandidate * 100).toFixed(1)}%`
-      : " (first head)";
-    log(`[retrain] swapped in candidate (${classCount} classes)${gateMsg}`);
-    return {
-      ran: true,
-      swapped: true,
-      reason: gate ? "gate passed" : current === null ? "first head" : "holdout empty, gate skipped",
-      gate: gate ?? undefined,
-    };
+    if (folds.length === 0) {
+      log("[retrain] no usable gate folds (sparse 'before' set) — skipping to protect live head");
+      return { ran: false, swapped: false, reason: "no gate folds" };
+    }
+    foldDecision = decideFromFolds(folds, GATE_EPS);
   }
 
-  const failures = gate?.failures.join("; ") ?? "unknown";
-  log(`[retrain] candidate rejected (fail-closed), keeping current head: ${failures}`);
-  return {
-    ran: true,
-    swapped: false,
-    reason: "gate failed",
-    gate: gate ?? undefined,
-  };
+  const swapped = current === null ? true : foldDecision!.pass;
+  if (!swapped) {
+    log(
+      `[retrain] candidate rejected (fail-closed): macroΔ ${(foldDecision!.avgMacroDelta * 100).toFixed(1)}pp overallΔ ${(foldDecision!.avgOverallDelta * 100).toFixed(1)}pp catastrophic=${foldDecision!.catastrophicClasses.join(",") || "none"}`,
+    );
+    return { ran: true, swapped: false, reason: "gate failed" };
+  }
+
+  // Deploy: train on ALL rows (holdout included); fail-closed partial-write recovery.
+  const deployData = trainStackedHeadsFromRows(rows);
+  if (!deployData) return { ran: false, swapped: false, reason: "trainer returned null" };
+  try {
+    writeStackedHeads(vault, deployData);
+  } catch (writeErr) {
+    log(
+      `[retrain] write failed (${writeErr instanceof Error ? writeErr.message : String(writeErr)}), restoring previous head`,
+    );
+    try {
+      restorePreviousHeads(vault);
+    } catch {
+      log("[retrain] restore also failed — manual inspection needed");
+    }
+    return { ran: true, swapped: false, reason: "write failed, restored previous" };
+  }
+  saveRetrainMeta(vault, { lastRetrainTs: Date.now() });
+  log(
+    `[retrain] swapped in candidate (${deployData.meta.classes.length} classes)${foldDecision ? ` macroΔ ${(foldDecision.avgMacroDelta * 100).toFixed(1)}pp` : " (first head)"}`,
+  );
+  return { ran: true, swapped: true, reason: current === null ? "first head" : "gate passed" };
 }
