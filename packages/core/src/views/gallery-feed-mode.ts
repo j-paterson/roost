@@ -147,6 +147,7 @@ export class GalleryFeedModeController {
   }
 
   private advanceAfterAction(judgedId: string): void {
+    if (!this.trainingMode) return;
     const judgedIndex = this.lastTrainingEntries.map(e => getRoostId(e)).indexOf(judgedId);
     const remaining = this.trainingEntries();
     this.lastTrainingEntries = remaining;
@@ -160,6 +161,7 @@ export class GalleryFeedModeController {
     action: "confirm" | "reject" | "recategorize" | "skip",
     roostId: string,
   ): void {
+    if (!this.trainingMode) return;
     if (action === "skip") {
       this.skipped.add(roostId);
       this.advanceAfterAction(roostId);
@@ -172,14 +174,15 @@ export class GalleryFeedModeController {
       return;
     }
     const p = action === "confirm" ? this.host.confirmAuto(roostId) : this.host.rejectAuto(roostId);
-    void p.then(() => this.advanceAfterAction(roostId));
+    void p.finally(() => this.advanceAfterAction(roostId));
   }
 
   private registerKeyboard(): void {
     this.deregisterKeyboard();
     const handler = (e: KeyboardEvent) => {
       if (!this.trainingMode || !this.lastActiveRoostId) return;
-      if (e.target instanceof HTMLInputElement) return;
+      const t = e.target;
+      if (t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement || (t instanceof HTMLElement && t.isContentEditable)) return;
       if (e.key === "y" || e.key === "Y") {
         this.handleTrainingAction("confirm", this.lastActiveRoostId);
       } else if (e.key === "n" || e.key === "N") {
