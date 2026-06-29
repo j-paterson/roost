@@ -197,6 +197,18 @@ describe("runRetrain", () => {
     expect(vi.mocked(writeStackedHeads)).not.toHaveBeenCalled();
   });
 
+  it("first train (no current head) → deploys unconditionally, saveRetrainMeta called, no gating", () => {
+    vi.mocked(buildTrainingRows).mockReturnValue(fakeRows);
+    vi.mocked(trainStackedHeadsFromRows).mockReturnValue(fakeCandidateData);
+    vi.mocked(loadStackedHeads).mockReturnValue(null);
+    vi.mocked(loadRetrainMeta).mockReturnValue({ lastRetrainTs: 0 });
+    const result = runRetrain(mockVault, () => {});
+    expect(result).toMatchObject({ ran: true, swapped: true, reason: "first head" });
+    expect(vi.mocked(writeStackedHeads)).toHaveBeenCalledOnce();
+    expect(vi.mocked(saveRetrainMeta)).toHaveBeenCalledOnce();
+    expect(vi.mocked(evaluateGate)).not.toHaveBeenCalled();
+  });
+
   it("write throws → restorePreviousHeads called; result {ran:true, swapped:false}; function does NOT re-throw", () => {
     vi.mocked(buildTrainingRows).mockReturnValue(fakeRows);
     vi.mocked(trainStackedHeadsFromRows).mockReturnValue(fakeCandidateData);

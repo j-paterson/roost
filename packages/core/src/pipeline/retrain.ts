@@ -17,7 +17,6 @@ export interface RetrainOutcome {
   ran: boolean;
   swapped: boolean;
   reason: string;
-  gate?: GateResult;
 }
 
 /**

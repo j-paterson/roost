@@ -96,5 +96,5 @@ export function saveRetrainMeta(vault: Vault, meta: { lastRetrainTs: number }): 
   const root = vaultBasePath(vault);
   if (!root) return;
   fs.mkdirSync(cacheDir(root), { recursive: true });
-  fs.writeFileSync(cachePath(root, META_FILE), JSON.stringify(meta));
+  writeAtomic(cachePath(root, META_FILE), JSON.stringify(meta));
 }
