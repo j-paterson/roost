@@ -122,21 +122,25 @@ export function hydrateGalleryCard(
       handlers.onSelectionToggle(roostIdVal, el);
       return;
     }
-    // Feed mode — click navigates feed item.
-    if (handlers.viewMode === "feed" && roostIdVal) {
-      e.stopPropagation();
-      handlers.onFeedSelect(roostIdVal);
-      return;
-    }
-    // Free-select mode: single click selects the card. A PLAIN click (no modifier)
-    // also opens it inline; ⌘/⌃/⇧-clicks are pure multiselect and do not open.
+    // Free-select mode: single click selects the card (modifier-aware). A PLAIN click
+    // (no modifier) also "opens" it — and when the feed view is open, opening means
+    // SHOWING the item in the feed (replacing inline expand); otherwise it expands
+    // inline. ⌘/⌃/⇧-clicks are pure multiselect and never open. handlers.viewMode is a
+    // live getter, so toggling the feed on/off routes the next click correctly.
     if (roostIdVal && handlers.onSelect) {
       e.stopPropagation();
       handlers.onSelect(roostIdVal, e);
       const modified = e.metaKey || e.ctrlKey || e.shiftKey;
       if (!modified && !window.getSelection()?.toString()) {
-        handlers.onExpand(el, entry);
+        if (handlers.viewMode === "feed") handlers.onFeedSelect(roostIdVal);
+        else handlers.onExpand(el, entry);
       }
+      return;
+    }
+    // Fallback (onSelect not wired): feed mode navigates the feed; else expand inline.
+    if (handlers.viewMode === "feed" && roostIdVal) {
+      e.stopPropagation();
+      handlers.onFeedSelect(roostIdVal);
       return;
     }
     // Fallback (onSelect not wired): collapse expanded card on click.

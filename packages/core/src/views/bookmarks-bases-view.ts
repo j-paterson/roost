@@ -554,8 +554,9 @@ export class BookmarksBasesView extends BasesView
   }
 
   private galleryCardHandlers() {
+    const self = this;
     return {
-      viewMode: this.feedMode.getViewMode(),
+      get viewMode() { return self.feedMode.getViewMode(); },
       expandState: this.expandState,
       uncertainRoostIds: this.uncertainRoostIds,
       matchedRoostIds: this.matchedRoostIds,
