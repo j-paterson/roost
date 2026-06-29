@@ -13,6 +13,7 @@ import { appendCategoryTags, tagToObsidianTag } from "@/lib/category-tags";
 import {
   type TrainingSet, addPositive, addRejection, loadTrainingSet, saveTrainingSet,
 } from "@/pipeline/training-set";
+import { loadSnapshot, saveSnapshot } from "@/pipeline/category-snapshot";
 import type { EvalRecord, EvalTier } from "@/pipeline/eval-log";
 import { appendEvalRecords } from "@/pipeline/eval-log";
 
@@ -226,6 +227,15 @@ export async function confirmSmartAssign(
       guesses, now: Date.now(),
     });
     saveTrainingSet(vault, trainingSet);
+    // ── Update snapshot so bulkWriteAssignments' changed events are own-writes ──
+    // The organic-capture listener's own-write guard reads the snapshot value; pre-seeding
+    // it with the just-written categories ensures no hand-edit signal is falsely captured.
+    const snap = loadSnapshot(vault);
+    for (const [id, encoded] of itemCategory) {
+      const cat = encoded.indexOf("\x00") >= 0 ? encoded.slice(0, encoded.indexOf("\x00")) : encoded;
+      snap[id] = cat || null;
+    }
+    saveSnapshot(vault, snap);
     appendEvalRecords(vault, evalRecords);
   } catch (e: unknown) {
     host.log(`[loop] capture failed: ${e instanceof Error ? e.message : String(e)}`);

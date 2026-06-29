@@ -10,6 +10,7 @@ import { exportXCookies } from "@/plugin/export-x-cookies";
 import { regenerateCardForActiveNote } from "@/plugin/regenerate-card-command";
 import { fetchCoversCommand } from "@/plugin/fetch-covers-command";
 import { maybeAutoRunTweetBodyBackfill } from "@/sync/tweet-body-backfill";
+import { registerOrganicCapture } from "@/pipeline/organic-capture";
 import { RoostJobQueue } from "@/lib/job-queue";
 import { scanPendingPipelines, type PendingPipelinesResult } from "@/pipeline/scan-pending-pipelines";
 import { PIPELINE_ENRICHMENTS } from "@/lib/enrichments";
@@ -213,6 +214,7 @@ export default class RoostPlugin extends Plugin {
     registerRoostViews(this, (mode) => this.setMode(mode));
     registerRoostCommands(this);
     this.addSettingTab(new RoostSettingTab(this.app, this));
+    registerOrganicCapture(this);
 
     // One-time migration: drop the legacy welcomeCompleted flag.
     if ("welcomeCompleted" in (this.settings as unknown as Record<string, unknown>)) {
