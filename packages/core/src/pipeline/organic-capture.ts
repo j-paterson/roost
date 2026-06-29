@@ -148,22 +148,26 @@ export function registerOrganicCapture(plugin: OrgCapPlugin): void {
       if (timer) clearTimeout(timer);
       timer = setTimeout(() => {
         timer = null;
-        const fm = metadataCache.getFileCache(file)?.frontmatter;
-        const rawId = fm?.roost_id;
-        const id = typeof rawId === "string" ? rawId : null;
-        if (!id) return; // not a roost bookmark
+        try {
+          const fm = metadataCache.getFileCache(file)?.frontmatter;
+          const rawId = fm?.roost_id;
+          const id = typeof rawId === "string" ? rawId : null;
+          if (!id) return; // not a roost bookmark
 
-        const rawCat = fm?.[CATEGORY_FIELD];
-        const newCategory = typeof rawCat === "string" ? rawCat : null;
+          const rawCat = fm?.[CATEGORY_FIELD];
+          const newCategory = typeof rawCat === "string" ? rawCat : null;
 
-        // Reload snapshot from disk on each fire — timing-independent own-write guard.
-        const changed = processSnapshotChange(vault, id, newCategory);
-        if (changed) {
-          // Mark as human-assigned. This triggers another "changed" event; the own-write
-          // guard ensures it is treated as a no-op.
-          void fileManager.processFrontMatter(file, (frontmatter) => {
-            frontmatter[ASSIGNED_BY_FIELD] = "human";
-          });
+          // Reload snapshot from disk on each fire — timing-independent own-write guard.
+          const changed = processSnapshotChange(vault, id, newCategory);
+          if (changed) {
+            // Mark as human-assigned. This triggers another "changed" event; the own-write
+            // guard ensures it is treated as a no-op.
+            void fileManager.processFrontMatter(file, (frontmatter) => {
+              frontmatter[ASSIGNED_BY_FIELD] = "human";
+            });
+          }
+        } catch (e: unknown) {
+          console.warn("[roost] organic capture error:", e instanceof Error ? e.message : String(e));
         }
       }, 300);
     }),

@@ -43,6 +43,7 @@ describe("processSnapshotChange (timing-independent own-write guard)", () => {
   const fakeVault = {} as Vault;
 
   beforeEach(() => {
+    vi.mocked(loadSnapshot).mockReset();
     vi.mocked(loadTrainingSet).mockReturnValue(emptyTrainingSet());
     vi.mocked(saveTrainingSet).mockReset();
     vi.mocked(saveSnapshot).mockReset();

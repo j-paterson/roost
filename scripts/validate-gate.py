@@ -23,7 +23,7 @@ if not V:
     sys.exit(1)
 
 C = V + "/.roost/cache"; DIM = 768
-EPS = 0.0; CATA = 0.15; MIN_SUP = 20; OOF = 3; KFOLDS = 5
+EPS = 0.0; CATA = 0.15; MIN_SUP = 20; OOF = 3; KFOLDS = 5  # 5-fold is deliberately more conservative than live GATE_KFOLDS=3: pass here implies soundness at 3
 
 
 def fm(t, k):
@@ -43,8 +43,12 @@ def l2(X):
     n = np.linalg.norm(X, axis=1, keepdims=True); n[n == 0] = 1; return X / n
 
 
-vis = read_bin(C + "/embedding-vectors.bin")
-txt = read_bin(C + "/embedding-vectors-text.bin")
+try:
+    vis = read_bin(C + "/embedding-vectors.bin")
+    txt = read_bin(C + "/embedding-vectors-text.bin")
+except FileNotFoundError as exc:
+    print(f"ERROR: missing embedding cache at {exc.filename} — run embeddings first", file=sys.stderr)
+    sys.exit(1)
 Xt, Xv, y = [], [], []
 for p in glob.glob(V + "/Bookmarks/**/*.md", recursive=True):
     t = open(p, encoding="utf-8", errors="ignore").read()

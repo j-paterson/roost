@@ -28,11 +28,19 @@ describe("evaluateGate (overall+macro, catastrophic guard)", () => {
     const r = evaluateGate(head(5), head(0), S);
     expect(r.pass).toBe(false);
   });
-  it("does NOT veto a small per-class dip that isn't catastrophic and keeps macro up", () => {
-    // current and candidate identical here → no regression; sanity that a tie passes
-    const r = evaluateGate(head(5), head(5), S);
-    expect(r.catastrophic).toEqual([]);
-    expect(r.pass).toBe(true);
+  it("macro rule rejects a regression on a small class that the catastrophic guard exempts", () => {
+    // 5 A (< GATE_MIN_SUPPORT=20 → exempt from catastrophic), 30 B.
+    // alwaysB predicts B for everything: A recall 1→0 (exempt), B recall unchanged; macro 1→0.5.
+    // This is the discriminating behavior: catastrophic guard stays silent, macro rule fires.
+    const alwaysB: StackedHeads = {
+      text: { classes: ["A", "B"], W: [[0, 0], [5, 5]], b: [0, 0], dim: 2 },
+      vision: { classes: ["A", "B"], W: [[0, 0], [5, 5]], b: [0, 0], dim: 2 },
+      meta: { classes: ["A", "B"], W: [[0, 0, 0, 0], [0, 5, 0, 5]], b: [0, 0], inDim: 4 },
+    };
+    const r = evaluateGate(head(5), alwaysB, samples(5, 30));
+    expect(r.catastrophic).not.toContain("A"); // A support=5 < 20 → exempt from catastrophic
+    expect(r.macroCandidate).toBeLessThan(r.macroCurrent); // macro regressed (1→0.5)
+    expect(r.pass).toBe(false); // macro rule rejects even though catastrophic guard didn't fire
   });
   it("rejects a catastrophic single-class collapse on a well-supported class", () => {
     // 30 B samples (>=GATE_MIN_SUPPORT). candidate(0) sends all B→A: B recall 1→0 (>0.15 drop) → catastrophic
@@ -53,5 +61,15 @@ describe("evaluateGate (overall+macro, catastrophic guard)", () => {
     // B (3 items) is exempt from catastrophic, BUT macro still regressed (1→0.5) → rejected by the macro rule.
     expect(r.catastrophic).not.toContain("B");
     expect(r.pass).toBe(false);
+  });
+  it("returns pass:true with finite metrics for an empty sample set", () => {
+    // Empty samples: no classes → overall=0, macro=0; no failures → pass.
+    // Guards against NaN from division by zero when no evaluation data exists.
+    const r = evaluateGate(head(5), head(5), []);
+    expect(r.pass).toBe(true);
+    expect(Number.isFinite(r.overallCurrent)).toBe(true);
+    expect(Number.isFinite(r.overallCandidate)).toBe(true);
+    expect(Number.isFinite(r.macroCurrent)).toBe(true);
+    expect(Number.isFinite(r.macroCandidate)).toBe(true);
   });
 });

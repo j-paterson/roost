@@ -12,7 +12,11 @@ export function saveSnapshot(vault: Vault, s: CategorySnapshot): void {
   savePipelineCache(vault, FILE, s as Record<string, unknown>);
 }
 
-export type Transition = { kind: "correction" | "rejection" | "new" | "none"; from: string | null; to: string | null };
+export type Transition =
+  | { kind: "correction"; from: string; to: string }
+  | { kind: "rejection"; from: string; to: null }
+  | { kind: "new"; from: null; to: string }
+  | { kind: "none"; from: string | null; to: string | null };
 
 /** Pure: classify a category change. Trust any hand edit (caller is responsible for the
  *  own-write guard). `prev` is the snapshot value; `next` is the new frontmatter value. */
@@ -27,6 +31,6 @@ export function classifyTransition(prev: string | null | undefined, next: string
 
 /** Mutate the training set per a transition. Never infers a positive from a rejection. */
 export function applyTransition(ts: TrainingSet, id: string, t: Transition, now: number): void {
-  if (t.kind === "correction" || t.kind === "new") addPositive(ts, id, t.to!, now);
-  else if (t.kind === "rejection") addRejection(ts, id, t.from!);
+  if (t.kind === "correction" || t.kind === "new") addPositive(ts, id, t.to, now);
+  else if (t.kind === "rejection") addRejection(ts, id, t.from);
 }
