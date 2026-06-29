@@ -4,7 +4,7 @@ import { TRAINING_SET_VERSION } from "@/config";
 
 export interface TrainingSet {
   version: number;
-  positives: Record<string, { category: string; ts: number }>;
+  positives: Record<string, { category: string; ts: number; source?: "correction" | "confirm" }>;
   rejections: Record<string, string[]>;
 }
 
@@ -12,11 +12,17 @@ export function emptyTrainingSet(): TrainingSet {
   return { version: TRAINING_SET_VERSION, positives: {}, rejections: {} };
 }
 
-/** Record a human positive (correction or explicit pick). Latest wins; clears that class
- *  from the item's rejections (an explicit affirm overrides a prior reject).
+/** Record a human positive (correction or explicit pick by default; pass source:"confirm"
+ *  for a training-mode agreement). Latest wins; clears that class from the item's rejections.
  *  MUTATES the input TrainingSet in place and returns the same reference. */
-export function addPositive(ts: TrainingSet, id: string, category: string, at: number): TrainingSet {
-  ts.positives[id] = { category, ts: at };
+export function addPositive(
+  ts: TrainingSet,
+  id: string,
+  category: string,
+  at: number,
+  source?: "correction" | "confirm",
+): TrainingSet {
+  ts.positives[id] = source ? { category, ts: at, source } : { category, ts: at };
   const rej = ts.rejections[id];
   if (rej) {
     const next = rej.filter((c) => c !== category);

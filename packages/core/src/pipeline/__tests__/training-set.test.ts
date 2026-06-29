@@ -4,6 +4,24 @@ import {
   suppressionMap, categoryCounts, eligibleCategories,
 } from "@/pipeline/training-set";
 
+it("addPositive defaults to no source (correction) and back-compat shape", () => {
+  const ts = addPositive(emptyTrainingSet(), "a", "Tech", 5);
+  expect(ts.positives["a"]).toEqual({ category: "Tech", ts: 5 });
+  expect("source" in ts.positives["a"]).toBe(false);
+});
+
+it("addPositive records source:'confirm' when passed", () => {
+  const ts = addPositive(emptyTrainingSet(), "b", "Art", 7, "confirm");
+  expect(ts.positives["b"]).toEqual({ category: "Art", ts: 7, source: "confirm" });
+});
+
+it("addPositive(confirm) still clears that class from the item's rejections", () => {
+  const ts = emptyTrainingSet();
+  ts.rejections["c"] = ["Art", "Tech"];
+  addPositive(ts, "c", "Art", 9, "confirm");
+  expect(ts.rejections["c"]).toEqual(["Tech"]);
+});
+
 describe("training-set", () => {
   it("records positives keyed by id, latest-human-wins", () => {
     let ts = emptyTrainingSet();
