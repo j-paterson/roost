@@ -117,10 +117,11 @@ function kfoldSplit(
 /**
  * Full retrain orchestration with fair fresh baseline + k-fold averaged gate decision:
  *   1. Build training rows from vault
- *   2. Load lastRetrainTs watermark and current head
+ *   2. Load lastRetrainTs watermark and current head; derive effectiveWatermark
+ *      (= lastRetrainTs, or medianTs(rows) on first enable when lastRetrainTs===0)
  *   3. If a current head exists: for GATE_KFOLDS stratified folds, train a FRESH
- *      baseline on rows with ts <= lastRetrainTs (excl. holdout), train candidate on
- *      all train rows, call evaluateGate; collect GateResults across folds
+ *      baseline on rows with ts <= effectiveWatermark (excl. holdout), train candidate
+ *      on all train rows, call evaluateGate; collect GateResults across folds
  *   4. decideFromFolds → swap/keep (fail-closed)
  *   5. On swap: train on ALL rows, writeStackedHeads, saveRetrainMeta
  *      Partial-write recovery: if write throws, restorePreviousHeads
