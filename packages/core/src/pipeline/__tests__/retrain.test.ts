@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { Vault } from "obsidian";
-import { shouldRetrain, decideSwap, decideFromFolds, runRetrain, newLabelsSince } from "@/pipeline/retrain";
+import { shouldRetrain, decideSwap, decideFromFolds, runRetrain, newLabelsSince, medianTs } from "@/pipeline/retrain";
 import type { StackedHeads } from "@/pipeline/classifier-head";
 import type { GateResult } from "@/pipeline/acceptance-gate";
 import type { ClassifierHeadData, MetaHeadData } from "@/pipeline/classifier-head";
@@ -184,11 +184,12 @@ describe("runRetrain", () => {
   });
 
   it("no baseline rows for any fold → protects live head; result {ran:false, swapped:false, reason:'no gate folds'}", () => {
-    // All rows have ts > lastRetrainTs → baselineRows empty for every fold → no usable folds.
+    // All rows have ts well above the real watermark → effectiveWatermark=1 (lastRetrainTs>0)
+    // → baselineRows empty for every fold → no usable folds.
     const futureRows = fakeRows.map((r) => ({ ...r, ts: 9999 }));
     vi.mocked(buildTrainingRows).mockReturnValue(futureRows);
     vi.mocked(loadStackedHeads).mockReturnValue(fakeCurrentHeads);
-    vi.mocked(loadRetrainMeta).mockReturnValue({ lastRetrainTs: 0 });
+    vi.mocked(loadRetrainMeta).mockReturnValue({ lastRetrainTs: 1 });
     vi.mocked(trainStackedHeadsFromRows).mockReturnValue(fakeCandidateData);
 
     const result = runRetrain(mockVault, () => {});
@@ -223,6 +224,52 @@ describe("runRetrain", () => {
     expect(result).toMatchObject({ ran: true, swapped: false, reason: "write failed, restored previous" });
     expect(vi.mocked(restorePreviousHeads)).toHaveBeenCalledOnce();
     expect(vi.mocked(saveRetrainMeta)).not.toHaveBeenCalled();
+  });
+});
+
+// ── medianTs ─────────────────────────────────────────────────────────────────
+
+describe("medianTs", () => {
+  it("returns the median of an odd-length array (middle element of sorted)", () => {
+    expect(medianTs([{ ts: 1 }, { ts: 3 }, { ts: 2 }])).toBe(2);
+  });
+
+  it("returns the lower-middle element for an even-length array", () => {
+    expect(medianTs([{ ts: 10 }, { ts: 20 }])).toBe(10);
+  });
+
+  it("returns 0 for an empty array", () => {
+    expect(medianTs([])).toBe(0);
+  });
+});
+
+// ── bootstrap gate regression lock ───────────────────────────────────────────
+
+describe("runRetrain bootstrap (lastRetrainTs=0)", () => {
+  // resetAllMocks clears implementations too, preventing the "write throws" test
+  // from leaking its mockImplementation into this describe block.
+  beforeEach(() => vi.resetAllMocks());
+
+  it("uses median pseudo-watermark on first enable → gate runs, candidate deployed (regression lock)", () => {
+    // fakeRows have ts: 100, 200, 300.  medianTs = 200.
+    // Each of the 3 k-folds ends up with a non-empty baseline (ts <= 200 rows in train)
+    // AND a non-empty holdout → evaluateGate IS called ≥ 1 time.
+    // Before the fix this path returned {ran:false, reason:"no gate folds"} with 0 evaluateGate calls.
+    vi.mocked(buildTrainingRows).mockReturnValue(fakeRows);
+    vi.mocked(trainStackedHeadsFromRows).mockReturnValue(fakeCandidateData);
+    vi.mocked(loadStackedHeads).mockReturnValue(fakeCurrentHeads);
+    vi.mocked(loadRetrainMeta).mockReturnValue({ lastRetrainTs: 0 }); // no real watermark → first enable
+    vi.mocked(evaluateGate).mockReturnValue(gatePass);
+    vi.mocked(writeStackedHeads).mockReturnValue(undefined);
+
+    const result = runRetrain(mockVault, () => {});
+
+    // Regression lock: gate must have run (≥ 1 fold completed)
+    expect(vi.mocked(evaluateGate)).toHaveBeenCalled();
+    // Candidate must be deployed
+    expect(result).toMatchObject({ ran: true, swapped: true });
+    expect(vi.mocked(writeStackedHeads)).toHaveBeenCalledOnce();
+    expect(vi.mocked(saveRetrainMeta)).toHaveBeenCalledOnce();
   });
 });
 

@@ -8,6 +8,17 @@ import type { TrainingSet } from "@/pipeline/training-set";
 import { appendRetrainLog } from "@/pipeline/retrain-log";
 
 /**
+ * Median timestamp of a row set. Sorted middle value; for even length, returns the
+ * lower-middle element (floor of the middle index). Returns 0 for empty input.
+ * Used to derive a pseudo-watermark on first enable when no real watermark exists.
+ */
+export function medianTs(rows: { ts: number }[]): number {
+  if (rows.length === 0) return 0;
+  const sorted = [...rows].map((r) => r.ts).sort((a, b) => a - b);
+  return sorted[Math.floor((sorted.length - 1) / 2)];
+}
+
+/**
  * Pure count: how many positive labels have a timestamp strictly after sinceTs.
  * Used to drive shouldRetrain at the start of a Smart Assign run.
  */
@@ -124,6 +135,11 @@ export function runRetrain(vault: Vault, log: (m: string) => void): RetrainOutco
   }
 
   const lastRetrainTs = loadRetrainMeta(vault).lastRetrainTs;
+  // On first enable there is no saved watermark (lastRetrainTs === 0).  Use the
+  // median ts of all training rows as a pseudo-watermark so the gate can split
+  // the data into an "older half" baseline and a "full" candidate — a fair first
+  // gate.  After a successful swap, saveRetrainMeta sets a real watermark.
+  const effectiveWatermark = lastRetrainTs > 0 ? lastRetrainTs : medianTs(rows);
   const current = loadStackedHeads(vault);
 
   let foldDecision: ReturnType<typeof decideFromFolds> | null = null;
@@ -132,7 +148,7 @@ export function runRetrain(vault: Vault, log: (m: string) => void): RetrainOutco
     for (let k = 0; k < GATE_KFOLDS; k++) {
       const { train, holdout } = kfoldSplit(rows, GATE_KFOLDS, k);
       if (holdout.length === 0) continue;
-      const baselineRows = train.filter((r) => r.ts <= lastRetrainTs);
+      const baselineRows = train.filter((r) => r.ts <= effectiveWatermark);
       if (baselineRows.length === 0) continue; // nothing "before" → can't form a fair baseline this fold
       const baseData = trainStackedHeadsFromRows(baselineRows);
       const candData = trainStackedHeadsFromRows(train);
