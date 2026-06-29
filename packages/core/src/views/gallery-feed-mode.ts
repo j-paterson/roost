@@ -9,6 +9,7 @@ import { mountFeedPanel, type FeedPanelHandle } from "@/views/feed/feed-panel";
 import { createFeedSync, type FeedSync } from "@/views/feed/feed-sync";
 import type { FeedRenderContext } from "@/views/feed/feed-renderers";
 import { mountFeedSplit, type FeedSplitMount } from "@/views/feed/feed-split-host";
+import { filterTrainingEntries } from "@/views/feed/training-mode";
 
 const FEED_MIN_PANE_PX = 280;
 const FEED_DEFAULT_GRID_RATIO = 0.35;
@@ -25,6 +26,14 @@ function galleryFilterScopeKey(f: RoostFilter | null): string {
   return `${cat}|${sub}|${items}`;
 }
 
+/** After a judged item leaves the filtered queue, pick the next active roostId:
+ *  the item now occupying the judged index, clamped to the last item; null if empty. */
+export function computeAdvance(remainingIds: string[], judgedIndex: number): string | null {
+  if (remainingIds.length === 0) return null;
+  const i = Math.min(judgedIndex, remainingIds.length - 1);
+  return remainingIds[i];
+}
+
 export interface GalleryFeedModeHost {
   app: App;
   scrollEl: HTMLElement;
@@ -36,17 +45,25 @@ export interface GalleryFeedModeHost {
   findEntryByRoostId(roostId: string): BasesEntry | null;
   openMoveModal(entry: BasesEntry): void;
   onViewModeChanged(): void;
+  confirmAuto(roostId: string): Promise<void>;
+  rejectAuto(roostId: string): Promise<void>;
 }
 
 export class GalleryFeedModeController {
   viewMode: "grid" | "feed" = "grid";
   feedAutoOpenedForMedia = false;
+  trainingMode = false;
 
   private feedSplitMount: FeedSplitMount | null = null;
   private feedHandle: FeedPanelHandle | null = null;
   private readonly feedSync: FeedSync = createFeedSync();
   private feedSyncUnsub: (() => void) | null = null;
   private lastFeedFilterKey: string | null = null;
+  private skipped = new Set<string>();
+  private inFlight = new Set<string>();
+  private lastActiveRoostId: string | null = null;
+  private keydownHandler: ((e: KeyboardEvent) => void) | null = null;
+  private lastTrainingEntries: BasesEntry[] = [];
 
   constructor(private readonly host: GalleryFeedModeHost) {}
 
@@ -84,6 +101,30 @@ export class GalleryFeedModeController {
     this.host.onViewModeChanged();
   }
 
+  setTrainingMode(on: boolean): void {
+    if (this.trainingMode === on) return;
+    this.trainingMode = on;
+    if (on) {
+      if (this.viewMode !== "feed") {
+        // Force feed mode — enterFeedMode will use trainingEntries and register keyboard
+        this.setViewMode("feed");
+        return; // setViewMode already called onViewModeChanged
+      }
+      // Already in feed mode — refresh entries and register keyboard
+      const entries = this.trainingEntries();
+      this.lastTrainingEntries = entries;
+      this.feedHandle?.setEntries(entries, this.feedSync.get());
+      this.registerKeyboard();
+    } else {
+      this.deregisterKeyboard();
+      if (this.feedHandle) {
+        this.feedHandle.setEntries(this.host.getScopedEntries(), this.feedSync.get());
+      }
+      this.lastTrainingEntries = [];
+    }
+    this.host.onViewModeChanged();
+  }
+
   setFeedActiveFromGrid(roostId: string): void {
     if (this.viewMode === "feed") this.feedSync.set(roostId, "grid");
   }
@@ -93,11 +134,75 @@ export class GalleryFeedModeController {
     const key = galleryFilterScopeKey(filter);
     const preferred = key === this.lastFeedFilterKey ? this.feedSync.get() : null;
     this.lastFeedFilterKey = key;
-    this.feedHandle.setEntries(this.host.getScopedEntries(), preferred);
+    const entries = this.trainingMode ? this.trainingEntries() : this.host.getScopedEntries();
+    if (this.trainingMode) this.lastTrainingEntries = entries;
+    this.feedHandle.setEntries(entries, preferred);
   }
 
   dispose(): void {
     if (this.viewMode === "feed") this.exitFeedMode();
+  }
+
+  private trainingEntries(): BasesEntry[] {
+    return filterTrainingEntries(this.host.getScopedEntries(), this.skipped);
+  }
+
+  private advanceAfterAction(judgedId: string): void {
+    if (!this.trainingMode) return;
+    const judgedIndex = this.lastTrainingEntries.map(e => getRoostId(e)).indexOf(judgedId);
+    const remaining = this.trainingEntries();
+    this.lastTrainingEntries = remaining;
+    this.feedHandle?.setEntries(
+      remaining,
+      computeAdvance(remaining.map(e => getRoostId(e)), judgedIndex >= 0 ? judgedIndex : 0),
+    );
+  }
+
+  private handleTrainingAction(
+    action: "confirm" | "reject" | "recategorize" | "skip",
+    roostId: string,
+  ): void {
+    if (!this.trainingMode) return;
+    if (action === "skip") {
+      this.skipped.add(roostId);
+      this.advanceAfterAction(roostId);
+      return;
+    }
+    if (action === "recategorize") {
+      const entry = this.host.findEntryByRoostId(roostId);
+      if (entry) this.host.openMoveModal(entry);
+      this.advanceAfterAction(roostId);
+      return;
+    }
+    if (this.inFlight.has(roostId)) return;
+    this.inFlight.add(roostId);
+    const p = action === "confirm" ? this.host.confirmAuto(roostId) : this.host.rejectAuto(roostId);
+    void p.finally(() => { this.inFlight.delete(roostId); this.advanceAfterAction(roostId); });
+  }
+
+  private registerKeyboard(): void {
+    this.deregisterKeyboard();
+    const handler = (e: KeyboardEvent) => {
+      if (!this.trainingMode || !this.lastActiveRoostId) return;
+      const t = e.target;
+      if (t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement || (t instanceof HTMLElement && t.isContentEditable)) return;
+      if (e.key === "y" || e.key === "Y") {
+        this.handleTrainingAction("confirm", this.lastActiveRoostId);
+      } else if (e.key === "n" || e.key === "N") {
+        this.handleTrainingAction("reject", this.lastActiveRoostId);
+      } else if (e.key === "s" || e.key === "S") {
+        this.handleTrainingAction("skip", this.lastActiveRoostId);
+      }
+    };
+    this.keydownHandler = handler;
+    document.addEventListener("keydown", handler);
+  }
+
+  private deregisterKeyboard(): void {
+    if (this.keydownHandler) {
+      document.removeEventListener("keydown", this.keydownHandler);
+      this.keydownHandler = null;
+    }
   }
 
   private enterFeedMode(): void {
@@ -112,9 +217,14 @@ export class GalleryFeedModeController {
       },
     });
 
+    const self = this;
     const ctx: FeedRenderContext = {
       app: this.host.app,
       imagePropId: this.host.getImagePropId(),
+      get trainingMode() { return self.trainingMode; },
+      onTrainingAction: (action, roostId) => {
+        this.handleTrainingAction(action, roostId);
+      },
       onAction: (action, roostId) => {
         if (action === "open") {
           const path = this.lookupPathByRoostId(roostId);
@@ -132,20 +242,29 @@ export class GalleryFeedModeController {
       },
     };
 
+    const initialEntries = this.trainingMode ? this.trainingEntries() : this.host.getScopedEntries();
+    if (this.trainingMode) this.lastTrainingEntries = initialEntries;
+
     this.feedHandle = mountFeedPanel(
       this.feedSplitMount.rightPane,
       ctx,
       this.feedSync,
-      this.host.getScopedEntries(),
+      initialEntries,
     );
 
     this.feedSyncUnsub = this.feedSync.subscribe((roostId, source) => {
+      this.lastActiveRoostId = roostId;
       this.applyFeedActiveHighlight(roostId);
       if (roostId && source === "feed") this.scrollGalleryCardIntoView(roostId);
     });
+
+    if (this.trainingMode) {
+      this.registerKeyboard();
+    }
   }
 
   private exitFeedMode(): void {
+    this.deregisterKeyboard();
     this.feedSyncUnsub?.();
     this.feedSyncUnsub = null;
     this.feedHandle?.dispose();

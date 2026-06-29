@@ -1,5 +1,22 @@
 import { describe, it, expect } from "vitest";
-import { fadingWindowAccuracy, parseEvalLines, type EvalRecord } from "@/pipeline/eval-log";
+import { excludeReview, fadingWindowAccuracy, parseEvalLines, type EvalRecord } from "@/pipeline/eval-log";
+
+describe("excludeReview", () => {
+  const rec = (roostId: string, mode?: "review"): EvalRecord => ({
+    ts: 1, roostId, guess: "Tech", tier: "stacked", finalLabel: "Tech", correct: true,
+    ...(mode ? { mode } : {}),
+  });
+
+  it("excludeReview drops mode:'review' records, keeps organic ones", () => {
+    const recs = [rec("a"), rec("b", "review"), rec("c")];
+    expect(excludeReview(recs).map((r) => r.roostId)).toEqual(["a", "c"]);
+  });
+
+  it("mode survives JSONL round-trip", () => {
+    const line = JSON.stringify(rec("x", "review"));
+    expect(parseEvalLines(line)[0].mode).toBe("review");
+  });
+});
 
 function rec(ts: number, guess: string, tier: EvalRecord["tier"], final: string): EvalRecord {
   return { ts, roostId: `${ts}-${guess}`, guess, tier, finalLabel: final, correct: guess === final };

@@ -64,6 +64,8 @@ import { isPipelineSubstituteView } from "@/views/pipeline-views/registry";
 import { isCategoryPipelineActive } from "@/lib/pipeline-gate-plugin";
 import { CATEGORY_FIELD } from "@/config";
 import { safeGetValue } from "@/lib/bases-entry";
+import { confirmAutoItem, rejectAutoItem } from "@/pipeline/training-actions";
+import { readGuess } from "@/views/feed/training-mode";
 
 export const BASES_VIEW_ID = "roost-bookmarks";
 
@@ -262,6 +264,36 @@ export class BookmarksBasesView extends BasesView
     return findGalleryEntryByRoostId(this.getAllEntries(), roostId);
   }
 
+  async confirmAuto(roostId: string): Promise<void> {
+    const entry = this.findEntryByRoostId(roostId);
+    const file = entry ? this.app.vault.getFileByPath(entry.file.path) : null;
+    const guess = entry ? readGuess(entry).category : null;
+    if (!entry || !file || !guess) return;
+    try {
+      await confirmAutoItem(
+        { vault: this.app.vault, fileManager: this.app.fileManager, file, id: roostId, now: Date.now() },
+        guess,
+      );
+    } catch (e) {
+      console.warn("[roost] confirmAuto failed:", e);
+    }
+  }
+
+  async rejectAuto(roostId: string): Promise<void> {
+    const entry = this.findEntryByRoostId(roostId);
+    const file = entry ? this.app.vault.getFileByPath(entry.file.path) : null;
+    const guess = entry ? readGuess(entry).category : null;
+    if (!entry || !file || !guess) return;
+    try {
+      await rejectAutoItem(
+        { vault: this.app.vault, fileManager: this.app.fileManager, file, id: roostId, now: Date.now() },
+        guess,
+      );
+    } catch (e) {
+      console.warn("[roost] rejectAuto failed:", e);
+    }
+  }
+
   openMoveModal(entry: BasesEntry): void {
     openGalleryMoveModal(
       {
@@ -350,6 +382,17 @@ export class BookmarksBasesView extends BasesView
         onViewModeToggle: () => this.feedMode.toggleViewMode(),
       },
     );
+
+    // Training mode toggle — mirrors the feed/grid toggle from renderGalleryToolbar
+    const trainingGroup = this.toolbarEl.createDiv({ cls: "roost-toolbar-mode" });
+    const trainingBtn = trainingGroup.createEl("button", {
+      cls: `roost-mode-btn${this.feedMode.trainingMode ? " is-active" : ""}`,
+      attr: { title: this.feedMode.trainingMode ? "Exit training mode" : "Training mode" },
+    });
+    trainingBtn.textContent = "Train";
+    trainingBtn.addEventListener("click", () => {
+      this.feedMode.setTrainingMode(!this.feedMode.trainingMode);
+    });
   }
 
   enterSelectionMode(itemIds: string[], targetName: string, onAccept: (ids: string[]) => void): void {

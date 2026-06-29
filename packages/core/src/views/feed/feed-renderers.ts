@@ -20,6 +20,7 @@ import {
   type EntryMediaResolvers,
 } from "@/views/entry-to-expanded-card";
 import { resolveImageUrl, resolveVideoUrl, resolveAllImages } from "@/views/feed/card-helpers";
+import { readGuess } from "@/views/feed/training-mode";
 
 /** In-session mute preference shared across all TikTok feed items.
  *  Persisted only for the lifetime of the plugin process. */
@@ -47,6 +48,36 @@ export interface FeedRenderContext {
   imagePropId: string;
   /** Wire item-action buttons to the same plugin event channel the gallery uses. */
   onAction: (action: "move" | "delete" | "open", roostId: string) => void;
+  /** When true, training items render the confirm/reject action bar. */
+  trainingMode?: boolean;
+  /** Routes a training-mode action for an item to the host (confirm/reject/recategorize/skip). */
+  onTrainingAction?: (action: "confirm" | "reject" | "recategorize" | "skip", roostId: string) => void;
+}
+
+export function buildTrainingBar(
+  doc: Document,
+  guess: string,
+  handlers: { onConfirm: () => void; onReject: () => void; onRecategorize: () => void; onSkip: () => void },
+): HTMLElement {
+  const bar = doc.createElement("div");
+  bar.className = "roost-training-bar";
+  const banner = doc.createElement("div");
+  banner.className = "roost-training-guess";
+  banner.textContent = `Roost guessed: ${guess}`;
+  bar.appendChild(banner);
+  const mk = (action: string, label: string, fn: () => void) => {
+    const b = doc.createElement("button");
+    b.className = `roost-training-btn roost-training-${action}`;
+    b.dataset.action = action;
+    b.textContent = label;
+    b.addEventListener("click", fn);
+    bar.appendChild(b);
+  };
+  mk("confirm", "Yes", handlers.onConfirm);
+  mk("reject", "No", handlers.onReject);
+  mk("recategorize", "Recategorize", handlers.onRecategorize);
+  mk("skip", "Skip", handlers.onSkip);
+  return bar;
 }
 
 function feedResolvers(ctx: FeedRenderContext): EntryMediaResolvers {
@@ -81,6 +112,24 @@ function mountFeedActionsRow(
   return actions;
 }
 
+function maybeAppendTrainingBar(
+  el: HTMLElement,
+  entry: BasesEntry,
+  ctx: FeedRenderContext,
+  roostId: string,
+): void {
+  if (!ctx.trainingMode || !ctx.onTrainingAction) return;
+  const { category } = readGuess(entry);
+  if (!category) return;
+  const bar = buildTrainingBar(el.ownerDocument, category, {
+    onConfirm: () => ctx.onTrainingAction!("confirm", roostId),
+    onReject: () => ctx.onTrainingAction!("reject", roostId),
+    onRecategorize: () => ctx.onTrainingAction!("recategorize", roostId),
+    onSkip: () => ctx.onTrainingAction!("skip", roostId),
+  });
+  el.appendChild(bar);
+}
+
 function renderFeedExpandedItem(
   container: HTMLElement,
   entry: BasesEntry,
@@ -99,6 +148,7 @@ function renderFeedExpandedItem(
     inner,
     entryToExpandedCardData(entry, feedResolvers(ctx), [actions]),
   );
+  maybeAppendTrainingBar(inner, entry, ctx, getRoostId(entry));
 
   return {
     dispose: () => {
@@ -196,6 +246,7 @@ function renderFeedTikTok(
       text: tags.map((t) => `#${t}`).join(" "),
     });
   }
+  maybeAppendTrainingBar(container, entry, ctx, roostId);
 
   return {
     activate: () => { if (video) void video.play().catch(() => {}); },
