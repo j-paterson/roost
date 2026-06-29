@@ -17,6 +17,9 @@ import { buildClusteringContext } from "@/ui/lib/smart-assign/clustering-context
 import { loadTagDetectors, scoreWithTagDetectors, type TagAssignment } from "@/pipeline/evaluate";
 import { augmentUncensoredAssignments } from "@/pipeline/uncensored-augment";
 import { buildFileIndex, vaultBasePath } from "@/lib/vault-utils";
+import { runRetrain, shouldRetrain, newLabelsSince } from "@/pipeline/retrain";
+import { loadTrainingSet } from "@/pipeline/training-set";
+import { loadRetrainMeta } from "@/pipeline/head-store";
 
 export interface SmartAssignClusteringRefs {
   platformRef: React.MutableRefObject<string | undefined>;
@@ -55,6 +58,28 @@ export interface SmartAssignClusteringHost {
    * is false or weights are not found — callers must treat it as optional.
    */
   setTagAssignments?: (assignments: Map<string, TagAssignment>) => void;
+}
+
+/**
+ * Self-Improving Loop: attempt a retrain BEFORE step-1 scoring so the current
+ * run benefits from the improved head. Runs only when smartAssignAutoRetrain is
+ * enabled, the trigger threshold is met, and is wrapped in its own try/catch so
+ * a retrain failure never aborts the run.
+ *
+ * Exported for unit-testing in isolation (host interface is a minimal subset).
+ */
+export function maybeRetrainAtRunStart(host: Pick<SmartAssignClusteringHost, "app" | "plugin" | "log">): void {
+  if (!host.plugin.settings.smartAssignAutoRetrain) return;
+  try {
+    const vault = host.app.vault;
+    const ts = loadTrainingSet(vault);
+    const since = loadRetrainMeta(vault).lastRetrainTs;
+    if (shouldRetrain({ newLabelsSinceLastTrain: newLabelsSince(ts, since), newlyEligibleCount: 0 })) {
+      runRetrain(vault, host.log);
+    }
+  } catch (e: unknown) {
+    host.log(`[retrain] failed (kept current head): ${e instanceof Error ? e.message : String(e)}`);
+  }
 }
 
 export async function runSmartAssignClustering(host: SmartAssignClusteringHost): Promise<void> {
@@ -98,6 +123,9 @@ export async function runSmartAssignClustering(host: SmartAssignClusteringHost):
         host.setTagAssignments(tagMap);
       }
     }
+
+    // ── Self-Improving Loop: retrain BEFORE scoring so this run uses the improved head ──
+    maybeRetrainAtRunStart(host);
 
     const step1 = await runClusteringStep1ScoreKnown(host, signal, step0);
     if (!step1) return;

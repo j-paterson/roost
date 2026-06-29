@@ -15,19 +15,6 @@ import {
 } from "@/pipeline/training-set";
 import type { EvalRecord, EvalTier } from "@/pipeline/eval-log";
 import { appendEvalRecords } from "@/pipeline/eval-log";
-import { shouldRetrain, runRetrain } from "@/pipeline/retrain";
-/**
- * Pure gate helper — calls `run` only when both `enabled` and `triggered` are true.
- * Returns the outcome when run, or null otherwise.
- */
-export function maybeRetrain(
-  enabled: boolean,
-  triggered: boolean,
-  run: () => { ran: boolean; swapped: boolean; reason: string },
-): { ran: boolean; swapped: boolean; reason: string } | null {
-  if (!enabled || !triggered) return null;
-  return run();
-}
 
 export interface SmartAssignConfirmStore {
   getClusterGroups: () => Array<{ uncertainItemIds?: string[] }>;
@@ -242,18 +229,6 @@ export async function confirmSmartAssign(
     appendEvalRecords(vault, evalRecords);
   } catch (e: unknown) {
     host.log(`[loop] capture failed: ${e instanceof Error ? e.message : String(e)}`);
-  }
-
-  // ── Self-Improving Loop: retrain classifier head (opt-in, fail-closed) ──────
-  // Runs after the capture block; failure must NEVER break confirm/write.
-  // maybeRetrain is the single gate — pass the setting value directly so the
-  // enabled/disabled check lives in one place (the outer `if` was a dead branch).
-  try {
-    const vault = host.plugin.app.vault;
-    const triggered = shouldRetrain({ newLabelsSinceLastTrain: reassigned.size + host.store.getRejects().size, newlyEligibleCount: 0 });
-    maybeRetrain(host.plugin.settings.smartAssignAutoRetrain, triggered, () => runRetrain(vault, host.log));
-  } catch (e: unknown) {
-    host.log(`[retrain] failed (kept current head): ${e instanceof Error ? e.message : String(e)}`);
   }
 
   // ── Wave 2 D1: Append category/* tags when tagAssignments are present ────────

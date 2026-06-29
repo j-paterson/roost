@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { Vault } from "obsidian";
-import { shouldRetrain, decideSwap, decideFromFolds, runRetrain } from "@/pipeline/retrain";
+import { shouldRetrain, decideSwap, decideFromFolds, runRetrain, newLabelsSince } from "@/pipeline/retrain";
 import type { StackedHeads } from "@/pipeline/classifier-head";
 import type { GateResult } from "@/pipeline/acceptance-gate";
 import type { ClassifierHeadData, MetaHeadData } from "@/pipeline/classifier-head";
@@ -223,5 +223,44 @@ describe("runRetrain", () => {
     expect(result).toMatchObject({ ran: true, swapped: false, reason: "write failed, restored previous" });
     expect(vi.mocked(restorePreviousHeads)).toHaveBeenCalledOnce();
     expect(vi.mocked(saveRetrainMeta)).not.toHaveBeenCalled();
+  });
+});
+
+// ── newLabelsSince ────────────────────────────────────────────────────────────
+
+import type { TrainingSet } from "@/pipeline/training-set";
+
+describe("newLabelsSince", () => {
+  const makeTs = (entries: Record<string, number>): TrainingSet => ({
+    version: 1,
+    positives: Object.fromEntries(
+      Object.entries(entries).map(([id, ts]) => [id, { category: "catA", ts }])
+    ),
+    rejections: {},
+  });
+
+  it("counts positives with ts strictly greater than sinceTs", () => {
+    const ts = makeTs({ a: 100, b: 200, c: 300 });
+    expect(newLabelsSince(ts, 150)).toBe(2); // b(200) and c(300) qualify
+  });
+
+  it("returns 0 when all positives are at or before the watermark", () => {
+    const ts = makeTs({ a: 100, b: 150 });
+    expect(newLabelsSince(ts, 200)).toBe(0);
+  });
+
+  it("excludes the item exactly at sinceTs (strictly greater)", () => {
+    const ts = makeTs({ a: 100, b: 100, c: 101 });
+    expect(newLabelsSince(ts, 100)).toBe(1); // only c(101)
+  });
+
+  it("returns 0 on empty training set", () => {
+    const ts = makeTs({});
+    expect(newLabelsSince(ts, 0)).toBe(0);
+  });
+
+  it("counts all when sinceTs is 0 and all positives are newer", () => {
+    const ts = makeTs({ a: 1, b: 2, c: 3 });
+    expect(newLabelsSince(ts, 0)).toBe(3);
   });
 });

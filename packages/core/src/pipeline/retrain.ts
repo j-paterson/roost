@@ -4,6 +4,17 @@ import { evaluateGate, type GateResult, type GateSample } from "@/pipeline/accep
 import { writeStackedHeads, restorePreviousHeads, loadRetrainMeta, saveRetrainMeta } from "@/pipeline/head-store";
 import { loadStackedHeads, type StackedHeads, type ClassifierHeadData, type MetaHeadData } from "@/pipeline/classifier-head";
 import { RETRAIN_SIGNAL_FLOOR, GATE_KFOLDS, GATE_EPS } from "@/config";
+import type { TrainingSet } from "@/pipeline/training-set";
+
+/**
+ * Pure count: how many positive labels have a timestamp strictly after sinceTs.
+ * Used to drive shouldRetrain at the start of a Smart Assign run.
+ */
+export function newLabelsSince(ts: TrainingSet, sinceTs: number): number {
+  let n = 0;
+  for (const p of Object.values(ts.positives)) if (p.ts > sinceTs) n++;
+  return n;
+}
 
 /**
  * Pure trigger: fire when we have enough new human labels OR a category
