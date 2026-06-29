@@ -16,7 +16,7 @@
  * quote-of-article we must NOT treat it as an article; we render the host
  * tweet's own text and the quoted article as a blockquote (Step 1/2).
  */
-import { roostUnwrapTweet, type RawApiData } from "./normalize";
+import { roostUnwrapTweet, type RawApiData } from "./normalize-helpers";
 import { extractBookmarkText, extractTwitterMedia, type BookmarkRecord } from "./extract";
 
 /** A run of plain text or a tokenized entity (mention/hashtag/URL). */

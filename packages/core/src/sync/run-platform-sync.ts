@@ -16,8 +16,7 @@ import type {
   SyncPhaseProgress,
 } from "@/types/sync";
 import type { NormalizedRecord } from "@/lib/normalize";
-import { syncTikTok } from "@/sync/tiktok-sync";
-import { syncTwitter } from "@/sync/twitter-sync";
+import { getPlatform } from "@/platforms/registry";
 import { VaultWriter } from "@/sync/vault-writer";
 import { ensureBasesFiles } from "@/sync/bases-setup";
 
@@ -107,6 +106,9 @@ export async function runPlatformSync(opts: RunPlatformSyncOpts): Promise<RunPla
     vault: app.vault,
     syncFolder: plugin.settings.syncFolder,
     metadataCache: app.metadataCache,
+    // Only the TikTok webview belongs here — VaultIndex.scanIncompleteIds reads this
+    // for TikTok notes regardless of the active sync platform, so a Twitter webview
+    // here would mis-classify TikTok media-missing items. Strict-parity guard.
     tiktokWebview: platform === "tiktok" ? wc : undefined,
     onLog: log,
   });
@@ -149,22 +151,18 @@ export async function runPlatformSync(opts: RunPlatformSyncOpts): Promise<RunPla
       else if (skipped > 0) log(`Batch: ${skipped} already synced`);
     };
 
-    if (platform === "tiktok") {
-      await syncTikTok(wc, el, { stopSignal: signal }, onProgress, onRecords, log);
-    } else {
-      await syncTwitter(
-        wc,
-        el,
-        {
-          stopSignal: signal,
-          hydrateCachedThread: (r) => writer.hydrateThreadFromCache(r),
-          fastSyncMode: effectiveFastMode,
-        },
-        onProgress,
-        onRecords,
-        log,
-      );
-    }
+    await getPlatform(platform).sync(
+      wc,
+      el,
+      {
+        stopSignal: signal,
+        hydrateCachedThread: (r) => writer.hydrateThreadFromCache(r),
+        fastSyncMode: effectiveFastMode,
+      },
+      onProgress,
+      onRecords,
+      log,
+    );
 
     syncCompleted = !signal.stopped;
     log(`Sync complete: ${totalPushed} new, ${totalSkipped} skipped`);

@@ -12,6 +12,8 @@ import { roostIdFromUrl } from "@/lib/roost-id";
 import { sanitizeFilename, detectPlatformFromUrl, buildTikTokVideoUrl } from "../lib/extract";
 import * as fs from "fs";
 import * as path from "path";
+import type { Platform } from "@/types/sync";
+import { getPlatform, PLATFORMS } from "@/platforms/registry";
 
 interface EagleFolder {
   id: string;
@@ -132,8 +134,9 @@ export async function importFromEagle(opts: EagleImportOpts): Promise<{ imported
       const platform = detectPlatformFromUrl(meta.website || meta.url || "", meta.tags);
       const collection = meta.tags?.find(t => t.startsWith("collection:"))?.slice("collection:".length);
       // Flat folder structure — matches API sync (no collection subfolders)
-      const platformFolder = platform === "tiktok" ? "TikTok"
-        : platform === "twitter" ? "X" : "Other";
+      const platformFolder = platform in PLATFORMS
+        ? getPlatform(platform as Platform).displayName
+        : "Other";
       const folderPath = `${syncFolder}/${platformFolder}`;
       // Use the numeric platform ID (from roost_id) for folder name, not Eagle's internal ID.
       // This keeps attachment folders consistent with API-synced items.

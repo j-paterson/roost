@@ -2,6 +2,7 @@
  * Webview manager — creates and manages <webview> elements for TikTok/X login and sync.
  */
 import type { ElectronWebview, Platform } from "@/types/sync";
+import { getPlatform } from "@/platforms/registry";
 
 const CHROME_UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
 
@@ -10,18 +11,6 @@ const CHROME_UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/5
  *  callers should treat it as "don't change what we already believe". */
 export type AuthStatus = "connected" | "logged-out" | "unknown";
 
-/** Cookie names whose presence (with a non-empty value) indicates a logged-in
- *  session. These are httpOnly, so document.cookie can't see them — we read
- *  them via the partition's Electron session instead. */
-const AUTH_COOKIES: Record<Platform, string[]> = {
-  tiktok: ["sessionid", "sessionid_ss"],
-  twitter: ["auth_token"],
-};
-
-const PLATFORM_ORIGIN: Record<Platform, string> = {
-  tiktok: "https://www.tiktok.com",
-  twitter: "https://x.com",
-};
 
 interface ElectronSession {
   cookies: { get(filter: { url: string }): Promise<Array<{ name: string; value: string }>> };
@@ -62,10 +51,7 @@ export class WebviewManager {
     const existing = this.webviews.get(platform);
     if (existing) return existing.element;
 
-    // For TikTok, start on /profile (redirects to /@you when logged in) instead
-    // of the heavy For You feed — this is the first page the sync needs, so it's
-    // the page the (persisted, eagerly-created) webview should load up front.
-    const url = platform === "tiktok" ? "https://www.tiktok.com/profile" : "https://x.com/";
+    const url = getPlatform(platform).profileUrl;
     // <webview> is an Electron custom element — not in standard DOM types.
     const webview = document.createElement("webview") as unknown as ElectronWebview;
     webview.setAttribute("src", url);
@@ -192,8 +178,9 @@ export class WebviewManager {
     try {
       const wc = remote.webContents.fromId(managed.webContentsId);
       if (!wc) return "unknown";
-      const cookies = await wc.session.cookies.get({ url: PLATFORM_ORIGIN[platform] });
-      const names = AUTH_COOKIES[platform];
+      const descriptor = getPlatform(platform);
+      const cookies = await wc.session.cookies.get({ url: descriptor.origin });
+      const names = descriptor.authCookies;
       const found = cookies.some((c) => names.includes(c.name) && c.value.length > 0);
       return found ? "connected" : "logged-out";
     } catch {
@@ -221,7 +208,7 @@ export class WebviewManager {
     } catch { /* ignore */ }
     // Reload the login page regardless, so a still-open pane shows logged-out.
     try {
-      managed?.element.loadURL(`${PLATFORM_ORIGIN[platform]}/`);
+      managed?.element.loadURL(`${getPlatform(platform).origin}/`);
     } catch { /* ignore */ }
   }
 

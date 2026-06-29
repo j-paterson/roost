@@ -6,9 +6,11 @@ import type { EmbeddingCacheEntry } from "@/types/roost";
 import { vaultBasePath } from "@/lib/vault-utils";
 import { cacheDir, cachePath } from "@/lib/roost-paths";
 import { getActiveProvider } from "@/lib/llm-provider";
-import { stripMediaUrls, getTweetMediaUrls } from "@/lib/extract";
+import { stripMediaUrls, getTweetMediaUrls } from "@/lib/twitter-helpers";
 import * as fs from "fs";
 import * as path from "path";
+import type { Platform } from "@/types/sync";
+import { getPlatform, PLATFORMS } from "@/platforms/registry";
 
 // ── Text cleanup ──
 
@@ -301,19 +303,19 @@ export async function ollamaGenerate(prompt: string, opts: OllamaGenerateOpts = 
 
 // ── Raw sync JSON access ──
 
-function platformAndId(roostId: string): { platform: "twitter" | "tiktok"; id: string } | null {
+function platformAndId(roostId: string): { platform: Platform; id: string } | null {
   const i = roostId.indexOf(":");
   if (i < 0) return null;
   const p = roostId.slice(0, i);
   const id = roostId.slice(i + 1);
   if (!id) return null;
-  if (p === "twitter" || p === "tiktok") return { platform: p, id };
+  if (p in PLATFORMS) return { platform: p as Platform, id };
   return null;
 }
 
 /**
  * Read the raw sync sidecar JSON for a roostId. Returns null if missing,
- * unreadable, malformed, or the platform isn't twitter/tiktok.
+ * unreadable, malformed, or the platform isn't a registered platform (twitter, tiktok).
  */
 export function readRawJson(
   vault: Vault,
@@ -322,7 +324,7 @@ export function readRawJson(
 ): Record<string, unknown> | null {
   const pid = platformAndId(roostId);
   if (!pid) return null;
-  const folder = pid.platform === "twitter" ? "X" : "TikTok";
+  const folder = getPlatform(pid.platform).displayName;
   const attachFolder = `${pid.platform}-${pid.id}`;
   const full = path.join(vaultBasePath(vault), syncFolder, folder, attachFolder, "raw.json");
   try {

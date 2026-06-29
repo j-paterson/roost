@@ -10,7 +10,8 @@
 import type { App } from "obsidian";
 import type { RoostFilter, ItemClickData, RoostMode } from "@/types/roost";
 import type { RoostSettings } from "@/settings";
-import type { WebviewManager } from "@/sync/webview-manager";
+import type { Platform } from "@/types/sync";
+import type { WebviewManager, AuthStatus } from "@/sync/webview-manager";
 import type { IncompleteByCategory } from "@/sync/vault-writer";
 import type { Embedder, SelectEmbedderOpts } from "@/lib/embedder";
 import type { DetectStatus, IntegrationId } from "@/integrations/registry";
@@ -70,22 +71,22 @@ export interface IRoostPlugin {
   /** Auth-cookie probe result per platform — the real "logged in?" signal,
    *  independent of whether a sync has ever completed. "unknown" until probed.
    *  Updated by refreshAuthStatus(); read by the hub's useHubState. */
-  authStatus: Record<"tiktok" | "twitter", "connected" | "logged-out" | "unknown">;
+  authStatus: Record<Platform, AuthStatus>;
   /** Re-probe webview auth cookies, update authStatus, trigger a Hub re-render.
    *  Safe to call repeatedly. */
   refreshAuthStatus(): Promise<void>;
   /** Disconnect a platform: clear its webview session (cookies) + stored sync
    *  state so it returns to the unconfigured/Connect state. */
-  disconnectPlatform(platform: "tiktok" | "twitter"): Promise<void>;
+  disconnectPlatform(platform: Platform): Promise<void>;
 
-  runSync(platform: "tiktok" | "twitter"): Promise<void>;
+  runSync(platform: Platform): Promise<void>;
   runEagleImport(): Promise<void>;
   activateHubLeaf(): Promise<void>;
 
   getWebviewManager(): WebviewManager;
   openBookmarksBase(): Promise<void>;
   openExplorerBase(): Promise<void>;
-  openWebview(platform: "tiktok" | "twitter"): Promise<void>;
+  openWebview(platform: Platform): Promise<void>;
   closeWebview(): void;
   setFilter(filter: RoostFilter): void;
   saveSettings(): Promise<void>;

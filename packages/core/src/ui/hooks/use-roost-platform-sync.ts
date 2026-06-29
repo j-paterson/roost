@@ -4,8 +4,7 @@ import type { SyncProgress } from "@/ui/components/progress-header";
 import type { Platform, StopSignal, SyncPhaseProgress } from "@/types/sync";
 import type { NormalizedRecord } from "@/lib/normalize";
 import type { IRoostPlugin } from "@/types/plugin";
-import { syncTikTok } from "@/sync/tiktok-sync";
-import { syncTwitter } from "@/sync/twitter-sync";
+import { getPlatform, PLATFORMS } from "@/platforms/registry";
 import { VaultWriter } from "@/sync/vault-writer";
 import { importFromEagle, getEagleLibraryPath } from "@/sync/eagle-import";
 import { ensureBasesFiles } from "@/sync/bases-setup";
@@ -78,6 +77,8 @@ export function useRoostPlatformSync({ app, plugin, log, scanLibrary }: UseRoost
       vault: app.vault,
       syncFolder: plugin.settings.syncFolder,
       metadataCache: app.metadataCache,
+      // Only the TikTok webview belongs here (see run-platform-sync) — VaultIndex
+      // reads it for TikTok notes regardless of active sync platform. Strict-parity guard.
       tiktokWebview: platform === "tiktok" ? wc : undefined,
       onLog: log,
     });
@@ -150,22 +151,18 @@ export function useRoostPlatformSync({ app, plugin, log, scanLibrary }: UseRoost
         }
       };
 
-      if (platform === "tiktok") {
-        await syncTikTok(wc, el, { stopSignal: signal }, onProgress, onRecords, log);
-      } else {
-        await syncTwitter(
-          wc,
-          el,
-          {
-            stopSignal: signal,
-            hydrateCachedThread: r => writer.hydrateThreadFromCache(r),
-            fastSyncMode: plugin.settings.fastSyncMode,
-          },
-          onProgress,
-          onRecords,
-          log,
-        );
-      }
+      await getPlatform(platform).sync(
+        wc,
+        el,
+        {
+          stopSignal: signal,
+          hydrateCachedThread: (r) => writer.hydrateThreadFromCache(r),
+          fastSyncMode: plugin.settings.fastSyncMode,
+        },
+        onProgress,
+        onRecords,
+        log,
+      );
 
       syncCompleted = !signal.stopped;
       log(`Sync complete: ${totalPushed} new, ${totalSkipped} skipped`);
@@ -233,8 +230,8 @@ export function useRoostPlatformSync({ app, plugin, log, scanLibrary }: UseRoost
   handleImportFromEagleRef.current = handleImportFromEagle;
   useEffect(() => {
     const syncHandler = (platform: unknown) => {
-      if (platform === "tiktok" || platform === "twitter") {
-        void handleSyncRef.current(platform);
+      if (typeof platform === "string" && platform in PLATFORMS) {
+        void handleSyncRef.current(platform as import("@/types/sync").Platform);
       }
     };
     const eagleHandler = () => {

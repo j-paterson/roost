@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, it, expect } from "vitest";
-import { stripMediaUrls, getTweetMediaUrls } from "../extract";
+import { stripMediaUrls, getTweetMediaUrls } from "../twitter-helpers";
 
 describe("stripMediaUrls", () => {
   it("strips a single trailing t.co URL", () => {

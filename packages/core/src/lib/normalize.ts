@@ -1,93 +1,23 @@
 /**
  * Roost bookmark normalization — converts raw platform API objects into a uniform storage record.
  */
+import type { Platform } from "@/types/sync";
+import { getPlatform, PLATFORMS } from "@/platforms/registry";
+import {
+  roostBookmarkId,
+  type RawApiData,
+  type NormalizeOptions,
+  type NormalizedRecord,
+} from "@/lib/normalize-helpers";
 
-/**
- * Raw API payload from Twitter, TikTok, or Farcaster.
- * Shape is platform-specific and cannot be statically typed — property
- * access is done via helper casts in the same file.
- */
-export type RawApiData = Record<string, any>;
-
-export interface NormalizedRecord {
-  id: string;
-  platform: string;
-  itemId: string;
-  rawData: RawApiData;
-  saved_at: string;
-  published_at: string | null;
-  captured_via: string;
-  castHash?: string;
-}
-
-interface NormalizeOptions {
-  savedAt?: string;
-  capturedVia?: string;
-}
-
-export function roostUnwrapTweet(raw: RawApiData | null | undefined): RawApiData | null {
-  if (!raw || typeof raw !== "object") return null;
-  if (raw.__typename === "TweetWithVisibilityResults" && raw.tweet?.rest_id) return raw.tweet;
-  if (raw.__typename === "Tweet" && raw.rest_id) return raw;
-  if (raw.rest_id && raw.legacy) return raw;
-  if (raw.tweet?.rest_id) return raw.tweet;
-  if (raw.result) return roostUnwrapTweet(raw.result);
-  return null;
-}
-
-function roostParseTwitterDate(value: unknown): string | null {
-  if (!value) return null;
-  const ms = Date.parse(String(value));
-  return isNaN(ms) ? null : new Date(ms).toISOString();
-}
-
-function roostParseEpoch(value: unknown): string | null {
-  if (!value) return null;
-  const n = Number(value);
-  if (isNaN(n)) return null;
-  return n > 1e12 ? new Date(n).toISOString()
-    : n > 1e9 ? new Date(n * 1000).toISOString()
-    : null;
-}
-
-function roostTrimTikTok(item: RawApiData): RawApiData {
-  return { ...item };
-}
-
-function roostBookmarkId(platform: string, itemId: string): string {
-  return `${platform}:${itemId}`;
-}
+// Re-export types so existing importers of @/lib/normalize don't need to change.
+export type { RawApiData, NormalizedRecord, NormalizeOptions } from "@/lib/normalize-helpers";
 
 export function roostNormalize(platform: string, item: RawApiData, options: NormalizeOptions = {}): NormalizedRecord | null {
   if (!item) return null;
 
-  if (platform === "twitter") {
-    const tweet = roostUnwrapTweet(item);
-    const itemId: string | undefined = tweet?.rest_id || item?.rest_id || item?.legacy?.id_str;
-    if (!itemId) return null;
-    const published = roostParseTwitterDate(tweet?.legacy?.created_at);
-    return {
-      id: roostBookmarkId("twitter", itemId),
-      platform: "twitter", itemId,
-      rawData: tweet || item,
-      saved_at: options.savedAt || published || new Date().toISOString(),
-      published_at: published,
-      captured_via: options.capturedVia || "sync",
-    };
-  }
-
-  if (platform === "tiktok") {
-    const itemId: string | undefined = item.id || item.video?.id;
-    if (!itemId) return null;
-    const published = roostParseEpoch(item.createTime);
-    return {
-      id: roostBookmarkId("tiktok", itemId),
-      platform: "tiktok", itemId,
-      rawData: roostTrimTikTok(item),
-      saved_at: options.savedAt || published || new Date().toISOString(),
-      published_at: published,
-      captured_via: options.capturedVia || "sync",
-    };
+  if (platform in PLATFORMS) {
+    return getPlatform(platform as Platform).parse.normalize(item, options);
   }
 
   // Farcaster (default)
