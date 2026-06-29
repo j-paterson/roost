@@ -1,3 +1,4 @@
+import type { App } from "obsidian";
 import { type TrainingSet, addPositive } from "@/pipeline/training-set";
 
 export interface SeedLabel {
@@ -22,4 +23,30 @@ export function seedPositives(
     seeded++;
   }
   return { ts, seeded, byClass };
+}
+
+/** Pure: extract seedable labels from a list of frontmatter records. */
+export function humanLabelsFromFrontmatter(
+  records: Array<Record<string, unknown> | undefined>,
+): SeedLabel[] {
+  const out: SeedLabel[] = [];
+  for (const fm of records) {
+    if (!fm) continue;
+    if (fm.roost_assigned_by !== "human") continue;
+    const id = typeof fm.roost_id === "string" ? fm.roost_id : null;
+    if (!id) continue;
+    const raw = typeof fm.roost_category === "string" ? fm.roost_category.trim() : "";
+    if (!raw || raw === "undefined" || raw === "null") continue;
+    out.push({ id, category: raw });
+  }
+  return out;
+}
+
+/** Read sync-folder markdown frontmatter and collect human-labeled seed labels. */
+export function collectHumanLabels(app: App, syncFolder: string): SeedLabel[] {
+  const records = app.vault
+    .getMarkdownFiles()
+    .filter((f) => f.path.startsWith(syncFolder + "/"))
+    .map((f) => app.metadataCache.getFileCache(f)?.frontmatter as Record<string, unknown> | undefined);
+  return humanLabelsFromFrontmatter(records);
 }
