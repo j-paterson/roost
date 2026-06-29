@@ -596,16 +596,27 @@ than solve.
 
 ### The self-improving loop (`training-set.ts`, `eval-log.ts`, `honesty-monitors.ts`, `logreg-fit.ts`, `train-head.ts`, `acceptance-gate.ts`, `head-store.ts`, `retrain.ts`) — 2026-06-27/28
 
-> Spec 2, both plans shipped. **Plan 1** = the deterministic substrate + rejection behavior
-> (below). **Plan 2** = the retrain engine — the head now **retrains in-process from the
-> user's confirmed labels**, **opt-in** behind `smartAssignAutoRetrain` (default **off**).
-> Spec: `docs/superpowers/specs/2026-06-26-self-improving-loop-design.md`. Training-NEGATIVES
-> (rejections as hard negatives) remain deferred — see "Out of scope" at the end of this section.
+> Spec 2, both plans + the amendment shipped. **Plan 1** = the deterministic substrate +
+> rejection behavior. **Plan 2** = the retrain engine. **Amendment (2026-06-28)** = organic
+> capture (any hand edit becomes training signal), retrain moved to **run-start**, and a
+> validated gate (fair fresh baseline + overall&macro-recall rule). The head retrains
+> in-process from the user's labels, **opt-in** behind `smartAssignAutoRetrain` (default **off**).
+> Specs: `2026-06-26-self-improving-loop-design.md` + `2026-06-28-self-improving-loop-amendment-design.md`.
+> Training-NEGATIVES remain deferred (see "Out of scope"). Before enabling auto-retrain on a
+> vault, `scripts/validate-gate.py` must pass (gate accepts a better candidate, rejects a corrupted one).
 
 - **Rejection capture.** In Smart Assign review, an item's gallery card can be **rejected**
   (marked wrong *without* picking a replacement) — `GroupStore.rejectItem` / `getRejects`,
   fired via `fireItemClick({action:"reject",…})`. On confirm, rejected items are left
   Unsorted (skipped in `buildItemCategory`).
+- **Organic capture (amendment).** Beyond the review UI, **any hand edit to `roost_category`
+  during normal vault use** becomes training signal: an always-on `metadataCache.on("changed")`
+  listener (`organic-capture.ts`) maps `X→Y` (correction → positive), `X→∅` (cleared →
+  rejection), `∅→Y` (hand-labeled → positive), writing back `roost_assigned_by: human`. A
+  **value-based own-write guard** — the handler reloads the per-item `category-snapshot.json`
+  from disk each fire and ignores any change whose new value equals the snapshot (which the
+  plugin's own writes update) — ensures Smart Assign's own auto-assignments are never captured
+  as edits (the feedback-loop safety, timing-independent of `bulkWriteInProgress`).
 - **Rejected-class suppression.** A rejection records `(roost_id ✗ category)` in the
   per-vault **training-set store** (`pipeline/training-set.ts`, `.roost/cache/training-set.json`).
   Next run, `clustering-step-1-score.ts` derives a `suppressionMap` and threads
@@ -622,10 +633,12 @@ than solve.
   (`eval-log.ts`). `honesty-monitors.ts` flags silently-rotting classes (uncorrected past a
   window) and per-class label-distribution drift. These inform; they do not act.
 
-**The retrain engine (Plan 2, opt-in `smartAssignAutoRetrain`, default off).** On confirm —
-after the capture hook persists this batch's labels, in its own try/catch (a retrain failure
-never breaks confirm) — if the flag is on and `shouldRetrain` fires (new human labels ≥
-`RETRAIN_SIGNAL_FLOOR`), `runRetrain` (`retrain.ts`) executes:
+**The retrain engine (opt-in `smartAssignAutoRetrain`, default off).** At the **START of a
+Smart Assign run, before Step-1 scoring** (so the run scores with the improved head — the
+amendment moved this off the confirm hook), in its own try/catch (a retrain failure never
+breaks the run) — if the flag is on and `shouldRetrain` fires (new human labels since
+`lastRetrainTs` ≥ `RETRAIN_SIGNAL_FLOOR`, counting organic edits + review labels), `runRetrain`
+(`retrain.ts`) executes:
 
 1. **Train a candidate** (`train-head.ts`): build rows from the training-set's human positives
    (eligible classes only, ≥5), fit text + vision base heads + an OOF-stacked meta head. The
@@ -635,15 +648,25 @@ never breaks confirm) — if the flag is on and `shouldRetrain` fires (new human
    against a committed golden fixture: weights within 0.02, ≥99% prediction agreement) — the
    convex objective guarantees the same unique optimum. No Python at runtime; the encoder stays
    frozen (only the linear head retrains).
-2. **Gate fail-closed** (`acceptance-gate.ts`): on a held-out slice (disjoint from training),
-   the candidate must not drop overall accuracy AND not regress any class beyond
-   `RETRAIN_CAT_MARGIN`. It replaces the live head **only** if it passes (or there is no current
-   head). If the holdout is empty but a head exists, retrain is skipped to protect the live head.
-3. **Atomic reversible swap** (`head-store.ts`): the 3 head JSONs are written atomically with a
-   `.prev` backup; a write failure triggers `restorePreviousHeads`. A retrain can only ever
-   improve or hold the live head — never silently degrade or corrupt it.
+2. **Gate, fail-closed, with a *fair* baseline** (`acceptance-gate.ts` + `retrain.ts`): the
+   amendment fixed two structural flaws here. (a) The baseline is a **freshly-trained head on
+   labels before `lastRetrainTs`** (excl. the holdout) — **never the live head**, which trained
+   on the holdout and would always "win" unfairly (it rejected every candidate). (b) The
+   decision is **overall AND macro-recall non-regression + a catastrophic-collapse guard**
+   (a class with ≥`GATE_MIN_SUPPORT` holdout items dropping >`GATE_CATASTROPHIC_DROP`), averaged
+   over `GATE_KFOLDS` folds — replacing the old per-class 5pp veto, which rejected
+   net-beneficial retrains because they redistribute errors (rare classes gain, some established
+   ones dip). Macro-recall rewards exactly that redistribution. The candidate swaps in **only**
+   if overall & macro hold and no class collapses (or there is no current head); empty/no-baseline
+   folds → skip, protecting the live head. Validated both directions (`scripts/validate-gate.py`).
+3. **Atomic reversible swap** (`head-store.ts`): the deployed head trains on **all** labels; the
+   3 head JSONs are written atomically with a `.prev` backup; a write failure triggers
+   `restorePreviousHeads`. `lastRetrainTs` is persisted (`retrain-meta.json`). A retrain can only
+   ever improve or hold the live head — never silently degrade or corrupt it.
 
-The retrain currently runs synchronously on the confirm thread (acceptable at present scale;
+Each attempt is logged to `.roost/cache/retrain-log.jsonl` (`retrain-log.ts`) and surfaces a
+run-start `Notice` (improved / skipped / write-error). The retrain runs **synchronously at
+run-start** (k-fold trains throwaway baseline+candidate heads — seconds at current scale;
 off-thread is the noted future lever).
 
 **Out of scope (deferred).** Training-NEGATIVES (feeding rejections into the retrain as hard
