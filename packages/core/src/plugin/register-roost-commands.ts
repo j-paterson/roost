@@ -8,6 +8,7 @@ import { ENRICHMENTS } from "@/lib/enrichments";
 import { registerDigestCommands } from "@/plugin/digest-commands";
 import { registerMemoryCommands } from "@/plugin/memory-commands";
 import { registerBackfillCommands } from "@/plugin/backfill-commands";
+import { registerSeedCommands } from "@/plugin/seed-commands";
 import { registerMigrationCommands } from "@/plugin/migration-commands";
 import { registerRemapCommands } from "@/plugin/remap-commands";
 import type { RoostCommandHost } from "@/plugin/roost-command-host";
@@ -133,6 +134,7 @@ export function registerRoostCommands(plugin: RoostCommandHost): void {
   registerDigestCommands(plugin);
   registerMemoryCommands(plugin);
   registerBackfillCommands(plugin);
+  registerSeedCommands(plugin);
   registerRemapCommands(plugin);
 
   plugin.addCommand({

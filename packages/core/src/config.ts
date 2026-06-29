@@ -126,3 +126,8 @@ export const GATE_OOF = 3;              // OOF folds for throwaway gate models (
  *  of that class's correction-source positives. Confirms amplify curated classes but
  *  cannot build or dominate one alone (a class with 0 corrections admits 0 confirms). */
 export const CONFIRM_CAP_RATIO = 2.0;
+
+/** Seed timestamp for training-set bootstrap. All corpus labels seeded from existing
+ *  frontmatter get this fixed low ts so they sort BEFORE any captured signal — making the
+ *  seeded corpus the fair-baseline gate's baseline and ongoing captures the candidate. */
+export const SEED_TS = 1;
