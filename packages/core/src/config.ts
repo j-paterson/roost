@@ -120,3 +120,9 @@ export const GATE_CATASTROPHIC_DROP = 0.15; // a well-supported class dropping >
 export const GATE_MIN_SUPPORT = 20;      // min holdout items for the catastrophic guard to apply
 export const GATE_KFOLDS = 3;            // CV folds averaged for the gate decision
 export const GATE_OOF = 3;              // OOF folds for throwaway gate models (cheaper than OOF_FOLDS)
+
+// ── Training mode confirm cap (Task 2) ────────────────────────────────────────
+/** Training mode: confirmed positives for a class are admitted up to this multiple
+ *  of that class's correction-source positives. Confirms amplify curated classes but
+ *  cannot build or dominate one alone (a class with 0 corrections admits 0 confirms). */
+export const CONFIRM_CAP_RATIO = 2.0;
