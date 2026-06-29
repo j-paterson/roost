@@ -16,9 +16,11 @@ export type TikTokMedia = ReturnType<typeof extractTikTokMedia>;
 export type TwitterMedia = ReturnType<typeof extractTwitterMedia>;
 
 /**
- * Per-platform bookmark field extractors — thin wrappers over the existing
- * lib/extract.ts functions. Later tasks will inline the logic here and
- * flip consumers to call parse.* instead of calling extract.ts directly.
+ * Per-platform bookmark field extractors. Each platform's descriptor
+ * implements these methods with the real extraction logic for that platform
+ * (moved out of the old extract.ts/normalize.ts). extract.ts and normalize.ts
+ * now delegate to these methods via the registry rather than containing
+ * per-platform logic directly.
  */
 export interface PlatformParser {
   /** Platform-namespaced bookmark ID (e.g. "tiktok:123"). */

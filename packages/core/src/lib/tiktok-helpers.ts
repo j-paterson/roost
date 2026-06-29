@@ -4,7 +4,7 @@
  * Moved here from lib/extract.ts to break the extract.ts → registry → tiktok.ts → extract.ts
  * circular import. All functions are self-contained with only normalize.ts dependencies.
  */
-import type { RawApiData } from "./normalize";
+import type { RawApiData } from "./normalize-helpers";
 import type { BookmarkRecord } from "./twitter-helpers";
 
 function getBookmarkRawData(record: BookmarkRecord): RawApiData | null {

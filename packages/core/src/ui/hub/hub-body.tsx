@@ -183,7 +183,7 @@ export function HubBody({ app, plugin }: { app: App; plugin: IRoostPlugin }) {
     }
   };
 
-  const syncOne = async (id: "tiktok" | "twitter" | "eagle") => {
+  const syncOne = async (id: Platform | "eagle") => {
     if (id === "eagle") {
       await plugin.runEagleImport();
       plugin.triggerHubStateChange();
@@ -236,7 +236,7 @@ export function HubBody({ app, plugin }: { app: App; plugin: IRoostPlugin }) {
     setLoginActive((prev) => ({ ...prev, [id]: false }));
   };
 
-  const disconnect = (id: "tiktok" | "twitter") => {
+  const disconnect = (id: Platform) => {
     void plugin.disconnectPlatform(id).then(() => {
       new Notice(`${PLATFORM_LABEL[id]} disconnected.`);
     });
@@ -332,7 +332,7 @@ export function HubBody({ app, plugin }: { app: App; plugin: IRoostPlugin }) {
     };
   }, [plugin]);
 
-  const anySyncing = globalRunning || isPlatformSyncing("tiktok") || isPlatformSyncing("twitter");
+  const anySyncing = globalRunning || Object.values(liveSyncs).some((v) => v !== null);
 
   // First run: show ONLY the onboarding panel. The rest of the Hub (platforms,
   // backfills, integrations) would be confusing before setup is done, so it's
@@ -374,10 +374,7 @@ export function HubBody({ app, plugin }: { app: App; plugin: IRoostPlugin }) {
         isRunning={anySyncing}
         onFastSync={() => void updateAll(true)}
         onDeepSync={() => void updateAll(false)}
-        onCancel={() => {
-          cancelOne("tiktok");
-          cancelOne("twitter");
-        }}
+        onCancel={() => { enabledPlatforms().forEach((d) => cancelOne(d.id)); }}
       />
       <div className="border-b border-border pb-2">
         {/* Webview-sync platforms: tiktok then x, driven by the registry. */}
