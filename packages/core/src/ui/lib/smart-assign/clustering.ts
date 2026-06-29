@@ -2,7 +2,7 @@
  * Smart Assign clustering pipeline — embed, score, discover, stage.
  */
 import * as React from "react";
-import { App } from "obsidian";
+import { App, Notice } from "obsidian";
 import type { RoostFilter, MatchDetail, ClassifyProposalData, SmartAssignInput } from "@/types/roost";
 import type { StopSignal } from "@/types/sync";
 import type { CategoryEmbeddings, CategoryTaxonomy } from "@/pipeline/taxonomy";
@@ -75,7 +75,22 @@ export function maybeRetrainAtRunStart(host: Pick<SmartAssignClusteringHost, "ap
     const ts = loadTrainingSet(vault);
     const since = loadRetrainMeta(vault).lastRetrainTs;
     if (shouldRetrain({ newLabelsSinceLastTrain: newLabelsSince(ts, since), newlyEligibleCount: 0 })) {
-      runRetrain(vault, host.log);
+      const outcome = runRetrain(vault, host.log);
+      if (outcome.ran) {
+        if (outcome.swapped) {
+          const pct =
+            outcome.avgMacroDelta !== undefined
+              ? `+${(outcome.avgMacroDelta * 100).toFixed(1)}%`
+              : "+?%";
+          new Notice(`Classifier improved (${pct} macro)`);
+        } else {
+          const regressor =
+            outcome.catastrophic && outcome.catastrophic.length > 0
+              ? outcome.catastrophic.join(", ")
+              : "overall/macro";
+          new Notice(`Retrain skipped — would regress ${regressor}`);
+        }
+      }
     }
   } catch (e: unknown) {
     host.log(`[retrain] failed (kept current head): ${e instanceof Error ? e.message : String(e)}`);

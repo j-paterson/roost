@@ -5,6 +5,7 @@ import { writeStackedHeads, restorePreviousHeads, loadRetrainMeta, saveRetrainMe
 import { loadStackedHeads, type StackedHeads, type ClassifierHeadData, type MetaHeadData } from "@/pipeline/classifier-head";
 import { RETRAIN_SIGNAL_FLOOR, GATE_KFOLDS, GATE_EPS } from "@/config";
 import type { TrainingSet } from "@/pipeline/training-set";
+import { appendRetrainLog } from "@/pipeline/retrain-log";
 
 /**
  * Pure count: how many positive labels have a timestamp strictly after sinceTs.
@@ -28,6 +29,9 @@ export interface RetrainOutcome {
   ran: boolean;
   swapped: boolean;
   reason: string;
+  avgOverallDelta?: number;
+  avgMacroDelta?: number;
+  catastrophic?: string[];
 }
 
 /**
@@ -114,7 +118,9 @@ function kfoldSplit(
 export function runRetrain(vault: Vault, log: (m: string) => void): RetrainOutcome {
   const rows = buildTrainingRows(vault);
   if (rows.length === 0) {
-    return { ran: false, swapped: false, reason: "no eligible training data" };
+    const outcome: RetrainOutcome = { ran: false, swapped: false, reason: "no eligible training data" };
+    appendRetrainLog(vault, { ts: Date.now(), ...outcome });
+    return outcome;
   }
 
   const lastRetrainTs = loadRetrainMeta(vault).lastRetrainTs;
@@ -135,7 +141,9 @@ export function runRetrain(vault: Vault, log: (m: string) => void): RetrainOutco
     }
     if (folds.length === 0) {
       log("[retrain] no usable gate folds (sparse 'before' set) — skipping to protect live head");
-      return { ran: false, swapped: false, reason: "no gate folds" };
+      const outcome: RetrainOutcome = { ran: false, swapped: false, reason: "no gate folds" };
+      appendRetrainLog(vault, { ts: Date.now(), ...outcome });
+      return outcome;
     }
     foldDecision = decideFromFolds(folds, GATE_EPS);
   }
@@ -145,12 +153,25 @@ export function runRetrain(vault: Vault, log: (m: string) => void): RetrainOutco
     log(
       `[retrain] candidate rejected (fail-closed): macroΔ ${(foldDecision!.avgMacroDelta * 100).toFixed(1)}pp overallΔ ${(foldDecision!.avgOverallDelta * 100).toFixed(1)}pp catastrophic=${foldDecision!.catastrophicClasses.join(",") || "none"}`,
     );
-    return { ran: true, swapped: false, reason: "gate failed" };
+    const outcome: RetrainOutcome = {
+      ran: true,
+      swapped: false,
+      reason: "gate failed",
+      avgOverallDelta: foldDecision!.avgOverallDelta,
+      avgMacroDelta: foldDecision!.avgMacroDelta,
+      catastrophic: foldDecision!.catastrophicClasses,
+    };
+    appendRetrainLog(vault, { ts: Date.now(), ...outcome });
+    return outcome;
   }
 
   // Deploy: train on ALL rows (holdout included); fail-closed partial-write recovery.
   const deployData = trainStackedHeadsFromRows(rows);
-  if (!deployData) return { ran: false, swapped: false, reason: "trainer returned null" };
+  if (!deployData) {
+    const outcome: RetrainOutcome = { ran: false, swapped: false, reason: "trainer returned null" };
+    appendRetrainLog(vault, { ts: Date.now(), ...outcome });
+    return outcome;
+  }
   try {
     writeStackedHeads(vault, deployData);
   } catch (writeErr) {
@@ -162,11 +183,22 @@ export function runRetrain(vault: Vault, log: (m: string) => void): RetrainOutco
     } catch {
       log("[retrain] restore also failed — manual inspection needed");
     }
-    return { ran: true, swapped: false, reason: "write failed, restored previous" };
+    const outcome: RetrainOutcome = { ran: true, swapped: false, reason: "write failed, restored previous" };
+    appendRetrainLog(vault, { ts: Date.now(), ...outcome });
+    return outcome;
   }
   saveRetrainMeta(vault, { lastRetrainTs: Date.now() });
   log(
     `[retrain] swapped in candidate (${deployData.meta.classes.length} classes)${foldDecision ? ` macroΔ ${(foldDecision.avgMacroDelta * 100).toFixed(1)}pp` : " (first head)"}`,
   );
-  return { ran: true, swapped: true, reason: current === null ? "first head" : "gate passed" };
+  const outcome: RetrainOutcome = {
+    ran: true,
+    swapped: true,
+    reason: current === null ? "first head" : "gate passed",
+    avgOverallDelta: foldDecision?.avgOverallDelta,
+    avgMacroDelta: foldDecision?.avgMacroDelta,
+    catastrophic: foldDecision?.catastrophicClasses,
+  };
+  appendRetrainLog(vault, { ts: Date.now(), ...outcome });
+  return outcome;
 }
