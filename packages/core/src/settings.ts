@@ -303,8 +303,8 @@ export class RoostSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName("Auto-retrain classifier on confirm")
-      .setDesc("When enabled, confirming Smart Assign retrains the per-vault head from your corrections (in-process; only swapped in if it doesn't regress on a holdout).")
+      .setName("Auto-retrain classifier on Smart Assign")
+      .setDesc("When enabled, each Smart Assign run first retrains the per-vault head from your accumulated corrections (in-process, before scoring) — the new head is swapped in only if it beats the current one on a held-out check, else the current head is kept. Off by default.")
       .addToggle((t) => t.setValue(this.plugin.settings.smartAssignAutoRetrain).onChange(async (v) => {
         this.plugin.settings.smartAssignAutoRetrain = v; await this.plugin.saveSettings();
       }));
