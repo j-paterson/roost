@@ -7,7 +7,7 @@
  * are migrated in later tasks; nothing in the existing codebase is changed.
  */
 import type { Platform, ElectronWebview, StopSignal, SyncPhaseProgress } from "@/types/sync";
-import type { NormalizedRecord } from "@/lib/normalize";
+import type { NormalizedRecord, RawApiData, NormalizeOptions } from "@/lib/normalize";
 import type { BookmarkRecord, extractTwitterMedia } from "@/lib/twitter-helpers";
 import type { extractTikTokMedia } from "@/lib/tiktok-helpers";
 
@@ -35,6 +35,8 @@ export interface PlatformParser {
   media(record: BookmarkRecord): TikTokMedia | TwitterMedia;
   /** Best subtitle track URL (TikTok only — undefined for Twitter). */
   subtitleUrl?(record: BookmarkRecord): string | null;
+  /** Normalize a raw API item into a uniform storage record. */
+  normalize(item: RawApiData, options: NormalizeOptions): NormalizedRecord | null;
 }
 
 /**

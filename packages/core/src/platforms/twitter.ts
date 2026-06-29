@@ -7,7 +7,11 @@
  */
 import type { PlatformDescriptor } from "./descriptor";
 import { syncTwitter } from "@/sync/twitter-sync";
-import { roostUnwrapTweet } from "@/lib/normalize";
+import {
+  roostUnwrapTweet,
+  roostParseTwitterDate,
+  roostBookmarkId,
+} from "@/lib/normalize";
 import {
   extractArticleContent,
   renderArticleNoteBody,
@@ -82,5 +86,19 @@ export const twitter: PlatformDescriptor = {
       return null;
     },
     media: (record) => extractTwitterMedia(record),
+    normalize: (item, options) => {
+      const tweet = roostUnwrapTweet(item);
+      const itemId: string | undefined = tweet?.rest_id || item?.rest_id || item?.legacy?.id_str;
+      if (!itemId) return null;
+      const published = roostParseTwitterDate(tweet?.legacy?.created_at);
+      return {
+        id: roostBookmarkId("twitter", itemId),
+        platform: "twitter", itemId,
+        rawData: tweet || item,
+        saved_at: options.savedAt || published || new Date().toISOString(),
+        published_at: published,
+        captured_via: options.capturedVia || "sync",
+      };
+    },
   },
 };

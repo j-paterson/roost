@@ -1,6 +1,8 @@
 /**
  * Roost bookmark normalization — converts raw platform API objects into a uniform storage record.
  */
+import type { Platform } from "@/types/sync";
+import { getPlatform, PLATFORMS } from "@/platforms/registry";
 
 /**
  * Raw API payload from Twitter, TikTok, or Farcaster.
@@ -20,7 +22,7 @@ export interface NormalizedRecord {
   castHash?: string;
 }
 
-interface NormalizeOptions {
+export interface NormalizeOptions {
   savedAt?: string;
   capturedVia?: string;
 }
@@ -35,13 +37,13 @@ export function roostUnwrapTweet(raw: RawApiData | null | undefined): RawApiData
   return null;
 }
 
-function roostParseTwitterDate(value: unknown): string | null {
+export function roostParseTwitterDate(value: unknown): string | null {
   if (!value) return null;
   const ms = Date.parse(String(value));
   return isNaN(ms) ? null : new Date(ms).toISOString();
 }
 
-function roostParseEpoch(value: unknown): string | null {
+export function roostParseEpoch(value: unknown): string | null {
   if (!value) return null;
   const n = Number(value);
   if (isNaN(n)) return null;
@@ -50,44 +52,19 @@ function roostParseEpoch(value: unknown): string | null {
     : null;
 }
 
-function roostTrimTikTok(item: RawApiData): RawApiData {
+export function roostTrimTikTok(item: RawApiData): RawApiData {
   return { ...item };
 }
 
-function roostBookmarkId(platform: string, itemId: string): string {
+export function roostBookmarkId(platform: string, itemId: string): string {
   return `${platform}:${itemId}`;
 }
 
 export function roostNormalize(platform: string, item: RawApiData, options: NormalizeOptions = {}): NormalizedRecord | null {
   if (!item) return null;
 
-  if (platform === "twitter") {
-    const tweet = roostUnwrapTweet(item);
-    const itemId: string | undefined = tweet?.rest_id || item?.rest_id || item?.legacy?.id_str;
-    if (!itemId) return null;
-    const published = roostParseTwitterDate(tweet?.legacy?.created_at);
-    return {
-      id: roostBookmarkId("twitter", itemId),
-      platform: "twitter", itemId,
-      rawData: tweet || item,
-      saved_at: options.savedAt || published || new Date().toISOString(),
-      published_at: published,
-      captured_via: options.capturedVia || "sync",
-    };
-  }
-
-  if (platform === "tiktok") {
-    const itemId: string | undefined = item.id || item.video?.id;
-    if (!itemId) return null;
-    const published = roostParseEpoch(item.createTime);
-    return {
-      id: roostBookmarkId("tiktok", itemId),
-      platform: "tiktok", itemId,
-      rawData: roostTrimTikTok(item),
-      saved_at: options.savedAt || published || new Date().toISOString(),
-      published_at: published,
-      captured_via: options.capturedVia || "sync",
-    };
+  if (platform in PLATFORMS) {
+    return getPlatform(platform as Platform).parse.normalize(item, options);
   }
 
   // Farcaster (default)

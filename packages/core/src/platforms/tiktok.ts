@@ -11,6 +11,11 @@ import {
   extractTikTokMedia,
   extractTikTokSubtitleUrl,
 } from "@/lib/tiktok-helpers";
+import {
+  roostParseEpoch,
+  roostTrimTikTok,
+  roostBookmarkId,
+} from "@/lib/normalize";
 // @ts-ignore — raw probe loaded as string by esbuild/vitest rawProbePlugin
 import tiktokProbeSource from "../probes/tiktok-probe.probe";
 
@@ -59,5 +64,18 @@ export const tiktok: PlatformDescriptor = {
     },
     media: (record) => extractTikTokMedia(record),
     subtitleUrl: (record) => extractTikTokSubtitleUrl(record),
+    normalize: (item, options) => {
+      const itemId: string | undefined = item.id || item.video?.id;
+      if (!itemId) return null;
+      const published = roostParseEpoch(item.createTime);
+      return {
+        id: roostBookmarkId("tiktok", itemId),
+        platform: "tiktok", itemId,
+        rawData: roostTrimTikTok(item),
+        saved_at: options.savedAt || published || new Date().toISOString(),
+        published_at: published,
+        captured_via: options.capturedVia || "sync",
+      };
+    },
   },
 };
