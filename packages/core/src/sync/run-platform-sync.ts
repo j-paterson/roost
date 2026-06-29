@@ -106,7 +106,10 @@ export async function runPlatformSync(opts: RunPlatformSyncOpts): Promise<RunPla
     vault: app.vault,
     syncFolder: plugin.settings.syncFolder,
     metadataCache: app.metadataCache,
-    tiktokWebview: wc,
+    // Only the TikTok webview belongs here — VaultIndex.scanIncompleteIds reads this
+    // for TikTok notes regardless of the active sync platform, so a Twitter webview
+    // here would mis-classify TikTok media-missing items. Strict-parity guard.
+    tiktokWebview: platform === "tiktok" ? wc : undefined,
     onLog: log,
   });
 

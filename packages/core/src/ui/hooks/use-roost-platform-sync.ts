@@ -77,7 +77,9 @@ export function useRoostPlatformSync({ app, plugin, log, scanLibrary }: UseRoost
       vault: app.vault,
       syncFolder: plugin.settings.syncFolder,
       metadataCache: app.metadataCache,
-      tiktokWebview: wc,
+      // Only the TikTok webview belongs here (see run-platform-sync) — VaultIndex
+      // reads it for TikTok notes regardless of active sync platform. Strict-parity guard.
+      tiktokWebview: platform === "tiktok" ? wc : undefined,
       onLog: log,
     });
     let totalPushed = 0;
