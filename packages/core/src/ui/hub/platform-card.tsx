@@ -4,20 +4,23 @@ import { formatAge } from "@/ui/hub/format-age";
 import { Button } from "@/ui/components/ui/button";
 import type { LiveSync } from "@/ui/hub/hub-body";
 import type { SyncProgress } from "@/ui/components/progress-header";
+import { enabledPlatforms } from "@/platforms/registry";
 
 export type PlatformId = "tiktok" | "x" | "eagle";
 
-const TITLES: Record<PlatformId, string> = {
-  tiktok: "TikTok",
-  x: "X / Twitter",
-  eagle: "Eagle",
-};
+// Module-level lookup built once from the registry: hubId → descriptor.
+// Eagle is not a sync platform and is handled by explicit literals below.
+const _hubDescriptors = Object.fromEntries(enabledPlatforms().map(d => [d.hubId, d]));
 
-const EDU_COPY: Record<PlatformId, string> = {
-  tiktok: "Syncs TikTok bookmarks via your Obsidian webview login.",
-  x: "Syncs X bookmarks via your Obsidian webview login.",
-  eagle: "Imports items from a local Eagle library.",
-};
+function cardTitle(platform: PlatformId): string {
+  if (platform === "eagle") return "Eagle";
+  return _hubDescriptors[platform]?.card.title ?? platform;
+}
+
+function cardEduCopy(platform: PlatformId): string {
+  if (platform === "eagle") return "Imports items from a local Eagle library.";
+  return _hubDescriptors[platform]?.card.eduCopy ?? "";
+}
 
 interface BacklogRow {
   key: string;
@@ -118,7 +121,7 @@ function LiveSyncRow({
     <div className="border-b border-border last:border-b-0">
       <div className="grid grid-cols-[1.25rem_8rem_1fr_auto] items-center gap-3 px-4 py-2">
         <span className="text-sm font-semibold text-muted-foreground animate-pulse" aria-hidden>⟳</span>
-        <span className="text-sm font-medium">{TITLES[platform]}</span>
+        <span className="text-sm font-medium">{cardTitle(platform)}</span>
         <span className="text-sm text-muted-foreground truncate">
           {p ? (
             <>
@@ -191,7 +194,7 @@ export function PlatformCard({
   onDisconnect?: () => void;
   onCancel?: () => void;
 }) {
-  const title = TITLES[platform];
+  const title = cardTitle(platform);
 
   // While a sync is live for this platform, render the syncing row +
   // progress bar + the embedded webview pane regardless of the
@@ -228,7 +231,7 @@ export function PlatformCard({
         icon="—"
         iconTone="text-muted-foreground"
         title={title}
-        detail={EDU_COPY[platform]}
+        detail={cardEduCopy(platform)}
         action={<Button variant="default" size="sm" onClick={onConnect}>Connect</Button>}
       />
     );
