@@ -12,6 +12,15 @@ export interface EvalRecord {
   tier: EvalTier;
   finalLabel: string | null;
   correct: boolean;
+  /** Present only for training-mode (confirm/reject feed) actions. Excluded from the
+   *  headline organic-holdout accuracy so deliberate confirms cannot inflate it. */
+  mode?: "review";
+}
+
+/** Records that count toward the clean headline accuracy (the Smart-Assign-confirm-time
+ *  organic holdout). Training-mode (mode:"review") records are excluded. */
+export function excludeReview(records: EvalRecord[]): EvalRecord[] {
+  return records.filter((r) => r.mode !== "review");
 }
 
 const FILE = "eval-log.jsonl";
