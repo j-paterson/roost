@@ -51,6 +51,7 @@ export class GallerySelectionController {
     const restoreFilter = this.preFilter;
     const restoreScroll = this.preScroll;
     this.mode = false;
+    this.anchor = null;
     this.selectedIds.clear();
     this.target = null;
     this.onAccept = null;

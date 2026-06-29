@@ -91,4 +91,12 @@ describe("GallerySelectionController — Finder-style free selection", () => {
     const ctrl = new GallerySelectionController(makeHost());
     expect(ctrl.has("x")).toBe(false);
   });
+
+  it("exit() resets anchor so a later shift-click does not use a stale reference", () => {
+    const ctrl = new GallerySelectionController(makeHost());
+    ctrl.enter(["a", "b"], "Tech", () => {});
+    ctrl.selectSingle("a"); // anchor = "a"
+    ctrl.exit();
+    expect(ctrl.anchor).toBeNull();
+  });
 });
