@@ -2,9 +2,10 @@
  * Organic-capture listener — turns any hand edit to roost_category into training signal.
  *
  * Pure core: captureEdit() — own-write guard + capture (fully unit-tested).
+ * Disk-reload helper: processSnapshotChange() — fresh snapshot read per debounce fire (unit-tested).
  * Obsidian-bound: bootstrapSnapshot() + registerOrganicCapture() — verified by tsc only.
  */
-import type { Plugin } from "obsidian";
+import type { Plugin, Vault } from "obsidian";
 import {
   type CategorySnapshot,
   classifyTransition,
@@ -51,6 +52,39 @@ export function captureEdit(args: {
   return { changed: true, snapshot, ts, transition };
 }
 
+// ── Per-fire disk-reload helper ────────────────────────────────────────────────
+
+/**
+ * Reload the snapshot from disk, run the own-write guard + capture, and persist.
+ *
+ * Exported for unit testing. Called once per debounce fire so a concurrent
+ * bulk-write's snapshot update (written by confirm.ts) is always reflected —
+ * no stale closure value, no dependency on bulkWriteInProgress timing.
+ *
+ * Does NOT do the processFrontMatter write-back (roost_assigned_by: human);
+ * that stays in the Obsidian-bound handler in registerOrganicCapture.
+ *
+ * Returns true if a capture happened (caller should do the write-back).
+ */
+export function processSnapshotChange(
+  vault: Vault,
+  id: string,
+  newCategory: string | null,
+): boolean {
+  const snap = loadSnapshot(vault);           // fresh read per fire — timing-independent
+  const ts = loadTrainingSet(vault);
+  const result = captureEdit({ snapshot: snap, ts, id, newCategory, now: Date.now() });
+  if (result.changed) {
+    saveTrainingSet(vault, result.ts);
+    // Snapshot already mutated to newCategory by captureEdit — save it before the
+    // write-back so the subsequent "changed" event will be an own-write no-op.
+    saveSnapshot(vault, result.snapshot);
+    return true;
+  }
+  saveSnapshot(vault, result.snapshot);
+  return false;
+}
+
 // ── Obsidian-bound helpers ────────────────────────────────────────────────────
 
 /**
@@ -89,11 +123,12 @@ interface OrgCapPlugin extends Plugin {
 export function registerOrganicCapture(plugin: OrgCapPlugin): void {
   const { vault, metadataCache, fileManager } = plugin.app;
 
-  // Seed the in-memory snapshot. On first run (cache file absent) bootstrap from vault frontmatter.
-  let snap = loadSnapshot(vault);
-  if (Object.keys(snap).length === 0) {
-    snap = bootstrapSnapshot(plugin);
-    saveSnapshot(vault, snap);
+  // Seed the on-disk snapshot on first run (cache file absent) from vault frontmatter.
+  // bootstrapSnapshot saves to disk so processSnapshotChange's per-fire loadSnapshot
+  // will see the seeded values — no stale closure copy kept.
+  const initial = loadSnapshot(vault);
+  if (Object.keys(initial).length === 0) {
+    saveSnapshot(vault, bootstrapSnapshot(plugin));
   }
 
   let timer: ReturnType<typeof setTimeout> | null = null;
@@ -104,7 +139,11 @@ export function registerOrganicCapture(plugin: OrgCapPlugin): void {
 
   plugin.registerEvent(
     metadataCache.on("changed", (file) => {
-      // Skip while Smart Assign's bulk write is in progress.
+      // Fast-path: skip while Smart Assign's bulk write is in progress (belt-and-suspenders).
+      // The per-fire snapshot reload in processSnapshotChange is the timing-independent guard:
+      // confirm.ts writes the snapshot before emitting "changed", so even if this event
+      // fires after bulkWriteInProgress clears, the fresh disk read will see the written
+      // category and captureEdit returns changed:false.
       if (plugin.bulkWriteInProgress) return;
       if (timer) clearTimeout(timer);
       timer = setTimeout(() => {
@@ -117,21 +156,14 @@ export function registerOrganicCapture(plugin: OrgCapPlugin): void {
         const rawCat = fm?.[CATEGORY_FIELD];
         const newCategory = typeof rawCat === "string" ? rawCat : null;
 
-        const ts = loadTrainingSet(vault);
-        const result = captureEdit({ snapshot: snap, ts, id, newCategory, now: Date.now() });
-
-        if (result.changed) {
-          saveTrainingSet(vault, result.ts);
-          // Snapshot was already mutated to newCategory by captureEdit — save it before the
-          // write-back so the subsequent "changed" event will be an own-write no-op.
-          saveSnapshot(vault, result.snapshot);
+        // Reload snapshot from disk on each fire — timing-independent own-write guard.
+        const changed = processSnapshotChange(vault, id, newCategory);
+        if (changed) {
           // Mark as human-assigned. This triggers another "changed" event; the own-write
-          // guard above ensures it is treated as a no-op.
+          // guard ensures it is treated as a no-op.
           void fileManager.processFrontMatter(file, (frontmatter) => {
             frontmatter[ASSIGNED_BY_FIELD] = "human";
           });
-        } else {
-          saveSnapshot(vault, result.snapshot);
         }
       }, 300);
     }),
