@@ -382,17 +382,8 @@ export class BookmarksBasesView extends BasesView
         onViewModeToggle: () => this.feedMode.toggleViewMode(),
       },
     );
-
-    // Training mode toggle — mirrors the feed/grid toggle from renderGalleryToolbar
-    const trainingGroup = this.toolbarEl.createDiv({ cls: "roost-toolbar-mode" });
-    const trainingBtn = trainingGroup.createEl("button", {
-      cls: `roost-mode-btn${this.feedMode.trainingMode ? " is-active" : ""}`,
-      attr: { title: this.feedMode.trainingMode ? "Exit training mode" : "Training mode" },
-    });
-    trainingBtn.textContent = "Train";
-    trainingBtn.addEventListener("click", () => {
-      this.feedMode.setTrainingMode(!this.feedMode.trainingMode);
-    });
+    // Training mode is toggled from the in-pane "Train" button inside the feed
+    // (mountFeedTrainToggle) — no separate toolbar button needed.
   }
 
   enterSelectionMode(itemIds: string[], targetName: string, onAccept: (ids: string[]) => void): void {
