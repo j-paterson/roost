@@ -65,18 +65,26 @@ export function buildTrainingBar(
   banner.className = "roost-training-guess";
   banner.textContent = `Roost guessed: ${guess}`;
   bar.appendChild(banner);
-  const mk = (action: string, label: string, fn: () => void) => {
+  // Tinder-style circular action row. The two primary decisions (No / Yes) are the
+  // large center circles; Recategorize / Skip are the smaller secondary circles.
+  // Order left→right: recategorize, reject, confirm, skip.
+  const row = doc.createElement("div");
+  row.className = "roost-training-row";
+  bar.appendChild(row);
+  const mk = (action: string, glyph: string, title: string, fn: () => void) => {
     const b = doc.createElement("button");
     b.className = `roost-training-btn roost-training-${action}`;
     b.dataset.action = action;
-    b.textContent = label;
+    b.textContent = glyph;
+    b.title = title;
+    b.setAttribute("aria-label", title);
     b.addEventListener("click", fn);
-    bar.appendChild(b);
+    row.appendChild(b);
   };
-  mk("confirm", "Yes", handlers.onConfirm);
-  mk("reject", "No", handlers.onReject);
-  mk("recategorize", "Recategorize", handlers.onRecategorize);
-  mk("skip", "Skip", handlers.onSkip);
+  mk("recategorize", "✎", "Recategorize", handlers.onRecategorize);
+  mk("reject", "✕", "No — reject (N)", handlers.onReject);
+  mk("confirm", "✓", "Yes — keep (Y)", handlers.onConfirm);
+  mk("skip", "»", "Skip (S)", handlers.onSkip);
   return bar;
 }
 
@@ -148,7 +156,9 @@ function renderFeedExpandedItem(
     inner,
     entryToExpandedCardData(entry, feedResolvers(ctx), [actions]),
   );
-  maybeAppendTrainingBar(inner, entry, ctx, getRoostId(entry));
+  // Mount on the slot `container` (not `inner`) so the bar overlays at the SAME
+  // absolute position for every item type (tweet/image/video), independent of content.
+  maybeAppendTrainingBar(container, entry, ctx, getRoostId(entry));
 
   return {
     dispose: () => {

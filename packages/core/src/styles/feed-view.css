@@ -186,3 +186,79 @@
 .roost-feed-action-delete {
   color: var(--text-error);
 }
+
+/* ── Training mode: Tinder-style circular action bar ─────────────────────────
+   Mounted on `.roost-feed-item` (position:relative, height:100%) so it overlays
+   at the SAME absolute position for every item type — tweet, image, or video. */
+.roost-training-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 28px;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  pointer-events: none; /* let the card show/scroll through the gaps */
+}
+.roost-training-guess {
+  pointer-events: auto;
+  max-width: 80%;
+  background: rgba(0, 0, 0, 0.62);
+  color: #fff;
+  padding: 5px 14px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.roost-training-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  pointer-events: none;
+}
+.roost-training-btn {
+  pointer-events: auto;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #fff;
+  line-height: 1;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.38);
+  transition: transform 0.1s ease, box-shadow 0.1s ease;
+}
+.roost-training-btn:hover {
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
+}
+.roost-training-btn:active {
+  transform: scale(0.9);
+}
+/* Primary decisions — large center circles */
+.roost-training-reject,
+.roost-training-confirm {
+  width: 64px;
+  height: 64px;
+  font-size: 30px;
+}
+.roost-training-reject {
+  color: #e0245e;
+}
+.roost-training-confirm {
+  color: #1db954;
+}
+/* Secondary actions — smaller flanking circles */
+.roost-training-recategorize,
+.roost-training-skip {
+  width: 46px;
+  height: 46px;
+  font-size: 19px;
+  color: #555;
+}
