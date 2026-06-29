@@ -21,9 +21,11 @@ import { runJobWithBulkWriteFlag } from "@/lib/run-job-bulk-write";
 // one entry in src/views/pipeline-views/index.ts.
 import "./views/pipeline-views";
 import { RoostSettings, DEFAULT_SETTINGS, RoostSettingTab } from "./settings";
-import { WebviewManager } from "./sync/webview-manager";
+import { WebviewManager, type AuthStatus } from "./sync/webview-manager";
 import { setActiveProvider, buildProviderFromSettings } from "./lib/llm-provider";
 import { httpProbe, findBinary } from "@/integrations/detect";
+import type { Platform } from "@/types/sync";
+import { enabledPlatforms } from "@/platforms/registry";
 import { INTEGRATIONS, detectIntegration, type DetectCtx, type DetectStatus, type IntegrationId } from "@/integrations/registry";
 import { teardownInlinePlayer } from "./views/pipeline-views/inline-audio-player";
 import { selectEmbedder, type SelectEmbedderOpts, type Embedder } from "./lib/embedder";
@@ -48,9 +50,9 @@ export default class RoostPlugin extends Plugin {
   integrationStatus: Record<IntegrationId, DetectStatus | "unknown"> = {
     ollama: "unknown", sidecar: "unknown", ffmpeg: "unknown", "vault-search": "unknown",
   };
-  authStatus: Record<"tiktok" | "twitter", "connected" | "logged-out" | "unknown"> = {
-    tiktok: "unknown", twitter: "unknown",
-  };
+  authStatus: Record<Platform, AuthStatus> = Object.fromEntries(
+    enabledPlatforms().map((d) => [d.id, "unknown" as AuthStatus])
+  ) as Record<Platform, AuthStatus>;
   private workspace: RoostWorkspace | null = null;
   private readonly buses = new RoostPluginState();
 
@@ -261,7 +263,7 @@ export default class RoostPlugin extends Plugin {
     await this.ws().activateRoostSidebar();
   }
 
-  async runSync(platform: "tiktok" | "twitter"): Promise<void> {
+  async runSync(platform: Platform): Promise<void> {
     await this.ws().runSync(platform);
   }
 
@@ -281,21 +283,21 @@ export default class RoostPlugin extends Plugin {
     await this.ws().openExplorerBase();
   }
 
-  async openWebview(platform: "tiktok" | "twitter"): Promise<void> {
+  async openWebview(platform: Platform): Promise<void> {
     await this.ws().openWebview(platform);
   }
 
   async refreshAuthStatus(): Promise<void> {
     const wm = this.getWebviewManager();
     const next = { ...this.authStatus };
-    for (const p of ["tiktok", "twitter"] as const) {
-      next[p] = await wm.probeAuth(p);
+    for (const d of enabledPlatforms()) {
+      next[d.id] = await wm.probeAuth(d.id);
     }
     this.authStatus = next;
     this.triggerHubStateChange();
   }
 
-  async disconnectPlatform(platform: "tiktok" | "twitter"): Promise<void> {
+  async disconnectPlatform(platform: Platform): Promise<void> {
     await this.getWebviewManager().clearSession(platform);
     if (this.settings.syncState) delete this.settings.syncState[platform];
     await this.saveSettings();

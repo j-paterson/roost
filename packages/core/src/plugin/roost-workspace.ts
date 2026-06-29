@@ -8,6 +8,7 @@ import { VIEW_TYPE_ROOST_HUB } from "@/views/roost-hub-view";
 import { WebviewManager } from "@/sync/webview-manager";
 import { ensureBasesFiles } from "@/sync/bases-setup";
 import type { RoostSettings } from "@/settings";
+import { enabledPlatforms } from "@/platforms/registry";
 
 export class RoostWorkspace {
   private webviewManager: WebviewManager | null = null;
@@ -115,8 +116,7 @@ export class RoostWorkspace {
       const container = document.createElement("div");
       container.style.cssText = "width: 100%; height: 100%; position: relative;";
       this.webviewManager = new WebviewManager(container, () => {});
-      this.webviewManager.create("tiktok");
-      this.webviewManager.create("twitter");
+      for (const d of enabledPlatforms()) this.webviewManager.create(d.id);
     }
     return this.webviewManager;
   }
