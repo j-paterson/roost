@@ -33,6 +33,8 @@ export interface GalleryCardHandlers {
   onSelectionToggle: (roostId: string, cardEl: HTMLElement) => void;
   onFeedSelect: (roostId: string) => void;
   onExpand: (cardEl: HTMLElement, entry: BasesEntry) => void;
+  /** Called on single-click in free-select mode (not enter mode, not feed mode). */
+  onSelect?: (roostId: string, e: MouseEvent) => void;
   resolveImageUrl: (entry: BasesEntry, propId: string) => string | null;
   resolveVideoUrl: (entry: BasesEntry) => string | null;
   hasMultipleImages: (entry: BasesEntry) => boolean;
@@ -114,20 +116,26 @@ export function hydrateGalleryCard(
   }
 
   el.addEventListener("click", (e) => {
+    // Enter/selection mode (neighbor-move staging) — existing toggle behavior.
     if (handlers.isSelectionActive() && roostIdVal) {
       e.stopPropagation();
       handlers.onSelectionToggle(roostIdVal, el);
       return;
     }
+    // Feed mode — click navigates feed item.
     if (handlers.viewMode === "feed" && roostIdVal) {
       e.stopPropagation();
       handlers.onFeedSelect(roostIdVal);
       return;
     }
+    // Free-select mode: single click selects the card.
+    if (roostIdVal && handlers.onSelect) {
+      e.stopPropagation();
+      handlers.onSelect(roostIdVal, e);
+      return;
+    }
+    // Fallback (onSelect not wired): collapse expanded card on click.
     if (handlers.expandState.expandedEl === el) {
-      // Clicking the expanded card collapses it (replaces the old ✕ button).
-      // Ignore while the user is selecting text; interactive children (links,
-      // action buttons) stopPropagation, so they never reach this handler.
       if (window.getSelection()?.toString()) return;
       e.stopPropagation();
       handlers.onExpand(el, entry);
@@ -137,7 +145,15 @@ export function hydrateGalleryCard(
     handlers.onExpand(el, entry);
   });
 
-  if (handlers.isSelectionActive() && roostIdVal && handlers.isSelected(roostIdVal)) {
+  el.addEventListener("dblclick", (e) => {
+    // Enter mode and feed mode don't use dblclick.
+    if (handlers.isSelectionActive()) return;
+    if (handlers.viewMode === "feed") return;
+    e.stopPropagation();
+    handlers.onExpand(el, entry);
+  });
+
+  if (roostIdVal && handlers.isSelected(roostIdVal)) {
     el.classList.add("roost-card-selected");
   }
 

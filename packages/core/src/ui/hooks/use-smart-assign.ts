@@ -243,6 +243,21 @@ export function useSmartAssign(deps: SmartAssignDeps) {
     bumpStore();
   }, [store, bumpStore]);
 
+  const rejectItems = useCallback((ids: string[]) => {
+    store.rejectItems(ids);
+    bumpStore();
+  }, [store, bumpStore]);
+
+  function moveItemsTo(ids: string[], toGroupId: string): void {
+    store.reassignItemsTo(ids, toGroupId);
+    bumpStore();
+    const filter = plugin.activeFilter;
+    if (filter?.groupId) {
+      const group = store.getGroup(filter.groupId);
+      if (group) applyFilter({ itemIds: group.itemIds, groupId: filter.groupId });
+    }
+  }
+
   const sliderSplitIds = React.useMemo(() => {
     if (!proposal) return new Set<string>();
     return store.getSliderSplits(15);
@@ -311,6 +326,8 @@ export function useSmartAssign(deps: SmartAssignDeps) {
     handleCancel,
     reassignItems,
     rejectItem,
+    rejectItems,
+    moveItemsTo,
     suggestions, suggestionTarget,
     acceptSuggestions, dismissSuggestions,
   };

@@ -2,7 +2,7 @@
  * Custom Bases view — renders bookmark notes as a visual card grid.
  * Registers as "Bookmarks" in the Bases view dropdown.
  */
-import { BasesView, BasesEntry } from "obsidian";
+import { BasesView, BasesEntry, Menu } from "obsidian";
 import type { QueryController } from "obsidian";
 import type { RoostFilter, MatchDetail } from "@/types/roost";
 import { getRoostPlugin } from "@/lib/roost-plugin";
@@ -62,6 +62,8 @@ import { pipelineTypeFromFrontmatter } from "@/pipeline/extraction-from-frontmat
 import type { PipelineGalleryHost } from "@/views/gallery-pipeline-host";
 import { isPipelineSubstituteView } from "@/views/pipeline-views/registry";
 import { isCategoryPipelineActive } from "@/lib/pipeline-gate-plugin";
+import { CATEGORY_FIELD } from "@/config";
+import { safeGetValue } from "@/lib/bases-entry";
 
 export const BASES_VIEW_ID = "roost-bookmarks";
 
@@ -373,6 +375,40 @@ export class BookmarksBasesView extends BasesView
     this.hydrationObserver = createGalleryHydrationObserver((el, index) =>
       this.hydrateCard(el, index),
     );
+
+    // Make scroll container focusable for ⌘A/Esc keyboard shortcuts.
+    this.scrollEl.tabIndex = 0;
+
+    // ⌘A / Ctrl-A — select all visible cards.
+    this.registerDomEvent(this.scrollEl as HTMLElement, "keydown", (e: KeyboardEvent) => {
+      if (this.gallerySelection.isActive()) return; // enter mode handles its own keys
+      if ((e.metaKey || e.ctrlKey) && e.key === "a") {
+        e.preventDefault();
+        this.gallerySelection.selectAll(this.getOrderedVisibleRoostIds());
+      } else if (e.key === "Escape") {
+        this.gallerySelection.clear();
+      }
+    });
+
+    // Click on empty grid space (the container itself, not a card) → clear selection.
+    this.registerDomEvent(this.containerEl, "click", (e: MouseEvent) => {
+      if (e.target === this.containerEl) {
+        this.gallerySelection.clear();
+      }
+    });
+
+    // Delegate contextmenu to the container so we catch right-clicks anywhere on a card.
+    this.registerDomEvent(this.containerEl, "contextmenu", (e: MouseEvent) => {
+      e.preventDefault();
+      const target = (e.target as HTMLElement).closest("[data-roost-id]") as HTMLElement | null;
+      if (!target) {
+        // Right-click on empty space — clear selection.
+        this.gallerySelection.clear();
+        return;
+      }
+      const roostId = target.dataset.roostId;
+      if (roostId) this.handleCardContextMenu(roostId, e);
+    });
   }
 
   onunload(): void {
@@ -491,6 +527,15 @@ export class BookmarksBasesView extends BasesView
       hasMultipleImages: (entry: BasesEntry) => galleryHasMultipleImages(this.app, entry),
       isTextTileCover: (entry: BasesEntry) => galleryIsTextTileCover(this.app, entry),
       pipelineTypeForEntry: (entry: BasesEntry) => pipelineTypeFromFrontmatter(this.app.metadataCache.getFileCache(entry.file)?.frontmatter ?? {}),
+      onSelect: (roostId: string, e: MouseEvent) => {
+        if (e.shiftKey) {
+          this.gallerySelection.selectRange(roostId, this.getOrderedVisibleRoostIds());
+        } else if (e.metaKey || e.ctrlKey) {
+          this.gallerySelection.toggleId(roostId);
+        } else {
+          this.gallerySelection.selectSingle(roostId);
+        }
+      },
     };
   }
 
@@ -537,5 +582,102 @@ export class BookmarksBasesView extends BasesView
 
   dispatchPipelineGalleryView(): boolean {
     return this.pipelineHost.dispatch();
+  }
+
+  /** Ordered roostIds of all currently-rendered (hydrated) cards. */
+  private getOrderedVisibleRoostIds(): string[] {
+    return Array.from(this.containerEl.querySelectorAll("[data-roost-id]"))
+      .map(el => (el as HTMLElement).dataset.roostId!)
+      .filter(Boolean);
+  }
+
+  /** Unique, sorted vault category names derived from entry frontmatter. */
+  private getVaultCategories(): { id: string; name: string }[] {
+    const cats = new Set<string>();
+    for (const e of this.getAllEntries()) {
+      const cat = safeGetValue(e, `note.${CATEGORY_FIELD}`)?.toString();
+      if (cat && cat !== "null" && cat !== "undefined") cats.add(cat);
+    }
+    return [...cats].sort().map(name => ({ id: name, name }));
+  }
+
+  /**
+   * Build and show the Finder-style right-click context menu for the gallery.
+   * If the right-clicked card was NOT already selected, Finder-selects it first.
+   */
+  private handleCardContextMenu(roostId: string, e: MouseEvent): void {
+    const plugin = this.getRoostPlugin();
+    if (!plugin) return;
+
+    // Finder rule: if the right-clicked card is NOT selected, select it alone.
+    if (!this.gallerySelection.has(roostId)) {
+      this.gallerySelection.selectSingle(roostId);
+    }
+
+    const selectedIds = this.gallerySelection.getSelected();
+    const n = selectedIds.length;
+    const nLabel = n === 1 ? "" : ` ${n}`;
+
+    const menu = new Menu();
+
+    // Reject selected
+    menu.addItem(item => item
+      .setTitle(`Reject${nLabel} selected`)
+      .setIcon("x-circle")
+      .onClick(() => {
+        plugin.fireItemClick({ action: "rejectItems", itemIds: [...selectedIds] });
+        this.gallerySelection.clear();
+      }),
+    );
+
+    menu.addSeparator();
+
+    // Move selected to… (staging groups or vault categories)
+    const groupId = plugin.activeFilter?.groupId;
+    if (groupId) {
+      // Smart Assign staging mode: list proposed folders from the plugin.
+      const proposed = plugin.proposedFolderNames ?? [];
+      for (const folder of proposed) {
+        if (folder.id === groupId) continue; // skip the currently-viewed group
+        const fId = folder.id;
+        const fName = folder.name;
+        menu.addItem(item => item
+          .setTitle(`Move${nLabel} selected to "${fName}"`)
+          .setIcon("folder-input")
+          .onClick(() => {
+            plugin.fireItemClick({ action: "moveItems", itemIds: [...selectedIds], to: fId });
+            this.gallerySelection.clear();
+          }),
+        );
+      }
+    } else {
+      // Library / plain gallery mode: list vault categories.
+      const categories = this.getVaultCategories();
+      for (const { id: catId, name: catName } of categories) {
+        menu.addItem(item => item
+          .setTitle(`Move${nLabel} selected to "${catName}"`)
+          .setIcon("folder-input")
+          .onClick(() => {
+            plugin.fireItemClick({ action: "moveItems", itemIds: [...selectedIds], to: catId });
+            this.gallerySelection.clear();
+          }),
+        );
+      }
+    }
+
+    menu.addSeparator();
+
+    // Delete selected
+    menu.addItem(item => item
+      .setTitle(`Delete${nLabel} selected…`)
+      .setIcon("trash-2")
+      .setWarning(true)
+      .onClick(() => {
+        plugin.fireItemClick({ action: "deleteItems", roostIds: [...selectedIds] });
+        this.gallerySelection.clear();
+      }),
+    );
+
+    menu.showAtMouseEvent(e);
   }
 }

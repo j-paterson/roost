@@ -18,6 +18,7 @@ export class GallerySelectionController {
   private selectedIds = new Set<string>();
   private target: string | null = null;
   private onAccept: ((ids: string[]) => void) | null = null;
+  anchor: string | null = null;
   private preFilter: RoostFilter = null;
   private preScroll = 0;
 
@@ -91,57 +92,130 @@ export class GallerySelectionController {
     });
   }
 
+  /** Finder single-click: replace entire selection with this id. */
+  selectSingle(id: string): void {
+    this.selectedIds.clear();
+    this.selectedIds.add(id);
+    this.anchor = id;
+    this.updateBar();
+    this.applyVisuals();
+  }
+
+  /** Finder ⌘/Ctrl-click: toggle id in/out of selection. */
+  toggleId(id: string): void {
+    if (this.selectedIds.has(id)) {
+      this.selectedIds.delete(id);
+    } else {
+      this.selectedIds.add(id);
+    }
+    this.anchor = id;
+    this.updateBar();
+    this.applyVisuals();
+  }
+
+  /** Finder shift-click: select contiguous anchor→id span. */
+  selectRange(id: string, orderedIds: string[]): void {
+    if (!this.anchor) { this.selectSingle(id); return; }
+    const anchorIdx = orderedIds.indexOf(this.anchor);
+    if (anchorIdx === -1) { this.selectSingle(id); return; }
+    const clickIdx = orderedIds.indexOf(id);
+    if (clickIdx === -1) { this.selectSingle(id); return; }
+    const [start, end] = anchorIdx <= clickIdx
+      ? [anchorIdx, clickIdx]
+      : [clickIdx, anchorIdx];
+    this.selectedIds.clear();
+    for (let i = start; i <= end; i++) {
+      this.selectedIds.add(orderedIds[i]);
+    }
+    // Anchor stays fixed (Finder behavior: anchor is first click, not most-recent)
+    this.updateBar();
+    this.applyVisuals();
+  }
+
+  /** Select all visible ids (⌘A). */
+  selectAll(orderedIds: string[]): void {
+    this.selectedIds.clear();
+    for (const id of orderedIds) this.selectedIds.add(id);
+    this.updateBar();
+    this.applyVisuals();
+  }
+
+  /** Clear the selection (Esc or click-on-empty). */
+  clear(): void {
+    this.selectedIds.clear();
+    this.anchor = null;
+    this.updateBar();
+    this.applyVisuals();
+  }
+
+  /** Return current selected ids as an array. */
+  getSelected(): string[] {
+    return [...this.selectedIds];
+  }
+
+  /** True if the given id is in the current selection. */
+  has(id: string): boolean {
+    return this.selectedIds.has(id);
+  }
+
   private updateBar(): void {
     const bar = this.host.getGallerySelectionBar();
     if (!bar) return;
-    bar.style.display = this.mode ? "flex" : "none";
-    if (!this.mode) return;
+    const count = this.selectedIds.size;
+    const showBar = this.mode || count > 0;
+    bar.style.display = showBar ? "flex" : "none";
+    if (!showBar) return;
 
     bar.empty();
-    const count = this.selectedIds.size;
 
-    const label = bar.createSpan({ cls: "roost-selection-label" });
-    label.textContent = `${count} item${count !== 1 ? "s" : ""} selected`;
+    if (this.mode) {
+      // Enter-mode (neighbor-move staging): full bar with Move/Select-all/Cancel.
+      const label = bar.createSpan({ cls: "roost-selection-label" });
+      label.textContent = `${count} item${count !== 1 ? "s" : ""} selected`;
 
-    const actions = bar.createDiv({ cls: "roost-selection-actions" });
+      const actions = bar.createDiv({ cls: "roost-selection-actions" });
 
-    const selectAllBtn = actions.createEl("button", { cls: "roost-nav-btn", text: "Select all" });
-    selectAllBtn.addEventListener("click", () => {
-      this.host.getGalleryContainer().querySelectorAll("[data-roost-id]").forEach(el => {
-        const id = (el as HTMLElement).dataset.roostId;
-        if (id) {
-          this.selectedIds.add(id);
-          el.classList.add("roost-card-selected");
-        }
+      const selectAllBtn = actions.createEl("button", { cls: "roost-nav-btn", text: "Select all" });
+      selectAllBtn.addEventListener("click", () => {
+        this.host.getGalleryContainer().querySelectorAll("[data-roost-id]").forEach(el => {
+          const id = (el as HTMLElement).dataset.roostId;
+          if (id) { this.selectedIds.add(id); el.classList.add("roost-card-selected"); }
+        });
+        this.updateBar();
       });
-      this.updateBar();
-    });
 
-    const deselectAllBtn = actions.createEl("button", { cls: "roost-nav-btn", text: "Deselect all" });
-    deselectAllBtn.addEventListener("click", () => {
-      this.selectedIds.clear();
-      this.host.getGalleryContainer().querySelectorAll(".roost-card-selected").forEach(el =>
-        el.classList.remove("roost-card-selected"),
-      );
-      this.updateBar();
-    });
+      const deselectAllBtn = actions.createEl("button", { cls: "roost-nav-btn", text: "Deselect all" });
+      deselectAllBtn.addEventListener("click", () => {
+        this.selectedIds.clear();
+        this.host.getGalleryContainer().querySelectorAll(".roost-card-selected").forEach(el =>
+          el.classList.remove("roost-card-selected"),
+        );
+        this.updateBar();
+      });
 
-    const moveBtn = actions.createEl("button", {
-      cls: "roost-nav-btn roost-selection-move-btn",
-      text: `Move ${count} to "${this.target}"`,
-    });
-    moveBtn.disabled = count === 0;
-    moveBtn.addEventListener("click", () => {
-      const target = this.target;
-      const movedIds = new Set(this.selectedIds);
-      if (this.onAccept && movedIds.size > 0) {
-        this.onAccept([...movedIds]);
-      }
-      this.animateToSidebar(target, movedIds);
-    });
+      const moveBtn = actions.createEl("button", {
+        cls: "roost-nav-btn roost-selection-move-btn",
+        text: `Move ${count} to "${this.target}"`,
+      });
+      moveBtn.disabled = count === 0;
+      moveBtn.addEventListener("click", () => {
+        const target = this.target;
+        const movedIds = new Set(this.selectedIds);
+        if (this.onAccept && movedIds.size > 0) this.onAccept([...movedIds]);
+        this.animateToSidebar(target, movedIds);
+      });
 
-    const cancelBtn = actions.createEl("button", { cls: "roost-nav-btn", text: "Cancel" });
-    cancelBtn.addEventListener("click", () => this.exit());
+      const cancelBtn = actions.createEl("button", { cls: "roost-nav-btn", text: "Cancel" });
+      cancelBtn.addEventListener("click", () => this.exit());
+
+    } else {
+      // Free multiselect mode: subtle indicator + Clear.
+      const label = bar.createSpan({ cls: "roost-selection-label" });
+      label.textContent = `${count} selected`;
+      const actions = bar.createDiv({ cls: "roost-selection-actions" });
+      const clearBtn = actions.createEl("button", { cls: "roost-nav-btn", text: "Clear" });
+      clearBtn.addEventListener("click", () => this.clear());
+    }
   }
 
   private animateToSidebar(target: string | null, movedIds: Set<string>): void {

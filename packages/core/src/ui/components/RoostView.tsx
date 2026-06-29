@@ -131,6 +131,20 @@ export function RoostView({ app, plugin }: RoostViewProps) {
         sa.dismissSuggestions();
       } else if (data?.action === "reject") {
         sa.rejectItem(data.itemId);
+      } else if (data?.action === "rejectItems") {
+        sa.rejectItems(data.itemIds);
+      } else if (data?.action === "moveItems") {
+        sa.moveItemsTo(data.itemIds, data.to);
+      } else if (data?.action === "deleteItems") {
+        let deleted = 0;
+        for (const roostId of data.roostIds) {
+          const ok = await deleteItem(app, app.vault, plugin.settings.syncFolder, roostId);
+          if (ok) deleted++;
+        }
+        if (deleted > 0) {
+          new Notice(`Deleted ${deleted} item${deleted !== 1 ? "s" : ""}`);
+          void scanLibrary();
+        }
       } else if (data?.action === "delete" && data.roostId) {
         const ok = await deleteItem(app, app.vault, plugin.settings.syncFolder, data.roostId);
         if (ok) {

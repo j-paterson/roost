@@ -299,9 +299,33 @@ export class GroupStore {
     this.rejections.add(itemId);
   }
 
+  /** Bulk-reject items. Same training-signal path as single rejectItem. */
+  rejectItems(ids: string[]): void {
+    for (const id of ids) this.rejections.add(id);
+  }
+
   /** Undo a rejection (e.g. the user then picks a category). */
   unrejectItem(itemId: string): void {
     this.rejections.delete(itemId);
+  }
+
+  /**
+   * Move items to `toGroupId`, resolving each item's current source group
+   * independently. Handles mixed-source selections (items from different groups).
+   */
+  reassignItemsTo(ids: string[], toGroupId: string): void {
+    if (!this.groups.has(toGroupId)) return;
+    const moveSet = new Set(ids);
+    // Build fromGroupId → itemIds-to-move map before any mutations
+    const fromMap = new Map<string, string[]>();
+    for (const [gId, group] of this.groups) {
+      if (gId === toGroupId) continue;
+      const toMove = group.itemIds.filter(id => moveSet.has(id));
+      if (toMove.length > 0) fromMap.set(gId, toMove);
+    }
+    for (const [fromGroupId, moveIds] of fromMap) {
+      this.reassignItems(moveIds, fromGroupId, toGroupId);
+    }
   }
 
   /** Items the user explicitly rejected this proposal. */

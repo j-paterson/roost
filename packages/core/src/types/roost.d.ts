@@ -233,7 +233,10 @@ export type ItemClickData =
   | { action: "acceptSuggestions"; itemIds: string[] }
   | { action: "dismissSuggestions" }
   | { action: "reject"; itemId: string; groupId: string }
-  | { action: "delete"; roostId: string };
+  | { action: "delete"; roostId: string }
+  | { action: "rejectItems"; itemIds: string[] }
+  | { action: "moveItems"; itemIds: string[]; to: string }
+  | { action: "deleteItems"; roostIds: string[] };
 
 /**
  * Input for a Smart Assign run. The hook operates purely as a function
