@@ -348,15 +348,21 @@ describe("Reddit video-mux proof — live", function () {
             proofs.map((p) => `   • ${p.id}: ${p.verdict} (has_audio=${p.sourceHasAudio}, streams=[${p.outputStreams.join(",")}])`).join("\n"),
         );
 
+        // NOTE: wdio's expect (expect-webdriverio) takes ONE argument — no
+        // message arg like vitest. Surface diagnostics via thrown Errors so the
+        // failure message is still useful.
+
         // A has_audio video whose output lacks audio is a genuine mux bug.
-        expect(muxFailed, `mux FAILED for: ${muxFailed.map((p) => p.id).join(", ")}`).toHaveLength(0);
+        if (muxFailed.length > 0) {
+            throw new Error(`mux FAILED for: ${muxFailed.map((p) => p.id).join(", ")} — see tests/e2e/.reddit-mux-live.log`);
+        }
         // Proof requires at least one video that was actually muxed with audio.
-        // If this fails with 0 video posts, the account simply has no v.redd.it
-        // video in its saved list; if it fails with video-only-correct posts,
+        // If this throws with 0 video posts, the account simply has no v.redd.it
+        // video in its saved list; if it throws with video-only-correct posts,
         // those videos are genuinely silent. Either way the log explains it.
-        expect(
-            muxProven,
-            `no audio-bearing v.redd.it video was muxed (video posts seen: ${proofs.length}). See tests/e2e/.reddit-mux-live.log`,
-        ).toBe(true);
+        if (!muxProven) {
+            throw new Error(`no audio-bearing v.redd.it video was muxed (video posts seen: ${proofs.length}). See tests/e2e/.reddit-mux-live.log`);
+        }
+        expect(muxProven).toBe(true);
     });
 });
