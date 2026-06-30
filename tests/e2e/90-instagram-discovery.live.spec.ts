@@ -458,7 +458,9 @@ describe("Instagram API discovery — live (real instagram.com, cookie injection
                         var claim = r.headers.get("x-ig-set-www-claim") || r.headers.get("x-ig-www-claim") || null;
                         if (claim) { try { window.__ig_www_claim = claim; } catch (e) {} }
                         var body = await r.text();
-                        return JSON.stringify({ status: r.status, claim: claim, body: body.slice(0, 30000) });
+                        // Large cap so the JSON stays complete + parseable (a saved
+                        // feed item is ~2-3 KB; truncation breaks JSON.parse).
+                        return JSON.stringify({ status: r.status, claim: claim, body: body.slice(0, 600000) });
                     } catch (e) { return JSON.stringify({ status: -1, error: String(e) }); }
                 })()
             `);
@@ -494,15 +496,15 @@ describe("Instagram API discovery — live (real instagram.com, cookie injection
         );
         results.push(collections);
 
-        const saved = await igFetch("feed/saved/posts", "/api/v1/feed/saved/posts/?count=12");
+        const saved = await igFetch("feed/saved/posts", "/api/v1/feed/saved/posts/?count=5");
         results.push(saved);
 
         // If we got a real collection id, validate the per-collection feed path
         // (research flagged /posts/ suffix ambiguity — try both).
         const cid = firstCollectionId(collections.body);
         if (cid) {
-            results.push(await igFetch(`feed/collection/${cid}`, `/api/v1/feed/collection/${cid}/?count=12`));
-            results.push(await igFetch(`feed/collection/${cid}/posts`, `/api/v1/feed/collection/${cid}/posts/?count=12`));
+            results.push(await igFetch(`feed/collection/${cid}`, `/api/v1/feed/collection/${cid}/?count=5`));
+            results.push(await igFetch(`feed/collection/${cid}/posts`, `/api/v1/feed/collection/${cid}/posts/?count=5`));
         }
 
         fs.writeFileSync(
