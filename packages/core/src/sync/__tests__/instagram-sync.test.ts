@@ -66,4 +66,28 @@ describe("paginateSaved", () => {
     });
     expect(res.totalFetched).toBe(2);
   });
+
+  it("does NOT early-out when all items on a page lack a code field (processedCount === 0)", async () => {
+    // Items missing 'code' are skipped by the guard — processedCount stays 0 per page.
+    // Even with prevComplete:true and earlyOutThreshold:2, the all-known path must not fire.
+    const noCodePage = (moreAvailable: boolean, nextId?: string) => ({
+      status: 200,
+      body: JSON.stringify({
+        items: [{ media: { pk: "x", media_type: 1 } }, { media: { pk: "y", media_type: 1 } }],
+        more_available: moreAvailable,
+        next_max_id: nextId ?? null,
+      }),
+    });
+    const igFetch: IgFetch = vi.fn()
+      .mockResolvedValueOnce(noCodePage(true, "C2"))
+      .mockResolvedValueOnce(noCodePage(false));
+    const res = await paginateSaved({
+      igFetch, sleep: async () => {}, onRecords: async () => {},
+      collMap, knownIds: new Set(), prevComplete: true,
+      batchSize: 10, earlyOutThreshold: 2, maxItems: null,
+      isStopped: () => false, onLog: () => {}, onProgress: () => {},
+    });
+    // processedCount === 0 on every page → earlyOut must be false
+    expect(res.earlyOut).toBe(false);
+  });
 });

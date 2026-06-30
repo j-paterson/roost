@@ -90,7 +90,8 @@ export async function paginateSaved(args: PaginateArgs): Promise<PaginateResult>
     try { parsed = JSON.parse(res.body); } catch { args.onLog("[instagram] unparseable page body — stopping"); break; }
 
     const items = parsed.items || [];
-    let pageAllKnown = items.length > 0;
+    let pageAllKnown = true;
+    let processedCount = 0;
     for (const it of items) {
       const media = it.media as Record<string, any> | undefined;
       if (!media || !media.code) continue;
@@ -102,6 +103,7 @@ export async function paginateSaved(args: PaginateArgs): Promise<PaginateResult>
       });
       if (!record) continue;
       totalFetched++;
+      processedCount++;
       if (!args.knownIds.has(record.id)) pageAllKnown = false;
       pending.push(record);
       if (pending.length >= args.batchSize) await flush();
@@ -114,8 +116,10 @@ export async function paginateSaved(args: PaginateArgs): Promise<PaginateResult>
     args.onProgress({ phase: "fetch", count: totalFetched, total: 0, done: false });
 
     // Early-out: reverse-chron feed, so consecutive all-known pages mean we've
-    // caught up to a prior complete sync.
-    if (args.prevComplete && pageAllKnown) {
+    // caught up to a prior complete sync. Require processedCount > 0 so pages
+    // where all items lacked a code field (and were skipped) do not falsely
+    // satisfy the all-known condition.
+    if (args.prevComplete && pageAllKnown && processedCount > 0) {
       consecutiveKnownPages++;
       args.onLog(`[instagram] all-known page (${consecutiveKnownPages}/${args.earlyOutThreshold})`);
       if (consecutiveKnownPages >= args.earlyOutThreshold) {
