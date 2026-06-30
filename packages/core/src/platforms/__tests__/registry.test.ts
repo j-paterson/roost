@@ -34,7 +34,7 @@ describe("platform registry", () => {
     expect(ig.parse).toBeDefined();    // Phase 2: parsers wired (Task 2)
     expect(ig.vault).toEqual({ folder: "Instagram", attachPrefix: "instagram", icon: "camera" });
   });
-  it("enabledPlatforms includes instagram (Task 9)", () => {
-    expect(enabledPlatforms().map((p) => p.id).sort()).toEqual(["instagram", "tiktok", "twitter"]);
+  it("enabledPlatforms includes instagram and reddit (Task 8+9)", () => {
+    expect(enabledPlatforms().map((p) => p.id).sort()).toEqual(["instagram", "reddit", "tiktok", "twitter"]);
   });
 });

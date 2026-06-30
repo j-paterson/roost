@@ -1,13 +1,12 @@
 import type { PlatformDescriptor } from "./descriptor";
 import { roostParseEpoch, roostBookmarkId } from "@/lib/normalize-helpers";
 import { extractRedditMedia, buildRedditUrl } from "@/lib/reddit-helpers";
+import { syncReddit } from "@/sync/reddit-sync";
 // @ts-ignore — raw probe loaded as string by esbuild/vitest rawProbePlugin
-import redditDiscoveryProbeSource from "../probes/reddit-discovery.probe";
+import redditProbeSource from "../probes/reddit-probe.probe";
 
-/** Discovery-only platform: wired so the webview-manager can open a Reddit
- *  webview for login + cookie export (the dev-gated "Open Reddit (login)" /
- *  "Export Reddit session cookies" commands). enabled:false → never surfaced in
- *  the Hub or normal sync; sync/parse arrive once the design/research lands. */
+/** Live sync platform: fetches Reddit saved posts via the authenticated webview
+ *  and writes them to the vault using the standard sync pipeline. */
 export const reddit: PlatformDescriptor = {
   id: "reddit",
   hubId: "reddit",
@@ -16,8 +15,8 @@ export const reddit: PlatformDescriptor = {
   origin: "https://www.reddit.com",
   profileUrl: "https://www.reddit.com/",
   authCookies: ["reddit_session"],
-  enabled: false,
-  probeSource: redditDiscoveryProbeSource,
+  enabled: true,
+  probeSource: redditProbeSource,
   vault: { folder: "Reddit", attachPrefix: "reddit", icon: "message-circle" },
   parse: {
     id: (r) => { const raw = r?.rawData || r?.castData || null; return r?.itemId || raw?.id || null; },
@@ -34,4 +33,6 @@ export const reddit: PlatformDescriptor = {
         saved_at: options.savedAt || published || new Date().toISOString(), published_at: published, captured_via: options.capturedVia || "sync" };
     },
   },
+  sync: (wc, webviewEl, opts, onProgress, onRecords, onLog) =>
+    syncReddit(wc, webviewEl, opts, onProgress, onRecords, onLog),
 };
