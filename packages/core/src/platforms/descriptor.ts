@@ -10,10 +10,12 @@ import type { Platform, ElectronWebview, StopSignal, SyncPhaseProgress } from "@
 import type { NormalizedRecord, RawApiData, NormalizeOptions } from "@/lib/normalize-helpers";
 import type { BookmarkRecord, extractTwitterMedia } from "@/lib/twitter-helpers";
 import type { extractTikTokMedia } from "@/lib/tiktok-helpers";
+import type { extractInstagramMedia } from "@/lib/instagram-helpers";
 
 /** Convenience aliases for the per-platform media shapes. */
 export type TikTokMedia = ReturnType<typeof extractTikTokMedia>;
 export type TwitterMedia = ReturnType<typeof extractTwitterMedia>;
+export type InstagramMedia = ReturnType<typeof extractInstagramMedia>;
 
 /**
  * Per-platform bookmark field extractors. Each platform's descriptor
@@ -33,8 +35,8 @@ export interface PlatformParser {
   authorHandle(record: BookmarkRecord): string | null;
   /** Canonical URL for the bookmark. */
   url(record: BookmarkRecord): string | null;
-  /** Platform-specific media payload (photos/video for Twitter; images/video for TikTok). */
-  media(record: BookmarkRecord): TikTokMedia | TwitterMedia;
+  /** Platform-specific media payload. */
+  media(record: BookmarkRecord): TikTokMedia | TwitterMedia | InstagramMedia;
   /** Best subtitle track URL (TikTok only — undefined for Twitter). */
   subtitleUrl?(record: BookmarkRecord): string | null;
   /** Normalize a raw API item into a uniform storage record. */
@@ -96,4 +98,15 @@ export interface PlatformDescriptor {
   sync?: SyncFn;
   /** Field-level parsers over raw API data. Omitted for discovery-only platforms. */
   parse?: PlatformParser;
+  /** Vault-side data used by writers/index/UI so consumers read the registry
+   *  instead of hardcoding per-platform branches. Omitted for discovery-only
+   *  platforms. */
+  vault?: {
+    /** Subfolder under syncFolder where notes live ("TikTok", "X", "Instagram"). */
+    folder: string;
+    /** Attachment subfolder prefix → `${prefix}-${itemId}`. */
+    attachPrefix: string;
+    /** Lucide icon id for feed/gallery cards. */
+    icon: string;
+  };
 }
