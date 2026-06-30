@@ -202,6 +202,10 @@ export async function importFromEagle(opts: EagleImportOpts): Promise<{ imported
       if (!itemUrl && platform === "tiktok" && authorHandle && authorHandle !== "Unknown") {
         itemUrl = buildTikTokVideoUrl(authorHandle, numericId);
       }
+      if (!itemUrl && platform === "instagram" && numericId) {
+        // numericId here is the imported shortcode/id from tags or filename.
+        itemUrl = `https://www.instagram.com/p/${numericId}/`;
+      }
 
       // Build tags — both frontmatter and inline
       const rawTags = meta.tags?.filter(t => !t.startsWith("collection:") && t !== platform && !t.startsWith("@")) || [];
@@ -227,6 +231,8 @@ export async function importFromEagle(opts: EagleImportOpts): Promise<{ imported
           }
         } catch { /* non-numeric ID, fall through */ }
       }
+      // Instagram shortcode→timestamp decoding deferred (design spec §10); IG
+      // imports keep whatever published date the Eagle payload provided.
       if (!publishedDate) {
         publishedDate = meta.modificationTime ? new Date(meta.modificationTime * 1000).toISOString().split("T")[0] : undefined;
       }
@@ -254,6 +260,9 @@ export async function importFromEagle(opts: EagleImportOpts): Promise<{ imported
         author: { uniqueId: string; nickname: string };
         music?: { title: string; authorName: string };
         stats?: { playCount: number; diggCount: number; commentCount: number; shareCount: number; collectCount: number };
+        media_type?: number;
+        like_count?: number;
+        comment_count?: number;
       } = {
         _source: "eagle-import",
         id: numericId,
@@ -263,6 +272,10 @@ export async function importFromEagle(opts: EagleImportOpts): Promise<{ imported
       if (platform === "tiktok") {
         minimalRaw.music = { title: "", authorName: "" };
         minimalRaw.stats = { playCount: 0, diggCount: 0, commentCount: 0, shareCount: 0, collectCount: 0 };
+      } else if (platform === "instagram") {
+        minimalRaw.media_type = 1;
+        minimalRaw.like_count = 0;
+        minimalRaw.comment_count = 0;
       }
       const rawJsonPath = `${attachFolder}/raw.json`;
       const existingRaw = vault.getAbstractFileByPath(rawJsonPath);
