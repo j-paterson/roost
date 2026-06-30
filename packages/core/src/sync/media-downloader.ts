@@ -3,6 +3,9 @@
  * Uses Obsidian's requestUrl (no CORS) for images and direct downloads.
  * Uses webview executeJavaScript for TikTok videos (needs auth cookies).
  */
+import * as fs from "fs";
+import * as path from "path";
+import { execFileSync } from "child_process";
 import { requestUrl } from "obsidian";
 import { TIKTOK_VIDEO_DOWNLOAD_TIMEOUT_MS, MEDIA_DOWNLOAD_MAX_RETRIES } from "@/config";
 import type { ElectronWebview } from "@/types/sync";
@@ -116,10 +119,6 @@ export async function downloadTikTokVideo(wc: ElectronWebview, videoUrl: string)
   }
 }
 
-import * as fs from "fs";
-import * as path from "path";
-import { execFileSync } from "child_process";
-
 const REDDIT_UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36";
 
 export async function downloadRedditImage(url: string): Promise<ArrayBuffer | null> {
@@ -175,51 +174,56 @@ export async function muxRedditVideo(opts: MuxRedditVideoOpts): Promise<boolean>
   }
 
   const videoTmp = path.join(tmpDir, `${videoId}-video.mp4`);
+  let audioTmp: string | null = null;
   fs.writeFileSync(videoTmp, Buffer.from(videoBytes));
 
-  // Attempt mux when all conditions are met
-  if (ffmpegPath && hasAudio && dashUrl) {
-    try {
-      // Fetch the DASH manifest
-      const mpdRes = await requestUrl({
-        url: dashUrl,
-        headers: { "User-Agent": REDDIT_UA, "Referer": "https://www.reddit.com/" },
-      });
-      const audioBase = parseRedditAudioBaseUrl(mpdRes.text);
-
-      if (audioBase) {
-        // Audio URL is dashUrl's directory + audioBase
-        const audioUrl = dashUrl.replace(/\/[^/]+$/, `/${audioBase}`);
-        const audioRes = await requestUrl({
-          url: audioUrl,
+  try {
+    // Attempt mux when all conditions are met
+    if (ffmpegPath && hasAudio && dashUrl) {
+      try {
+        const mpdRes = await requestUrl({
+          url: dashUrl,
           headers: { "User-Agent": REDDIT_UA, "Referer": "https://www.reddit.com/" },
         });
-        const audioTmp = path.join(tmpDir, `${videoId}-audio.mp4`);
-        fs.writeFileSync(audioTmp, Buffer.from(audioRes.arrayBuffer));
+        const audioBase = parseRedditAudioBaseUrl(mpdRes.text);
 
-        // Mux: mirror execFileSync pattern from pipeline/describe-items.ts extractKeyframes
-        execFileSync(ffmpegPath, [
-          "-y",
-          "-user_agent", REDDIT_UA,
-          "-headers", "Referer: https://www.reddit.com/",
-          "-i", videoTmp,
-          "-i", audioTmp,
-          "-c:v", "copy",
-          "-c:a", "copy",
-          "-loglevel", "error",
-          outPath,
-        ], { timeout: 120000 });
+        if (audioBase) {
+          // Audio URL is dashUrl's directory + audioBase
+          const audioUrl = dashUrl.replace(/\/[^/]+$/, `/${audioBase}`);
+          const audioRes = await requestUrl({
+            url: audioUrl,
+            headers: { "User-Agent": REDDIT_UA, "Referer": "https://www.reddit.com/" },
+          });
+          audioTmp = path.join(tmpDir, `${videoId}-audio.mp4`);
+          fs.writeFileSync(audioTmp, Buffer.from(audioRes.arrayBuffer));
 
-        return true;
+          // Mux: mirror execFileSync pattern from pipeline/describe-items.ts extractKeyframes
+          execFileSync(ffmpegPath, [
+            "-y",
+            "-user_agent", REDDIT_UA,
+            "-headers", "Referer: https://www.reddit.com/",
+            "-i", videoTmp,
+            "-i", audioTmp,
+            "-c:v", "copy",
+            "-c:a", "copy",
+            "-loglevel", "error",
+            outPath,
+          ], { timeout: 120000 });
+
+          return true;
+        }
+      } catch (e) {
+        console.warn(`[media] reddit mux failed for ${videoId}, falling back to video-only`, e instanceof Error ? e.message : String(e));
       }
-    } catch (e) {
-      console.warn(`[media] reddit mux failed for ${videoId}, falling back to video-only`, e instanceof Error ? e.message : String(e));
     }
-  }
 
-  // Video-only fallback
-  fs.copyFileSync(videoTmp, outPath);
-  return false;
+    // Video-only fallback
+    fs.copyFileSync(videoTmp, outPath);
+    return false;
+  } finally {
+    try { if (fs.existsSync(videoTmp)) fs.unlinkSync(videoTmp); } catch { /* ignore */ }
+    if (audioTmp) { try { if (fs.existsSync(audioTmp)) fs.unlinkSync(audioTmp); } catch { /* ignore */ } }
+  }
 }
 
 /**
