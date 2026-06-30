@@ -39,6 +39,43 @@ interface PaginateResult {
   abortedRateLimited: boolean;
 }
 
+/** collection_types passed verbatim (unencoded) — matches the live-validated request. */
+const COLLECTION_TYPES = '["ALL_MEDIA_AUTO_COLLECTION","PRODUCT_AUTO_COLLECTION","MEDIA"]';
+
+/**
+ * Fetch ALL saved collections, following pagination. collections/list returns
+ * `more_available` + `next_max_id` just like the feed endpoints, so a single
+ * fetch only captures the first page — accounts with many collections need the
+ * full loop or their posts' collection tags go missing. Pure w.r.t. injected
+ * igFetch/sleep so it is unit-testable without a webview.
+ */
+export async function paginateCollections(
+  igFetch: IgFetch,
+  sleep: (ms: number) => Promise<void>,
+  onLog: (msg: string) => void,
+): Promise<Map<string, { name: string; count: number }>> {
+  const collMap = new Map<string, { name: string; count: number }>();
+  let cursor: string | null = null;
+  for (let page = 0; page < 100; page++) {
+    const path = `/api/v1/collections/list/?collection_types=${COLLECTION_TYPES}${cursor ? `&max_id=${encodeURIComponent(cursor)}` : ""}`;
+    const res = await igFetch(path);
+    if (res.status !== 200 || !res.body) {
+      onLog(`[instagram] collections page fetch failed (status ${res.status}) — stopping collection scan`);
+      break;
+    }
+    let j: { items?: Record<string, any>[]; more_available?: boolean; next_max_id?: string };
+    try { j = JSON.parse(res.body); } catch { onLog("[instagram] unparseable collections body — stopping collection scan"); break; }
+    for (const it of j.items || []) {
+      const id = it.collection_id || it.collection_pk || it.id;
+      if (id) collMap.set(String(id), { name: it.collection_name || String(id), count: it.collection_media_count || 0 });
+    }
+    if (!j.more_available || !j.next_max_id) break;
+    cursor = j.next_max_id;
+    await sleep(JITTER_MIN_MS + Math.floor(Math.random() * (JITTER_MAX_MS - JITTER_MIN_MS)));
+  }
+  return collMap;
+}
+
 function isFeedbackRequired(body: string | undefined): boolean {
   if (!body) return false;
   return /feedback_required|checkpoint_required|"spam"/i.test(body);
@@ -191,19 +228,9 @@ export async function syncInstagram(
 
   const igFetch = makeWebviewIgFetch(wc);
 
-  // Step 2: collections/list → id→{name,count} map.
+  // Step 2: collections/list (paginated) → id→{name,count} map.
   progress({ phase: "collections", count: 0, total: 0, done: false });
-  const collMap = new Map<string, { name: string; count: number }>();
-  const collRes = await igFetch('/api/v1/collections/list/?collection_types=["ALL_MEDIA_AUTO_COLLECTION","PRODUCT_AUTO_COLLECTION","MEDIA"]');
-  if (collRes.status === 200 && collRes.body) {
-    try {
-      const j = JSON.parse(collRes.body);
-      for (const it of j.items || []) {
-        const id = it.collection_id || it.collection_pk || it.id;
-        if (id) collMap.set(String(id), { name: it.collection_name || String(id), count: it.collection_media_count || 0 });
-      }
-    } catch { /* best effort */ }
-  }
+  const collMap = await paginateCollections(igFetch, realSleep, log);
   log(`[instagram] ${collMap.size} collections`);
 
   // Step 3: paginate saved feed.

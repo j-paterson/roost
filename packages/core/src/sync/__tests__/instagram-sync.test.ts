@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { paginateSaved, type IgFetch } from "@/sync/instagram-sync";
+import { paginateSaved, paginateCollections, type IgFetch } from "@/sync/instagram-sync";
 
 function page(items: { code: string }[], next: string | null) {
   return {
@@ -12,6 +12,38 @@ function page(items: { code: string }[], next: string | null) {
     }),
   };
 }
+
+function collPage(items: { id: string; name: string }[], next: string | null) {
+  return {
+    status: 200,
+    body: JSON.stringify({
+      items: items.map((c) => ({ collection_id: c.id, collection_name: c.name, collection_media_count: 1 })),
+      more_available: next != null,
+      next_max_id: next,
+    }),
+  };
+}
+
+describe("paginateCollections", () => {
+  it("follows next_max_id across pages and merges all collections", async () => {
+    const igFetch: IgFetch = vi.fn()
+      .mockResolvedValueOnce(collPage([{ id: "1", name: "Recipes" }, { id: "2", name: "Travel" }], "CUR1"))
+      .mockResolvedValueOnce(collPage([{ id: "3", name: "Art" }], null));
+    const map = await paginateCollections(igFetch, async () => {}, () => {});
+    expect(map.size).toBe(3);
+    expect(map.get("2")?.name).toBe("Travel");
+    expect(map.get("3")?.name).toBe("Art");
+    // second call carries the cursor verbatim
+    expect((igFetch as ReturnType<typeof vi.fn>).mock.calls[1][0]).toContain("max_id=CUR1");
+  });
+
+  it("stops on a single page when more_available is false", async () => {
+    const igFetch: IgFetch = vi.fn().mockResolvedValue(collPage([{ id: "1", name: "Only" }], null));
+    const map = await paginateCollections(igFetch, async () => {}, () => {});
+    expect(map.size).toBe(1);
+    expect((igFetch as ReturnType<typeof vi.fn>).mock.calls.length).toBe(1);
+  });
+});
 
 describe("paginateSaved", () => {
   const collMap = new Map<string, { name: string; count: number }>();
