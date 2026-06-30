@@ -6,7 +6,7 @@ import { registerRoostViews } from "@/plugin/register-roost-views";
 import { registerRoostCommands } from "@/plugin/register-roost-commands";
 import { RoostWorkspace } from "@/plugin/roost-workspace";
 import { RoostPluginState } from "@/plugin/roost-plugin-state";
-import { exportXCookies } from "@/plugin/export-x-cookies";
+import { exportCookies } from "@/plugin/export-cookies";
 import { regenerateCardForActiveNote } from "@/plugin/regenerate-card-command";
 import { fetchCoversCommand } from "@/plugin/fetch-covers-command";
 import { maybeAutoRunTweetBodyBackfill } from "@/sync/tweet-body-backfill";
@@ -305,8 +305,8 @@ export default class RoostPlugin extends Plugin {
     this.triggerHubStateChange();
   }
 
-  async exportXCookies(): Promise<void> {
-    await exportXCookies(() => this.getWebviewManager());
+  async exportPlatformCookies(platform: Platform): Promise<void> {
+    await exportCookies(platform, () => this.getWebviewManager());
   }
 
   async fetchCoversCommand(): Promise<void> {

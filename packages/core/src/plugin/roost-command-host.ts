@@ -12,6 +12,6 @@ export interface RoostCommandHost extends IRoostPlugin, Plugin {
   openWebview(platform: Platform): Promise<void>;
   getWebviewManager(): WebviewManager;
   fetchCoversCommand(): Promise<void>;
-  exportXCookies(): Promise<void>;
+  exportPlatformCookies(platform: Platform): Promise<void>;
   regenerateCardForActiveNote(): Promise<void>;
 }

@@ -17,5 +17,7 @@ describe("dev command gating", () => {
     registerRoostCommands(plugin);
     expect(ids).not.toContain("export-x-cookies");
     expect(ids).not.toContain("debug-probe-bootstrap");
+    expect(ids).not.toContain("open-instagram-login");
+    expect(ids).not.toContain("export-instagram-cookies");
   });
 });

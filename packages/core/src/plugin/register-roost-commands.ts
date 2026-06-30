@@ -126,7 +126,17 @@ export function registerRoostCommands(plugin: RoostCommandHost): void {
     plugin.addCommand({
       id: "export-x-cookies",
       name: "Export X session cookies (for live e2e tests)",
-      callback: async () => { await plugin.exportXCookies(); },
+      callback: async () => { await plugin.exportPlatformCookies("twitter"); },
+    });
+    plugin.addCommand({
+      id: "open-instagram-login",
+      name: "Open Instagram (login)",
+      callback: async () => { await plugin.openWebview("instagram"); },
+    });
+    plugin.addCommand({
+      id: "export-instagram-cookies",
+      name: "Export Instagram session cookies (for live e2e tests)",
+      callback: async () => { await plugin.exportPlatformCookies("instagram"); },
     });
   }
 
