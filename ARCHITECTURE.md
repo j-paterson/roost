@@ -1,6 +1,6 @@
 # Roost — Obsidian Bookmark Organizer
 
-Sync, categorize, and visualize social media bookmarks from TikTok and X/Twitter inside Obsidian.
+Sync, categorize, and visualize social media bookmarks from TikTok, X/Twitter, and Instagram inside Obsidian.
 
 ## Overview
 
@@ -69,10 +69,12 @@ packages/core/src/
 │   └── lib/group-store.ts           # Smart Assign proposal tree state
 ├── platforms/                       # PlatformDescriptor registry (2026-06-29) — one
 │   ├── descriptor.ts                #   module per sync platform = config+auth+sync+
-│   ├── registry.ts                  #   card+parsers. getPlatform()/enabledPlatforms().
-│   └── tiktok.ts, twitter.ts        #   "add a platform = one descriptor". eagle = special case.
+│   ├── registry.ts                  #   card+parsers+vault{folder,attachPrefix,icon}. getPlatform()/
+│   │                                #   enabledPlatforms(). PLATFORMS uses getter props (lazy bind,
+│   │                                #   breaks the descriptor→sync→normalize→registry import cycle).
+│   └── tiktok.ts, twitter.ts, instagram.ts  # "add a platform = one descriptor". eagle = special case.
 ├── sync/
-│   ├── tiktok-sync.ts, twitter-sync.ts, run-platform-sync.ts
+│   ├── tiktok-sync.ts, twitter-sync.ts, instagram-sync.ts, run-platform-sync.ts
 │   ├── vault-writer.ts              # Notes + media + scanIncompleteIds buckets
 │   ├── article-backfill.ts, thread-backfill.ts, media-backfill.ts
 │   └── …                            # webview-manager, eagle-import, bases-setup, card-renderer
@@ -90,7 +92,7 @@ packages/core/src/
 │   ├── extract.ts, vault-helpers.ts, vault-utils.ts, roost-paths.ts
 │   └── …
 ├── types/                           # roost.d.ts, sync.ts, plugin.ts
-├── probes/                          # tiktok-probe.js, twitter-probe.js
+├── probes/                          # tiktok-probe.js, twitter-probe.js, instagram-probe.js (active fetch+media), instagram-discovery.js (passive observer)
 └── styles/                          # globals.css, bases-view.css
 ```
 
@@ -269,6 +271,12 @@ Before processing each API page, the probe checks every item ID against `__ROOST
 Folder membership is a **plain "Backfill X bookmark folders" Cmd+P command** (`register-roost-commands.ts`, driver `sync/folder-backfill.ts`), run on demand. It is **not** a tracked enrichment: it has no `enrichment_v_folder` stamp, no `vault-index.ts` worklist bucket, and no health-panel row (removed 2026-06-17 — the stamp produced a "tagged-but-still-flagged-incomplete" contradiction and the backfill re-derives every folder from X each run, so it never needed per-note completeness tracking). Idempotency is by data: a note whose `collection` already equals the intended folder is skipped. Not wired into normal sync — normal sync only tags tweets seen on the first page of each folder (Step 4.5); re-running the backfill (now skip-by-data, cheap) refreshes membership for anything new. (Orphaned `enrichment_v_folder` keys from before the removal were stripped by the one-time `scripts/strip-folder-stamp.mjs`.)
 
 **Why not DOM scrolling.** X bookmark-folder timelines do not paginate via DOM scroll (verified by live e2e). Pagination requires replaying the real GraphQL cursors.
+
+### Instagram Sync (Phase 2, 2026-06-30)
+
+Unlike TikTok/X (DOM/GraphQL scroll), Instagram's saved grid is a clean paginated REST API, so the sync loop runs in **TypeScript**, not injected JS. The active probe (`probes/instagram-probe.js`) is thin: it harvests the live `x-asbd-id` + `x-ig-www-claim` from the SPA's own traffic and exposes two page-context helpers — `__roostIgFetch(path)` (authenticated same-origin GET, `X-IG-App-ID: 936619743392459`, claim capture/resend) and `__roostIgFetchMediaBase64(url)` (time-limited CDN media → base64, fetched during sync). `sync/instagram-sync.ts` drives it: `collections/list` → folder map, then paginate `/api/v1/feed/saved/posts/?count=50&max_id=…` while `more_available`, stamping each item's `saved_collection_ids` → `_roost_collections`. Pacing = 1–3s jitter, `count ≤ 50`, exponential backoff + graceful abort on 429/`FeedbackRequired`. The pure `paginateSaved` (injected `igFetch`/`sleep`) is fully unit-tested; **early-out** mirrors TikTok/X (known-ids, `EARLY_OUT_THRESHOLD` consecutive all-known pages, gated on a real processed item). `roost_id` = `instagram:<shortcode>`. `InstagramRecordWriter` (mirrors the TikTok writer) downloads image/video/carousel media via the webview during sync, writes `raw.json`, and files collections as `collection/<name>` tags + a `collections:` frontmatter list. The gated live spec `tests/e2e/91-instagram-sync.live.spec.ts` drives the production `runSync("instagram")` path end-to-end. (Plan: `docs/superpowers/plans/2026-06-30-instagram-ingestion-phase2.md`.)
+
+**Cross-platform abstraction.** Phase 2 routed the per-platform branches through the registry rather than growing `if (platform === …)` chains: folder/attachment-prefix/icon live in `descriptor.vault`; `VaultWriter.writeBatch` and `ResyncRunner.resyncRecord` dispatch through tables; `extract.ts`/`normalize.ts` already dispatch via `descriptor.parse.*`.
 
 **How it works:**
 
