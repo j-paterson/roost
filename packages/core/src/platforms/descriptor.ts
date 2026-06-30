@@ -11,11 +11,13 @@ import type { NormalizedRecord, RawApiData, NormalizeOptions } from "@/lib/norma
 import type { BookmarkRecord, extractTwitterMedia } from "@/lib/twitter-helpers";
 import type { extractTikTokMedia } from "@/lib/tiktok-helpers";
 import type { extractInstagramMedia } from "@/lib/instagram-helpers";
+import type { extractRedditMedia } from "@/lib/reddit-helpers";
 
 /** Convenience aliases for the per-platform media shapes. */
 export type TikTokMedia = ReturnType<typeof extractTikTokMedia>;
 export type TwitterMedia = ReturnType<typeof extractTwitterMedia>;
 export type InstagramMedia = ReturnType<typeof extractInstagramMedia>;
+export type RedditMedia = ReturnType<typeof extractRedditMedia>;
 
 /**
  * Per-platform bookmark field extractors. Each platform's descriptor
@@ -36,7 +38,7 @@ export interface PlatformParser {
   /** Canonical URL for the bookmark. */
   url(record: BookmarkRecord): string | null;
   /** Platform-specific media payload. */
-  media(record: BookmarkRecord): TikTokMedia | TwitterMedia | InstagramMedia;
+  media(record: BookmarkRecord): TikTokMedia | TwitterMedia | InstagramMedia | RedditMedia;
   /** Best subtitle track URL (TikTok only — undefined for Twitter). */
   subtitleUrl?(record: BookmarkRecord): string | null;
   /** Normalize a raw API item into a uniform storage record. */
