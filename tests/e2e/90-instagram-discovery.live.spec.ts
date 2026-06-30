@@ -101,6 +101,9 @@ async function ensureWebviewReady(): Promise<void> {
             container.style.cssText = "position: fixed; inset: 0; z-index: 99999;";
             document.body.appendChild(container);
         }
+        // NB: production (getWebviewManager) only create()s ENABLED platforms.
+        // This discovery spec deliberately creates the disabled-but-registered
+        // instagram webview directly — relies on create() not enforcing `enabled`.
         wm.create(webviewKey);
     }, PLUGIN_ID, WEBVIEW_KEY);
 
@@ -290,7 +293,8 @@ describe("Instagram API discovery — live (real instagram.com, cookie injection
                 timeoutMsg:
                     "probe never observed any instagram API call — " +
                     "is the webview logged in and does isApi() match the real URL patterns? " +
-                    "Run the 'Instagram API discovery' Obsidian command to inspect manually.",
+                    "Inspect tests/e2e/.ig-discovery-capture.json (written by the diagnostic test) " +
+                    "and check isApi() in packages/core/src/probes/instagram-discovery.js against the real URLs.",
                 interval: 1_000,
             },
         );

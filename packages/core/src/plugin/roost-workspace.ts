@@ -9,7 +9,7 @@ import { WebviewManager } from "@/sync/webview-manager";
 import { ensureBasesFiles } from "@/sync/bases-setup";
 import type { RoostSettings } from "@/settings";
 import type { Platform } from "@/types/sync";
-import { enabledPlatforms } from "@/platforms/registry";
+import { enabledPlatforms, getPlatform } from "@/platforms/registry";
 
 export class RoostWorkspace {
   private webviewManager: WebviewManager | null = null;
@@ -32,6 +32,14 @@ export class RoostWorkspace {
 
   /** Hub entry point for per-platform sync */
   async runSync(platform: Platform): Promise<void> {
+    // Disabled platforms (e.g. discovery-only instagram) have no webview created
+    // by getWebviewManager() and no enabled sync path, so runPlatformSync would
+    // early-return without ever writing syncState — leaving the poll below to
+    // spin the full 10-minute window. Fast-fail instead of hanging.
+    if (!getPlatform(platform).enabled) {
+      console.warn(`[roost] runSync ignored: platform "${platform}" is not enabled`);
+      return;
+    }
     await this.activateRoostSidebar();
     const settings = this.getSettings();
     const initialTs = settings.syncState?.[platform]?.timestamp ?? 0;
