@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook } from "@testing-library/react";
 
 // Spy on the heavy scan so the test asserts WHEN it runs, not its vault output.
-const scanLibraryTree = vi.fn(() => ({ total: 0, unsorted: 0, categories: [], platforms: [] }));
+const scanLibraryTree = vi.fn((..._args: unknown[]) => ({ total: 0, unsorted: 0, categories: [], platforms: [] }));
 vi.mock("@/ui/lib/library-tree", () => ({
   scanLibraryTree: (...args: unknown[]) => scanLibraryTree(...args),
   applyCategoryDelta: (prev: unknown) => prev,
