@@ -143,8 +143,9 @@ export class NoteFileWriter {
     if (!itemId) return;
     const username = extractBookmarkAuthorUsername(record);
     const handle = username ? `@${username}` : extractBookmarkAuthor(record);
-    const folderPath = (platform in PLATFORMS && getPlatform(platform as never).vault)
-      ? `${this.syncFolder}/${getPlatform(platform as never).vault!.folder}`
+    const desc = platform in PLATFORMS ? getPlatform(platform as never) : null;
+    const folderPath = desc?.vault?.folder
+      ? `${this.syncFolder}/${desc.vault.folder}`
       : `${this.syncFolder}/Other`;
     const noteFile = this.index.findNoteForId(record.id, folderPath, handle, itemId);
     if (!noteFile) return;

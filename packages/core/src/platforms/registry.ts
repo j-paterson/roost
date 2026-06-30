@@ -15,11 +15,13 @@ import { instagram } from "./instagram";
 // instagram.ts → instagram-sync.ts → normalize.ts → registry.ts → instagram.ts
 // would capture instagram=undefined in the PLATFORMS object literal before
 // instagram.ts finishes evaluating.
-export const PLATFORMS = {
+// The direct Record<Platform, PlatformDescriptor> type annotation (no cast)
+// preserves compile-time completeness: a missing Platform key is a tsc error.
+export const PLATFORMS: Record<Platform, PlatformDescriptor> = {
   get tiktok() { return tiktok; },
   get twitter() { return twitter; },
   get instagram() { return instagram; },
-} as unknown as Record<Platform, PlatformDescriptor>;
+};
 
 /**
  * Look up a platform descriptor by its canonical id.

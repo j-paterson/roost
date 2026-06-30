@@ -1,5 +1,5 @@
 import { Vault, MetadataCache } from "obsidian";
-import type { ElectronWebview } from "@/types/sync";
+import type { ElectronWebview, Platform } from "@/types/sync";
 import { TwitterRecordWriter } from "./vault-writer/twitter-record-writer";
 import { TikTokRecordWriter } from "./vault-writer/tiktok-record-writer";
 import { InstagramRecordWriter } from "./vault-writer/instagram-record-writer";
@@ -43,6 +43,9 @@ export class VaultWriter {
   private tiktokWriter: TikTokRecordWriter;
   private instagramWriter: InstagramRecordWriter;
   private resyncRunner: ResyncRunner;
+  /** Table-driven dispatch for writeBatch — maps platform id to its write fn.
+   *  Platforms absent from this map fall through to writeGenericRecord. */
+  private writeDispatch: Partial<Record<Platform, (r: NormalizedRecord) => Promise<void>>>;
   /** Cumulative counters across all writeBatch calls */
   private cumulative = { pushed: 0, resynced: 0, skipped: 0, processed: 0 };
 
@@ -104,7 +107,6 @@ export class VaultWriter {
       vault: opts.vault,
       syncFolder: opts.syncFolder,
       tiktokWc: opts.tiktokWebview,
-      instagramWc: opts.instagramWebview,
       log: this.log,
       index: this.index,
       ensuredFolders: this.ensuredFolders,
@@ -113,6 +115,11 @@ export class VaultWriter {
       twitterWriter: this.twitterWriter,
       instagramWriter: this.instagramWriter,
     });
+    this.writeDispatch = {
+      twitter: (r) => this.twitterWriter.writeTwitterRecord(r),
+      tiktok: (r) => this.tiktokWriter.writeTikTokRecord(r),
+      instagram: (r) => this.instagramWriter.writeInstagramRecord(r),
+    };
   }
 
   async getExistingIds(): Promise<Set<string>> {
@@ -168,16 +175,7 @@ export class VaultWriter {
       try {
         const t0 = Date.now();
         const platform = getBookmarkPlatform(record);
-
-        if (platform === "twitter") {
-          await this.twitterWriter.writeTwitterRecord(record);
-        } else if (platform === "tiktok") {
-          await this.tiktokWriter.writeTikTokRecord(record);
-        } else if (platform === "instagram") {
-          await this.instagramWriter.writeInstagramRecord(record);
-        } else {
-          await this.noteWriter.writeGenericRecord(record);
-        }
+        await (this.writeDispatch[platform as Platform] ?? ((r: NormalizedRecord) => this.noteWriter.writeGenericRecord(r)))(record);
         this.index.existingIds.add(record.id);
         pushed++;
         const elapsed = Date.now() - t0;

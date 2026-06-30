@@ -1,7 +1,7 @@
 import { Vault, TFile, TFolder, TAbstractFile, MetadataCache } from "obsidian";
 import type { ElectronWebview } from "@/types/sync";
 import { getSyncFiles, parseRoostId, loadDeletedIds } from "@/lib/vault-utils";
-import { PLATFORMS } from "@/platforms/registry";
+import { PLATFORMS, getPlatform } from "@/platforms/registry";
 import { MUSIC_SUBCATEGORIES } from "@/config";
 import { MEDIA_FIELDS } from "@/pipeline/media-pipeline";
 import { ENRICHMENTS, isVersionStale, enrichmentVersionField } from "@/lib/enrichments";
@@ -167,7 +167,7 @@ export class VaultIndex {
         const platform = (Object.keys(PLATFORMS) as (keyof typeof PLATFORMS)[]).find((p) => id.startsWith(p + ":")) || null;
         if (!platform) return;
         const itemId = id.split(":")[1];
-        const attachFolder = `${dir}/${platform}-${itemId}`;
+        const attachFolder = `${dir}/${getPlatform(platform).vault!.attachPrefix}-${itemId}`;
 
         this.notePathMap.set(id, file);
 

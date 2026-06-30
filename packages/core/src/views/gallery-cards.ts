@@ -260,10 +260,10 @@ export function hydrateGalleryCard(
     if (tagsValue) {
       const tagsEl = body.createDiv({ cls: "roost-card-tags" });
       const tagStr = tagsValue.toString();
+      const platformIds = Object.keys(PLATFORMS);
       const tags = tagStr.split(",").map(t => t.trim()).filter(t => {
         if (!t) return false;
         const lower = t.toLowerCase();
-        const platformIds = Object.keys(PLATFORMS);
         return !t.startsWith("collection/") && !platformIds.includes(lower) && lower !== "original sound";
       });
       for (const tag of tags.slice(0, 4)) {
