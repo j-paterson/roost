@@ -150,6 +150,22 @@ Several cross-cutting concerns are centralized to avoid duplication:
 | `lib/pipeline-gate-plugin.ts` | `gateCtxFromPlugin()`, `isCategoryPipelineActive()`, `guardPipelineActive()` | commands, gallery dispatch, library tree |
 | `pipeline/shared.ts` | `loadPipelineCache()`/`savePipelineCache()`, `ollamaGenerate()`, embedding cache, `stripJsonFence()`, `forEachBatch()`, `withLLMRetry()` | run-category-pipeline, all `*-pipeline.ts`, digest-pipeline, Smart Assign |
 
+### Extensibility patterns (how to add a platform, a backfill, a content type)
+
+Roost's growth is shaped by a few registry/seam patterns. New capabilities slot into an existing pattern rather than adding branches; the recurring discipline is **one extension point per concern, everything downstream stays platform-blind.**
+
+**Add a platform = one `PlatformDescriptor`.** `platforms/<name>.ts` declares the platform end-to-end — `id`/`hubId`/`displayName`/`card`/`origin`/`authCookies`/`enabled`/`probeSource`/`sync`/`parse`/`vault`{folder,attachPrefix,icon} — and registers in `platforms/registry.ts`. Consumers (webview-manager, hub, run-platform-sync, extract, normalize) look it up via `getPlatform`/`enabledPlatforms`; none branch on a platform literal. `sync?`/`parse?` are optional, so a platform can ship discovery-only (`enabled:false`) before its sync lands. `PLATFORMS` uses **getter properties** (not an object literal) so a descriptor importing its own sync fn — which transitively imports the registry — binds lazily instead of capturing `undefined` mid-cycle. TikTok, X, Instagram, Reddit are each one such descriptor.
+
+**Per-field extraction lives in `descriptor.parse.*`.** `id`/`caption`/`authorName`/`authorHandle`/`url`/`media`/`normalize` — and the optional `link` (→ a cross-platform `LinkCard`) — are the *only* platform-specific seams turning a raw API item into Roost's uniform shape. `extract.ts`/`normalize.ts` dispatch through them; helpers live in `lib/<platform>-helpers.ts`. Adding X *and* Reddit link previews was exactly: implement `parse.link` for each + have each writer emit the shared `link_*` frontmatter. Everything that renders or enriches a link reads frontmatter and never knows which platform produced it.
+
+**Per-platform writes/resyncs dispatch through tables, not `if/else`.** `VaultWriter.writeBatch` and `ResyncRunner.resyncRecord` hold `Record<Platform, fn>` maps; a new platform adds one entry + a `<platform>-record-writer.ts`. `descriptor.vault` supplies the folder/prefix/icon that used to be ternaries scattered across note-file-writer, vault-index, media-backfill, and the gallery.
+
+**Add a backfill = one `EnrichmentDef`.** Post-sync enrichments (article bodies, threads, media, tweet-body render, link previews) share one skeleton: a `scanIncompleteIds` bucket + a `needs<X>(fm)` predicate selecting incomplete notes, and an `EnrichmentDef` in `ENRICHMENTS` (`{id, commandId, runBackfill, panelDetail, …}`) that walks `Bookmarks/*`, queues candidates, processes each with per-item resilience, and persists a resumable `.roost/<x>-cache.json`. Registration auto-wires the command palette (`roost:<commandId>`) and the Hub health-panel row — no per-backfill UI code. `link-meta-backfill.ts` is the newest member, differing only in its fill step (an external Open Graph fetch via the generalized `cover-fetcher.fetchOgMetadata`) where the others re-download from URLs already in `raw.json`.
+
+**Shared, frontmatter-keyed renderers.** Display code is platform-blind: `link-card-renderer.ts` renders any note's `link_*` fields identically across gallery, feed, and the expanded panel; `resolveImageUrl` resolves a `cover`/`link_image` value whether it's a vault wikilink or a remote URL. The only platform conditioning in the view layer is content *layout* (the feed's TikTok-vs-tweet card), never link/media data shape.
+
+**Leaf-module discipline.** Pure types/predicates with no dependencies live in dependency-free leaf modules so any layer can import them without a runtime cycle. `lib/link-card.ts` (`LinkCard`, `domainFromUrl`, `needsLinkMeta`) is imported by helpers, the vault index, *and* the backfill; because it imports nothing, the `enrichments → backfill → vault-index → enrichments` value cycle never forms — the same class of fix as the registry's getter-properties.
+
 ## User Flows
 
 ### Sync Bookmarks
