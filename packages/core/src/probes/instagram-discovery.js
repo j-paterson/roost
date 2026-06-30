@@ -5,15 +5,25 @@
  */
 (function () {
   var store = window.__INSTAGRAM_DISCOVERY__ = window.__INSTAGRAM_DISCOVERY__ || {
-    installed: false, observedCalls: [], fetchCalls: 0, xhrCalls: 0, startedAt: new Date().toISOString(),
+    installed: false, observedCalls: [], allUrls: [], fetchCalls: 0, xhrCalls: 0, startedAt: new Date().toISOString(),
   };
   if (store.installed) return;
   store.installed = true;
 
   var CAP = 200;
+  var URL_CAP = 250;
   function isApi(url) {
     try { return url.indexOf("instagram.com") !== -1 && (url.indexOf("/api/") !== -1 || url.indexOf("/graphql") !== -1); }
     catch (e) { return false; }
+  }
+  // Diagnostic: record EVERY request URL the probe sees (regardless of isApi), so
+  // a discovery run reveals the real endpoint patterns + confirms interception is
+  // working even when isApi() matches nothing. Capped ring buffer.
+  function note(via, method, url) {
+    try {
+      store.allUrls.push({ via: via, method: method || "GET", url: String(url).slice(0, 300), api: isApi(url) });
+      if (store.allUrls.length > URL_CAP) store.allUrls.shift();
+    } catch (e) {}
   }
   function record(call) {
     try { store.observedCalls.push(call); if (store.observedCalls.length > CAP) store.observedCalls.shift(); }
@@ -30,10 +40,11 @@
 
   // ── fetch ──
   var nativeFetch = window.fetch;
-  window.fetch = function (input, init) {
+  function roostFetch(input, init) {
     store.fetchCalls++;
     var url = typeof input === "string" ? input : (input && input.url) || "";
     var method = (init && init.method) || (input && input.method) || "GET";
+    note("fetch", method, url);
     var headers = {};
     try {
       var hh = (init && init.headers) || {};
@@ -62,7 +73,17 @@
       }).catch(function () {});
     }
     return p;
-  };
+  }
+  // Seal via a getter so lazy `window.fetch` reads get our wrapper; no-op setter
+  // stops the SPA from clobbering it back (mirrors twitter-probe.js). Falls back
+  // to plain assignment if the property isn't configurable.
+  try {
+    Object.defineProperty(window, "fetch", {
+      configurable: true,
+      get: function () { return roostFetch; },
+      set: function () {},
+    });
+  } catch (e) { window.fetch = roostFetch; }
 
   // ── XHR ──
   var open = XMLHttpRequest.prototype.open;
@@ -79,6 +100,7 @@
   XMLHttpRequest.prototype.send = function (body) {
     store.xhrCalls++;
     var self = this, meta = this.__ig;
+    if (meta) note("xhr", meta.method, meta.url);
     if (meta && isApi(meta.url)) {
       this.addEventListener("load", function () {
         try {

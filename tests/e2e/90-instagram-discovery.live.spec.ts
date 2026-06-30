@@ -67,8 +67,14 @@ const PROBE_PATH = path.resolve(
     "../../packages/core/src/probes/instagram-discovery.js",
 );
 
-/** Saved-posts page — the primary surface for discovering the API shape. */
-const SAVED_POSTS_URL = "https://www.instagram.com/explore/saved/";
+/**
+ * Saved page — the primary surface for discovering the API shape. For a logged-in
+ * account this is /<username>/saved/ (a grid of COLLECTIONS), NOT /explore/saved/
+ * (which redirects to /explore/ for most accounts). Username is account-specific,
+ * so it comes from ROOST_IG_SAVED_URL rather than being hardcoded in the repo.
+ */
+const SAVED_POSTS_URL =
+    process.env.ROOST_IG_SAVED_URL?.trim() || "https://www.instagram.com/explore/saved/";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -280,51 +286,65 @@ describe("Instagram API discovery — live (real instagram.com, cookie injection
             await browser.pause(2_000);
         }
 
-        // Wait until the probe has recorded at least one API call.
-        await browser.waitUntil(
-            async () => {
-                const n = await runInWebview<number>(
-                    "(window.__INSTAGRAM_DISCOVERY__?.observedCalls?.length || 0)",
-                );
-                return typeof n === "number" && n > 0;
-            },
-            {
-                timeout: OBSERVED_CALLS_TIMEOUT_MS,
-                timeoutMsg:
-                    "probe never observed any instagram API call — " +
-                    "is the webview logged in and does isApi() match the real URL patterns? " +
-                    "Inspect tests/e2e/.ig-discovery-capture.json (written by the diagnostic test) " +
-                    "and check isApi() in packages/core/src/probes/instagram-discovery.js against the real URLs.",
-                interval: 1_000,
-            },
-        );
+        // Best-effort: wait for an isApi()-matched call, but DON'T fail the run if
+        // none arrive — the capture (incl. the allUrls diagnostic) is written either
+        // way so we can tune isApi()/the saved URL from the real traffic.
+        try {
+            await browser.waitUntil(
+                async () => {
+                    const n = await runInWebview<number>(
+                        "(window.__INSTAGRAM_DISCOVERY__?.observedCalls?.length || 0)",
+                    );
+                    return typeof n === "number" && n > 0;
+                },
+                { timeout: OBSERVED_CALLS_TIMEOUT_MS, timeoutMsg: "no isApi match", interval: 1_000 },
+            );
+        } catch {
+            // eslint-disable-next-line no-console
+            console.warn("[live-spec] no isApi()-matched call within timeout — writing diagnostic capture anyway.");
+        }
 
-        // Pull the full store snapshot out of the webview.
+        // Pull the full store snapshot (incl. the allUrls diagnostic ring buffer).
         const raw = await runInWebview<string>(`
             (function() {
                 var s = window.__INSTAGRAM_DISCOVERY__ || {};
                 return JSON.stringify({
                     observedCalls: s.observedCalls || [],
+                    allUrls:       s.allUrls       || [],
                     fetchCalls:    s.fetchCalls    || 0,
                     xhrCalls:      s.xhrCalls      || 0
                 });
             })()
         `);
 
-        let parsed: { observedCalls: ObservedCall[]; fetchCalls: number; xhrCalls: number } =
-            { observedCalls: [], fetchCalls: 0, xhrCalls: 0 };
+        type SeenUrl = { via: string; method: string; url: string; api: boolean };
+        let parsed: { observedCalls: ObservedCall[]; allUrls: SeenUrl[]; fetchCalls: number; xhrCalls: number } =
+            { observedCalls: [], allUrls: [], fetchCalls: 0, xhrCalls: 0 };
         try { parsed = JSON.parse(raw || "{}"); } catch { /* best-effort */ }
 
         capturedCalls = parsed.observedCalls;
         const findings = summarizeFindings(capturedCalls);
+        const landedUrl = await runInWebview<string>("location.href");
 
-        // Write the full durable capture artifact.
+        // Distinct host+path rollup of ALL seen URLs — the key signal for tuning
+        // isApi() and spotting the real saved/collections endpoints.
+        const seen = new Map<string, { via: string; method: string; api: boolean; count: number; example: string }>();
+        for (const u of parsed.allUrls) {
+            let key = u.url;
+            try { const x = new URL(u.url); key = x.host + x.pathname; } catch { /* keep raw */ }
+            const e = seen.get(key) || { via: u.via, method: u.method, api: u.api, count: 0, example: u.url };
+            e.count++; seen.set(key, e);
+        }
+        const allUrlsSummary = [...seen.entries()].map(([hostPath, v]) => ({ hostPath, ...v }));
+
+        // Write the full durable capture artifact (always — even with zero matches).
         fs.writeFileSync(
             CAPTURE_PATH,
             JSON.stringify(
                 {
                     capturedAt: new Date().toISOString(),
-                    probeCounters: { fetchCalls: parsed.fetchCalls, xhrCalls: parsed.xhrCalls },
+                    landedUrl,
+                    probeCounters: { fetchCalls: parsed.fetchCalls, xhrCalls: parsed.xhrCalls, allUrlsSeen: parsed.allUrls.length },
                     summary: {
                         totalObserved: findings.totalObserved,
                         apiCalls: findings.apiCalls,
@@ -338,8 +358,10 @@ describe("Instagram API discovery — live (real instagram.com, cookie injection
                             respSampleHead: e.respSampleHead,
                         })),
                     },
-                    // Full calls for deep inspection — field paths, cursor keys, etc.
+                    // Every request URL the probe saw (regardless of isApi) — tuning signal.
+                    allUrlsSummary,
                     observedCalls: capturedCalls,
+                    allUrls: parsed.allUrls,
                 },
                 null,
                 2,
@@ -348,25 +370,21 @@ describe("Instagram API discovery — live (real instagram.com, cookie injection
 
         // eslint-disable-next-line no-console
         console.log(
-            `[live-spec] observed ${findings.totalObserved} total calls, ` +
-            `${findings.apiCalls} API calls across ${findings.endpoints.length} distinct endpoint(s):`,
+            `[live-spec] landed on ${landedUrl}\n` +
+            `[live-spec] probe counters: fetch=${parsed.fetchCalls}, xhr=${parsed.xhrCalls}, ` +
+            `allUrlsSeen=${parsed.allUrls.length}, isApiMatched=${findings.apiCalls}`,
         );
-        for (const ep of findings.endpoints) {
+        for (const u of allUrlsSummary.slice(0, 30)) {
             // eslint-disable-next-line no-console
-            console.log(
-                `  ${ep.method} ${ep.path}  ×${ep.count}\n` +
-                `    example: ${ep.exampleUrl.slice(0, 120)}\n` +
-                `    resp head: ${ep.respSampleHead.replace(/\s+/g, " ").slice(0, 120)}`,
-            );
+            console.log(`  [${u.via}${u.api ? " API" : "    "}] ${u.method} ${u.hostPath}  ×${u.count}`);
         }
         // eslint-disable-next-line no-console
-        console.log(
-            `[live-spec] probe counters: fetch=${parsed.fetchCalls}, xhr=${parsed.xhrCalls}\n` +
-            `[live-spec] capture written to ${CAPTURE_PATH}`,
-        );
+        console.log(`[live-spec] capture written to ${CAPTURE_PATH}`);
 
-        // Diagnostic phase — always passes; exists to surface data, not to gate a model.
-        expect(findings.totalObserved).toBeGreaterThan(0);
+        // Gate on INTERCEPTION, not isApi: if the probe saw ANY request the wiring
+        // works (then tune isApi() from allUrlsSummary). If this is 0, the probe
+        // isn't intercepting at all → needs earlier injection or CDP-layer capture.
+        expect(parsed.fetchCalls + parsed.xhrCalls).toBeGreaterThan(0);
     });
 
     it("shape: at least one API call has status 200 and a JSON-parseable respSample", async function () {

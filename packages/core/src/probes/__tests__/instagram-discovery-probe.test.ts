@@ -19,9 +19,15 @@ function injectProbe() {
 }
 
 describe("instagram-discovery probe", () => {
-  beforeEach(() => { delete (window as any).__INSTAGRAM_DISCOVERY__; });
+  // The probe seals window.fetch via Object.defineProperty with a no-op setter,
+  // so a plain `window.fetch = ORIG` assignment is ignored — force-restore it as
+  // a writable data property via defineProperty so each test starts unwrapped.
+  function restoreFetch() {
+    Object.defineProperty(window, "fetch", { value: ORIG_FETCH, writable: true, configurable: true });
+  }
+  beforeEach(() => { delete (window as any).__INSTAGRAM_DISCOVERY__; restoreFetch(); });
   afterEach(() => {
-    window.fetch = ORIG_FETCH;
+    restoreFetch();
     XMLHttpRequest.prototype.open = ORIG_OPEN;
     XMLHttpRequest.prototype.send = ORIG_SEND;
     XMLHttpRequest.prototype.setRequestHeader = ORIG_SETH;
@@ -47,6 +53,9 @@ describe("instagram-discovery probe", () => {
     const store = (window as any).__INSTAGRAM_DISCOVERY__;
     expect(store.observedCalls.length).toBe(1);
     expect(store.observedCalls[0].url).toContain("/api/v1/feed/saved");
+    // The diagnostic ring buffer records the URL too, flagged as an API call.
+    expect(store.allUrls.length).toBe(1);
+    expect(store.allUrls[0]).toMatchObject({ via: "fetch", api: true });
   });
 
   it("ignores non-API instagram URLs (CDN media)", async () => {
