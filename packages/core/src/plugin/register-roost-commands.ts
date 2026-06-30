@@ -138,6 +138,16 @@ export function registerRoostCommands(plugin: RoostCommandHost): void {
       name: "Export Instagram session cookies (for live e2e tests)",
       callback: async () => { await plugin.exportPlatformCookies("instagram"); },
     });
+    plugin.addCommand({
+      id: "open-reddit-login",
+      name: "Open Reddit (login)",
+      callback: async () => { await plugin.openWebview("reddit"); },
+    });
+    plugin.addCommand({
+      id: "export-reddit-cookies",
+      name: "Export Reddit session cookies (for live e2e tests)",
+      callback: async () => { await plugin.exportPlatformCookies("reddit"); },
+    });
   }
 
   registerMigrationCommands(plugin);

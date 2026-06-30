@@ -9,6 +9,7 @@ import type { PlatformDescriptor } from "./descriptor";
 import { tiktok } from "./tiktok";
 import { twitter } from "./twitter";
 import { instagram } from "./instagram";
+import { reddit } from "./reddit";
 
 // Use getter properties so each read returns the live module binding value.
 // This breaks the circular-import snapshot problem where
@@ -21,6 +22,7 @@ export const PLATFORMS: Record<Platform, PlatformDescriptor> = {
   get tiktok() { return tiktok; },
   get twitter() { return twitter; },
   get instagram() { return instagram; },
+  get reddit() { return reddit; },
 };
 
 /**

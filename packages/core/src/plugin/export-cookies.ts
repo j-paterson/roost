@@ -36,6 +36,7 @@ export interface ExportCookie {
 const COOKIE_TARGETS: Partial<Record<Platform, { file: string; label: string }>> = {
   twitter: { file: "tests/e2e/.x-cookies.json", label: "X" },
   instagram: { file: "tests/e2e/.ig-cookies.json", label: "Instagram" },
+  reddit: { file: "tests/e2e/.reddit-cookies.json", label: "Reddit" },
 };
 
 /**
