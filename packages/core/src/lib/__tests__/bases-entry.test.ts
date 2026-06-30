@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import type { BasesEntry } from "obsidian";
 import {
   safeGetValue,
+  safeGetString,
   getRoostId,
   stripAuthorWiki,
   parseEntryTags,
@@ -28,6 +29,29 @@ describe("safeGetValue", () => {
   it("returns null when getValue throws", () => {
     const e = mkEntry({ "note.title": "__throw__" });
     expect(safeGetValue(e, "note.title")).toBeNull();
+  });
+});
+
+describe("safeGetString", () => {
+  it("returns the string when present", () => {
+    expect(safeGetString(mkEntry({ "note.link_url": "https://x.com/a" }), "note.link_url")).toBe("https://x.com/a");
+  });
+
+  it("collapses the Base null-wrapper sentinel \"null\" to null (absent column on a note)", () => {
+    // A Bases column the note lacks hands back a wrapper whose toString() is "null".
+    const wrapper = { toString: () => "null" };
+    expect(safeGetString(mkEntry({ "note.link_url": wrapper }), "note.link_url")).toBeNull();
+  });
+
+  it("collapses \"undefined\" and empty string to null", () => {
+    expect(safeGetString(mkEntry({ "note.link_site": "undefined" }), "note.link_site")).toBeNull();
+    expect(safeGetString(mkEntry({ "note.link_site": "" }), "note.link_site")).toBeNull();
+  });
+
+  it("returns null for real null/undefined and on throw", () => {
+    expect(safeGetString(mkEntry({ "note.link_url": null }), "note.link_url")).toBeNull();
+    expect(safeGetString(mkEntry({}), "note.link_url")).toBeNull();
+    expect(safeGetString(mkEntry({ "note.link_url": "__throw__" }), "note.link_url")).toBeNull();
   });
 });
 

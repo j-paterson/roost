@@ -5,7 +5,7 @@ import { setIcon, type BasesEntry } from "obsidian";
 import { CATEGORY_FIELD } from "@/config";
 import { PLATFORMS, getPlatform } from "@/platforms/registry";
 import type { MatchDetail } from "@/types/roost";
-import { safeGetValue } from "@/lib/bases-entry";
+import { safeGetValue, safeGetString } from "@/lib/bases-entry";
 import { cleanCaption } from "@/lib/caption";
 import { ENRICHMENTS } from "@/lib/enrichments";
 import { stripWikilink } from "@/lib/vault-utils";
@@ -247,11 +247,11 @@ export function hydrateGalleryCard(
   // KEY HEURISTIC: a link-only post's cover IS the link preview (cover === link_image)
   // → NOT own media → link tile. A post with own photo has cover ≠ link_image → own
   // media → keep media cover + badge.
-  const linkUrl = safeGetValue(entry, "note.link_url")?.toString() ?? null;
+  const linkUrl = safeGetString(entry, "note.link_url");
   if (linkUrl) {
-    const linkSite = safeGetValue(entry, "note.link_site")?.toString() ?? null;
-    const coverImg = safeGetValue(entry, "note.cover")?.toString() ?? null;
-    const linkImg = safeGetValue(entry, "note.link_image")?.toString() ?? null;
+    const linkSite = safeGetString(entry, "note.link_site");
+    const coverImg = safeGetString(entry, "note.cover");
+    const linkImg = safeGetString(entry, "note.link_image");
     const hasOwnMedia = !!coverImg && (!linkImg || stripWikilink(coverImg) !== stripWikilink(linkImg));
     const coverDecision = resolveGalleryCover({ hasOwnMedia, linkUrl, linkSite, coverImg });
     coverEl.dataset.linkUrl = linkUrl;
