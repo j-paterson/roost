@@ -8,6 +8,7 @@ import { VIEW_TYPE_ROOST_HUB } from "@/views/roost-hub-view";
 import { WebviewManager } from "@/sync/webview-manager";
 import { ensureBasesFiles } from "@/sync/bases-setup";
 import type { RoostSettings } from "@/settings";
+import type { Platform } from "@/types/sync";
 import { enabledPlatforms } from "@/platforms/registry";
 
 export class RoostWorkspace {
@@ -30,7 +31,7 @@ export class RoostWorkspace {
   }
 
   /** Hub entry point for per-platform sync */
-  async runSync(platform: "tiktok" | "twitter"): Promise<void> {
+  async runSync(platform: Platform): Promise<void> {
     await this.activateRoostSidebar();
     const settings = this.getSettings();
     const initialTs = settings.syncState?.[platform]?.timestamp ?? 0;
@@ -95,7 +96,7 @@ export class RoostWorkspace {
   }
 
   /** Open webview in main content area for login */
-  async openWebview(platform: "tiktok" | "twitter"): Promise<void> {
+  async openWebview(platform: Platform): Promise<void> {
     const { workspace } = this.app;
     let leaf = workspace.getLeavesOfType(VIEW_TYPE_ROOST_WEBVIEW)[0];
     if (!leaf) {

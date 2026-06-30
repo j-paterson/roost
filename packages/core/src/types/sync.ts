@@ -2,8 +2,9 @@
  * Shared types for sync and pipeline operations.
  */
 
-/** The two supported sync platforms. */
-export type Platform = "tiktok" | "twitter";
+/** Registered platforms. tiktok/twitter are sync-capable; instagram is a
+ *  discovery-only descriptor (enabled:false, no sync/parse — Phase 2). */
+export type Platform = "tiktok" | "twitter" | "instagram";
 
 /** Cancellation signal passed through sync/pipeline operations */
 export interface StopSignal {

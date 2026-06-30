@@ -8,10 +8,12 @@ import type { Platform } from "@/types/sync";
 import type { PlatformDescriptor } from "./descriptor";
 import { tiktok } from "./tiktok";
 import { twitter } from "./twitter";
+import { instagram } from "./instagram";
 
 export const PLATFORMS: Record<Platform, PlatformDescriptor> = {
   tiktok,
   twitter,
+  instagram,
 };
 
 /**
