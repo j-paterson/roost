@@ -79,9 +79,9 @@ describe("RedditRecordWriter", () => {
     await new RedditRecordWriter(deps).writeRedditRecord(LINK_REC);
     expect(downloadAndSave).toHaveBeenCalled(); // the preview image
     const fm = (writeNote.mock.calls as unknown as unknown[][])[0][2] as string;
-    expect(fm).toContain("https://www.nytimes.com/x.html");
+    expect(fm).toContain('link_url: "https://www.nytimes.com/x.html"');
     expect(fm).toContain("link_title: Cool article");
     expect(fm).toContain("link_site: nytimes.com");
-    expect(fm).toContain("link_image:"); // points at the downloaded cover
+    expect(fm).toContain('link_image: "[['); // points at the downloaded cover (wikilink, YAML-quoted)
   });
 });
