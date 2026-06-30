@@ -294,6 +294,10 @@ Media is downloaded with Obsidian's `requestUrl` — **not** the webview — bec
 
 Live-verified: 32 folders, ~1844 tweets. e2e regression guard: `tests/e2e/87-x-bookmark-folders.live.spec.ts` (gated `E2E_RUN_LIVE=1`).
 
+### Link bookmark previews (2026-06-30)
+
+Reddit (and X, via `descriptor.parse.link`) surfaces link-type bookmarks — posts whose payload is an external URL rather than media or selftext. The sync writes a flat set of `link_*` frontmatter fields (`link_url`, `link_site`, `link_title`, `link_desc`, `link_image`) onto the note; `link_site` (the domain) is derivable at sync time, while the remaining OG fields are filled by a separate backfill pass. The backfill (`sync/link-meta-backfill.ts`) is an `EnrichmentDef` registered as `LINK_META_ENRICHMENT` (id `linkMeta`, `commandId` `backfill-link-previews`, full Obsidian command `roost:backfill-link-previews`): it mirrors the media-backfill shape — walk platform vault folders, skip notes already complete or cache-hit, fetch Open Graph tags via `fetchOgMetadata` (`sync/cover-fetcher.ts`), download the OG image into the note's attach folder (same shape as media: `<platformPrefix>-<itemId>/og-image.{ext}` → `[[wikilink]]`), and flush a resumable `link-meta-cache.json`. The preview image is rendered by `views/link-card-renderer.ts`, which applies a coexistence rule: link cards display alongside (not replacing) any media already on the note, and they appear in gallery, feed, and expanded views. `RoostLinkView` (`views/roost-link-view.ts`) is a dedicated Obsidian pane that opens when a link card is clicked — it is the seed of a deferred reader phase (inline reader, archival snapshot, multi-link threading are all explicitly out of scope for v1). Deferred: inline article reader, archival snapshot, multi-link notes.
+
 ### Skip Layers
 
 | Layer | What it skips | How |
