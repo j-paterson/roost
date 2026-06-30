@@ -115,3 +115,31 @@ export async function downloadTikTokVideo(wc: ElectronWebview, videoUrl: string)
     return null;
   }
 }
+
+/**
+ * Download Instagram media (image/video/carousel child) via the webview's
+ * injected probe. IG CDN URLs are time-limited, so this MUST run during sync
+ * while the instagram.com webview is live. Mirrors downloadTikTokVideo.
+ */
+export async function downloadInstagramMedia(wc: ElectronWebview, url: string): Promise<ArrayBuffer | null> {
+  try {
+    const result = await withTimeout(
+      withRetry(async () => {
+        const base64 = await wc.executeJavaScript(
+          `window.__roostIgFetchMediaBase64(${JSON.stringify(url)})`,
+        );
+        if (!base64 || typeof base64 !== "string") throw new Error("No base64 data returned");
+        return base64;
+      }),
+      TIKTOK_VIDEO_DOWNLOAD_TIMEOUT_MS,
+    );
+    if (!result || typeof result !== "string") return null;
+    const commaIdx = result.indexOf(",");
+    const b64 = commaIdx >= 0 ? result.slice(commaIdx + 1) : result;
+    const buf = Buffer.from(b64, "base64");
+    return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
+  } catch (e: unknown) {
+    console.warn(`[media] Failed to download Instagram media: ${url}`, e instanceof Error ? e.message : String(e));
+    return null;
+  }
+}
