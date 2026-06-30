@@ -25,6 +25,10 @@ docs/
 tests/e2e/.x-cookies.json
 # Captured X GraphQL shapes from the bookmark-folders live spec (diagnostic artifact)
 tests/e2e/.x-bookmark-folders-capture.json
+# Instagram session cookies for live e2e tests — NEVER commit
+tests/e2e/.ig-cookies.json
+# Captured Instagram API shapes from the discovery live spec (diagnostic artifact)
+tests/e2e/.ig-discovery-capture.json
 # Local secrets for ad-hoc test scripts (Spotify credentials, etc.)
 .env
 .env.*
