@@ -23,6 +23,7 @@ import {
   getTwitterUserScreenName,
   expandTweetUrls,
   extractTwitterMedia,
+  extractTwitterLink,
 } from "@/lib/twitter-helpers";
 // @ts-ignore — raw probe loaded as string by esbuild/vitest rawProbePlugin
 import twitterProbeSource from "../probes/twitter-probe.probe";
@@ -87,6 +88,7 @@ export const twitter: PlatformDescriptor = {
       return null;
     },
     media: (record) => extractTwitterMedia(record),
+    link: (record) => extractTwitterLink(record),
     normalize: (item, options) => {
       const tweet = roostUnwrapTweet(item);
       const itemId: string | undefined = tweet?.rest_id || item?.rest_id || item?.legacy?.id_str;

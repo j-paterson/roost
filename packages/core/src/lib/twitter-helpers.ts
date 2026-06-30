@@ -5,6 +5,7 @@
  * circular import. All functions are self-contained with no platform registry dependencies.
  */
 import { roostUnwrapTweet, type RawApiData } from "./normalize-helpers";
+import { type LinkCard, domainFromUrl } from "./link-card";
 import {
   extractArticleContent,
   renderArticleNoteBody,
@@ -206,4 +207,41 @@ export function extractTwitterMedia(record: BookmarkRecord): {
   const folder = (typeof raw?._bookmark_folder === "string" && raw._bookmark_folder) ? raw._bookmark_folder : null;
 
   return { photos, videoUrl, videoPosterUrl, cardMeta, quotedTweet, replyTo, folder };
+}
+
+/**
+ * Extract the first external link from a tweet's entities.urls, excluding
+ * any t.co URLs that wrap media attachments. Returns a LinkCard when an
+ * external URL is found (with optional card metadata), or null when the
+ * tweet carries no external links.
+ *
+ * v1 extracts only the first non-media link — enough for the common single-
+ * link-tweet case. Multi-link support is deferred.
+ */
+export function extractTwitterLink(record: BookmarkRecord): LinkCard | null {
+  const raw = getBookmarkRawData(record);
+  const tweet = roostUnwrapTweet(raw) || raw;
+  const mediaUrls = new Set(getTweetMediaUrls(tweet));
+
+  // Walk entities.urls to find the first non-media expanded URL.
+  const urls: RawApiData[] = tweet?.legacy?.entities?.urls || [];
+  let externalUrl: string | null = null;
+  for (const u of urls) {
+    const tco = u?.url as string | null;
+    const expanded = u?.expanded_url as string | null;
+    if (!tco || !expanded) continue;
+    if (mediaUrls.has(tco)) continue;
+    externalUrl = expanded;
+    break;
+  }
+  if (!externalUrl) return null;
+
+  const { cardMeta } = extractTwitterMedia(record);
+  return {
+    url: externalUrl,
+    title: cardMeta?.title ?? undefined,
+    description: cardMeta?.description ?? undefined,
+    image: cardMeta?.thumbnail ?? undefined,
+    siteName: domainFromUrl(externalUrl) ?? undefined,
+  };
 }
