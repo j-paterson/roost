@@ -41,6 +41,16 @@ const SELF_REC: NormalizedRecord = {
   rawData: { id: "def", title: "A self post", subreddit: "ObsidianMD", author: "jane", is_self: true, selftext: "hello **body**" },
 };
 
+const LINK_REC: NormalizedRecord = {
+  id: "reddit:lnk", platform: "reddit", itemId: "lnk",
+  saved_at: "2023-11-14T22:13:20.000Z", published_at: "2023-11-14T22:13:20.000Z", captured_via: "sync",
+  rawData: {
+    id: "lnk", title: "Cool article", subreddit: "technology", author: "jane",
+    post_hint: "link", url_overridden_by_dest: "https://www.nytimes.com/x.html",
+    preview: { images: [{ source: { url: "https://preview.redd.it/p.jpg?width=640&amp;auto=webp" } }] },
+  },
+};
+
 describe("RedditRecordWriter", () => {
   it("image post: downloads image, writes raw.json + note with subreddit tag/frontmatter", async () => {
     const { deps, writeNote, writeSidecar, downloadAndSave } = makeDeps();
@@ -62,5 +72,16 @@ describe("RedditRecordWriter", () => {
     expect(downloadAndSave).not.toHaveBeenCalled(); // text post has no media
     const bodyParts = (writeNote.mock.calls as unknown as unknown[][])[0][3] as string[];
     expect(bodyParts).toContain("hello **body**");
+  });
+
+  it("link post: writes link_url/link_title/link_site/link_image frontmatter", async () => {
+    const { deps, writeNote, downloadAndSave } = makeDeps();
+    await new RedditRecordWriter(deps).writeRedditRecord(LINK_REC);
+    expect(downloadAndSave).toHaveBeenCalled(); // the preview image
+    const fm = (writeNote.mock.calls as unknown as unknown[][])[0][2] as string;
+    expect(fm).toContain("https://www.nytimes.com/x.html");
+    expect(fm).toContain("link_title: Cool article");
+    expect(fm).toContain("link_site: nytimes.com");
+    expect(fm).toContain("link_image:"); // points at the downloaded cover
   });
 });

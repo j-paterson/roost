@@ -8,7 +8,8 @@ import { type NoteFileWriter } from "./note-file-writer";
 import { type MediaDownloader } from "./media-downloader";
 import { type NormalizedRecord } from "../../lib/normalize";
 import { sanitizeFilename } from "../../lib/extract";
-import { extractRedditMedia } from "../../lib/reddit-helpers";
+import { extractRedditMedia, extractRedditLink } from "../../lib/reddit-helpers";
+import { domainFromUrl } from "../../lib/link-card";
 import { downloadRedditImage, muxRedditVideo } from "../media-downloader";
 
 interface RedditRecordWriterOpts {
@@ -49,6 +50,7 @@ export class RedditRecordWriter {
     const { url, published, itemId, handle } = this.noteWriter.extractCommon(record);
     const raw = record.rawData || {};
     const media = extractRedditMedia(record);
+    const link = extractRedditLink(record);
     const folderPath = `${this.syncFolder}/Reddit`;
     const attachFolder = `${folderPath}/reddit-${itemId}`;
 
@@ -128,7 +130,10 @@ export class RedditRecordWriter {
       author: authorLink,
       url,
       subreddit: subreddit ? `r/${subreddit}` : undefined,
-      link_url: media.kind === "link" && media.linkUrl ? media.linkUrl : undefined,
+      link_url: link?.url,
+      link_title: link?.title,
+      link_site: link?.siteName ?? (link ? (domainFromUrl(link.url) ?? undefined) : undefined),
+      link_image: link && coverFile ? `[[${coverFile}]]` : undefined,
       published: published ? published.split("T")[0] : undefined,
       saved: record.saved_at?.split("T")[0],
       tags,
