@@ -64,4 +64,23 @@ describe("instagram-discovery probe", () => {
     await window.fetch("https://scontent-xx.cdninstagram.com/v/photo.jpg");
     expect((window as any).__INSTAGRAM_DISCOVERY__.observedCalls.length).toBe(0);
   });
+
+  it("matches the relative same-origin GraphQL endpoint (/api/graphql)", async () => {
+    (window as any).fetch = async () =>
+      new Response('{"data":{}}', { status: 200, headers: { "content-type": "application/json" } });
+    injectProbe();
+    await window.fetch("/api/graphql", { method: "POST", body: "fb_api_req_friendly_name=PolarisSavedCollections" });
+    const store = (window as any).__INSTAGRAM_DISCOVERY__;
+    expect(store.observedCalls.length).toBe(1);
+    expect(store.observedCalls[0].url).toBe("/api/graphql");
+    expect(store.observedCalls[0].method).toBe("POST");
+  });
+
+  it("ignores same-origin /ajax/ + /sync/ plumbing (not data APIs)", async () => {
+    (window as any).fetch = async () => new Response("{}", { status: 200 });
+    injectProbe();
+    await window.fetch("/ajax/bulk-route-definitions/", { method: "POST" });
+    await window.fetch("/sync/instagram/", { method: "POST" });
+    expect((window as any).__INSTAGRAM_DISCOVERY__.observedCalls.length).toBe(0);
+  });
 });

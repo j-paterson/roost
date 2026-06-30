@@ -13,8 +13,16 @@
   var CAP = 200;
   var URL_CAP = 250;
   function isApi(url) {
-    try { return url.indexOf("instagram.com") !== -1 && (url.indexOf("/api/") !== -1 || url.indexOf("/graphql") !== -1); }
-    catch (e) { return false; }
+    try {
+      var u = String(url);
+      // Instagram's web app issues same-origin XHR/fetch with RELATIVE urls
+      // (e.g. "/api/graphql"), which never contain "instagram.com" — treat any
+      // leading-slash url as same-origin instagram. Absolute urls must name it.
+      var isIg = u.charAt(0) === "/" || u.indexOf("instagram.com") !== -1;
+      // Data endpoints only: GraphQL ("/api/graphql", "/graphql/query") + REST
+      // ("/api/v1/..."). The /ajax/* + /sync/ plumbing has neither substring.
+      return isIg && (u.indexOf("/api/") !== -1 || u.indexOf("/graphql") !== -1);
+    } catch (e) { return false; }
   }
   // Diagnostic: record EVERY request URL the probe sees (regardless of isApi), so
   // a discovery run reveals the real endpoint patterns + confirms interception is
