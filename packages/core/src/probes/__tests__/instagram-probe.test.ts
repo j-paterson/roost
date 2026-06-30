@@ -52,18 +52,23 @@ describe("instagram-probe", () => {
     expect(JSON.parse(raw).status).toBe(-1);
   });
 
-  it("__roostIgFetchMediaBase64 returns a data URL", async () => {
-    win.fetch = vi.fn(async () => ({
-      blob: async () => ({}),
-    }));
-    // FileReader shim
+  it("__roostIgFetchMediaBase64 returns a data URL (via credentials:omit)", async () => {
+    // Non-empty blob (size > 0) + a realistic (>100 char) data URL — the probe
+    // rejects 0-byte/opaque blobs and trivially-short payloads.
+    const DATA_URL = "data:image/jpeg;base64," + "A".repeat(256);
+    const fetchMock = vi.fn(async () => ({ blob: async () => ({ size: 4096 }) }));
+    win.fetch = fetchMock;
     (win as Record<string, unknown>).FileReader = class {
-      result = "data:image/jpeg;base64,QUJD";
+      result = DATA_URL;
       onload: (() => void) | null = null;
       readAsDataURL() { setTimeout(() => this.onload && this.onload(), 0); }
     };
     installProbe(win);
     const out = await (win.__roostIgFetchMediaBase64 as (u: string) => Promise<string | null>)("https://cdn/x.jpg");
-    expect(out).toBe("data:image/jpeg;base64,QUJD");
+    expect(out).toBe(DATA_URL);
+    // Confirms the winning strategy: the first (and only successful) fetch uses
+    // credentials:"omit" — a credentialed cross-origin CDN fetch is CORS-blocked.
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, { credentials?: string }];
+    expect(init.credentials).toBe("omit");
   });
 });

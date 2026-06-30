@@ -66,16 +66,28 @@
 
   window.__roostIgFetchMediaBase64 = function (url) {
     return (async function () {
-      try {
-        var res = await nativeFetch(url, { credentials: "include" });
-        var blob = await res.blob();
-        return await new Promise(function (resolve, reject) {
-          var reader = new FileReader();
-          reader.onload = function () { resolve(reader.result); };
-          reader.onerror = reject;
-          reader.readAsDataURL(blob);
-        });
-      } catch (e) { return null; }
+      // IG media is on cross-origin CDNs (scontent.*.cdninstagram.com /
+      // *.fbcdn.net). These URLs are signed/public and need NO cookies — and a
+      // CREDENTIALED cross-origin fetch is CORS-blocked. Verified live against a
+      // real account: credentials:"omit" succeeded for 67/67 assets;
+      // credentials:"include" returned 0 bytes for every one. So use omit; keep
+      // a no-cors last-ditch (opaque → usually unreadable, but free to try).
+      async function attempt(init) {
+        try {
+          var res = await nativeFetch(url, init);
+          var blob = await res.blob();
+          if (!blob || blob.size === 0) return null; // opaque/blocked → no bytes
+          var dataUrl = await new Promise(function (resolve, reject) {
+            var reader = new FileReader();
+            reader.onload = function () { resolve(reader.result); };
+            reader.onerror = function () { reject(new Error("FileReader error")); };
+            reader.readAsDataURL(blob);
+          });
+          return (typeof dataUrl === "string" && dataUrl.length > 100) ? dataUrl : null;
+        } catch (e) { return null; }
+      }
+      return (await attempt({ credentials: "omit" }))
+        || (await attempt({ mode: "no-cors", credentials: "omit" }));
     })();
   };
 })();
