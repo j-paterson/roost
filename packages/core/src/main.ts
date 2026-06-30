@@ -25,6 +25,7 @@ import { WebviewManager, type AuthStatus } from "./sync/webview-manager";
 import { setActiveProvider, buildProviderFromSettings } from "./lib/llm-provider";
 import { httpProbe, findBinary } from "@/integrations/detect";
 import type { Platform } from "@/types/sync";
+import { runPlatformSync, type RunPlatformSyncResult } from "@/sync/run-platform-sync";
 import { enabledPlatforms } from "@/platforms/registry";
 import { INTEGRATIONS, detectIntegration, type DetectCtx, type DetectStatus, type IntegrationId } from "@/integrations/registry";
 import { teardownInlinePlayer } from "./views/pipeline-views/inline-audio-player";
@@ -265,6 +266,41 @@ export default class RoostPlugin extends Plugin {
 
   async runSync(platform: Platform): Promise<void> {
     await this.ws().runSync(platform);
+  }
+
+  /**
+   * Programmatic / headless sync entry. Unlike runSync (which fires the
+   * `roost:request-sync` workspace event and only runs when the sidebar React
+   * hook is mounted), this calls runPlatformSync directly with a detached
+   * off-screen mount container, so it runs and resolves in any context —
+   * automation, scripts, and the live e2e. All progress + status routes through
+   * fireLog, so `onLog(...)` subscribers observe it. Returns the run result.
+   */
+  async syncPlatformHeadless(platform: Platform): Promise<RunPlatformSyncResult> {
+    const container = document.createElement("div");
+    container.style.cssText = "position:fixed; left:-99999px; top:0; width:1024px; height:768px;";
+    document.body.appendChild(container);
+    const signal = { stopped: false, stop(): void { this.stopped = true; } };
+    this.fireLog(`[headless-sync] starting ${platform}`);
+    try {
+      const result = await runPlatformSync({
+        plugin: this,
+        app: this.app,
+        platform,
+        mountTarget: container,
+        signal,
+        onLog: (m) => this.fireLog(`[${platform}] ${m}`),
+        onProgress: (p) =>
+          this.fireLog(`[${platform}][progress] ${p.phase} count=${p.count} total=${p.total}${p.done ? " DONE" : ""}`),
+      });
+      this.fireLog(`[headless-sync] ${platform} done: pushed=${result.pushed} resynced=${result.resynced} skipped=${result.skipped} completed=${result.completed}`);
+      return result;
+    } catch (e) {
+      this.fireLog(`[headless-sync] ${platform} ERROR: ${e instanceof Error ? e.message : String(e)}`);
+      throw e;
+    } finally {
+      container.remove();
+    }
   }
 
   async runEagleImport(): Promise<void> {

@@ -53,8 +53,11 @@
         var claim = r.headers.get("x-ig-set-www-claim") || r.headers.get("x-ig-www-claim") || null;
         if (claim) { try { window.__ig_www_claim = claim; } catch (e) {} }
         var body = await r.text();
-        // Large cap so the JSON stays complete + parseable.
-        return JSON.stringify({ status: r.status, claim: claim, body: body.slice(0, 600000) });
+        // Return the FULL body — do NOT truncate. Any byte cap mid-JSON breaks
+        // JSON.parse on the caller side (a count=50 saved/posts page is ~600KB-1MB,
+        // far past the old 600000 cap that silently corrupted it). count<=50 bounds
+        // the size, and executeJavaScript handles ~1MB string returns fine.
+        return JSON.stringify({ status: r.status, claim: claim, body: body });
       } catch (e) {
         return JSON.stringify({ status: -1, error: String(e) });
       }

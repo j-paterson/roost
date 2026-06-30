@@ -29,6 +29,8 @@ tests/e2e/.x-bookmark-folders-capture.json
 tests/e2e/.ig-cookies.json
 # Captured Instagram API shapes from the discovery live spec (diagnostic artifact)
 tests/e2e/.ig-discovery-capture.json
+# Streamed live-sync log from the Instagram production sync e2e (diagnostic artifact)
+tests/e2e/.ig-sync-live.log
 # Local secrets for ad-hoc test scripts (Spotify credentials, etc.)
 .env
 .env.*

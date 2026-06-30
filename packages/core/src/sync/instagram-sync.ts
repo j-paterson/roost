@@ -67,14 +67,18 @@ export async function paginateSaved(args: PaginateArgs): Promise<PaginateResult>
     let res: IgFetchResult | null = null;
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       res = await args.igFetch(path);
-      if (res.status === 429 || isFeedbackRequired(res.body)) {
+      // Retry-with-backoff on throttle/transient: HTTP 429, any 5xx (Instagram
+      // returns non-standard throttle codes like 560/572 "please wait" under
+      // load), or a FeedbackRequired/checkpoint body. After maxRetries, abort
+      // gracefully (partial results already flushed).
+      if (res.status === 429 || res.status >= 500 || isFeedbackRequired(res.body)) {
         if (attempt === maxRetries) {
-          args.onLog(`[instagram] rate-limited — aborting after ${attempt} retries (partial sync saved)`);
+          args.onLog(`[instagram] throttled (status ${res.status}) — aborting after ${attempt} retries (partial sync saved)`);
           await flush();
           return { totalFetched, earlyOut: false, abortedRateLimited: true };
         }
         const backoff = Math.min(30000, 2000 * 2 ** attempt);
-        args.onLog(`[instagram] 429/feedback — backing off ${backoff}ms`);
+        args.onLog(`[instagram] throttled (status ${res.status}) — backing off ${backoff}ms (retry ${attempt + 1}/${maxRetries})`);
         await args.sleep(backoff);
         continue;
       }
@@ -87,7 +91,14 @@ export async function paginateSaved(args: PaginateArgs): Promise<PaginateResult>
     }
 
     let parsed: { items?: { media?: Record<string, unknown> }[]; more_available?: boolean; next_max_id?: string };
-    try { parsed = JSON.parse(res.body); } catch { args.onLog("[instagram] unparseable page body — stopping"); break; }
+    try { parsed = JSON.parse(res.body); } catch (e) {
+      const b = res.body;
+      args.onLog(
+        `[instagram] unparseable page body — stopping. len=${b.length} ` +
+        `head=${JSON.stringify(b.slice(0, 140))} tail=${JSON.stringify(b.slice(-140))} err=${String(e)}`,
+      );
+      break;
+    }
 
     const items = parsed.items || [];
     let pageAllKnown = true;

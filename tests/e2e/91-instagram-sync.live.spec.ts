@@ -7,13 +7,13 @@
  *   --spec tests/e2e/91-instagram-sync.live.spec.ts
  * Requires tests/e2e/.ig-cookies.json (sessionid, csrftoken, ds_user_id).
  *
- * Production sync entry point: plugin.runSync("instagram")
- *   → RoostWorkspace.runSync(platform)
- *   → fires roost:request-sync workspace event
- *   → sidebar/hub handler calls runPlatformSync (run-platform-sync.ts)
- *   → desc.sync(wc, el, ...) — the platform descriptor's sync function
- *   Confirmed in packages/core/src/plugin/roost-workspace.ts and IRoostPlugin
- *   (packages/core/src/types/plugin.ts line 82).
+ * Sync entry point: plugin.syncPlatformHeadless("instagram") (src/main.ts) —
+ * calls runPlatformSync directly with an off-screen mount container and routes
+ * progress through fireLog. This is the headless-safe entry; plugin.runSync only
+ * fires the roost:request-sync workspace event, which needs the sidebar React
+ * hook mounted to actually run (unreliable under wdio). Logs are captured via
+ * plugin.onLog (same as spec 86) and streamed to tests/e2e/.ig-sync-live.log;
+ * the vault is asserted on disk with Node fs (also like spec 86).
  */
 
 import { browser } from "@wdio/globals";
@@ -153,81 +153,135 @@ describe("Instagram production sync — live", function () {
         if (((injectResult as { set?: number }).set ?? 0) === 0) {
             throw new Error("No cookies were injected — check .ig-cookies.json format.");
         }
+
+        // Mark first-time setup complete. We drive the sync via
+        // syncPlatformHeadless (not the Hub UI), so the onboarding panel can't
+        // block it — but setting this defensively guarantees the setup gate
+        // (hub-body.tsx renders only the onboarding panel while !setupComplete)
+        // never interferes with this or future UI-driven assertions.
+        await browser.executeObsidian(async ({ app }, pid) => {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const plugin = (app as any).plugins.plugins[pid];
+            if (plugin?.settings && plugin.settings.setupComplete !== true) {
+                plugin.settings.setupComplete = true;
+                if (typeof plugin.saveSettings === "function") await plugin.saveSettings();
+            }
+        }, PLUGIN_ID);
     });
 
-    it("syncs ≥1 saved Instagram post into the vault with raw.json + attachment", async function () {
-        // Trigger the production sync via plugin.runSync("instagram").
-        //
-        // Execution path (confirmed by reading source):
-        //   plugin.runSync("instagram")                    [src/main.ts:266]
-        //   → RoostWorkspace.runSync("instagram")         [plugin/roost-workspace.ts:34]
-        //     • checks getPlatform("instagram").enabled   [platforms/instagram.ts: enabled:true]
-        //     • activates the sidebar leaf
-        //     • fires app.workspace.trigger("roost:request-sync", "instagram")
-        //     • polls syncState.instagram.timestamp every 500 ms (ceiling: 10 min)
-        //   → sidebar/hub handler: runPlatformSync(opts)  [sync/run-platform-sync.ts:68]
-        //     • mounts instagram webview into sidebar container
-        //     • calls desc.sync(wc, el, ...)              [platforms/instagram.ts]
-        //     • VaultWriter.writeBatch() → notes land under <syncFolder>/Instagram/
+    it("syncs ≥1 saved Instagram post into the vault", async function () {
+        // Live, tailable log of everything the sync emits:
+        //   tail -f tests/e2e/.ig-sync-live.log
+        const liveLog = path.join(__dirname, ".ig-sync-live.log");
+        try { fs.writeFileSync(liveLog, `[${new Date().toISOString()}] starting Instagram sync\n`); } catch { /* ignore */ }
+
+        // Resolve the sync folder AND the real vault root, then assert against
+        // the vault ON DISK (Node fs) — mirroring spec 86. NOTE:
+        // wdio-obsidian-service runs Obsidian against a TEMP COPY of
+        // FIXTURE_VAULT, so we must read the live adapter.basePath, not
+        // FIXTURE_VAULT (which is the untouched source).
+        const { syncFolder, vaultRoot } = (await browser.executeObsidian(({ app }, pid) => {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const plugin = (app as any).plugins.plugins[pid];
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const adapter = app.vault.adapter as any;
+            return {
+                syncFolder: plugin.settings.syncFolder as string,
+                vaultRoot: String(adapter.basePath ?? adapter.getBasePath?.() ?? ""),
+            };
+        }, PLUGIN_ID)) as { syncFolder: string; vaultRoot: string };
+        if (!vaultRoot) throw new Error("could not resolve live vault basePath");
+        const igDir = path.join(vaultRoot, syncFolder, "Instagram");
+        // eslint-disable-next-line no-console
+        console.log(`[live-spec] live vault: ${vaultRoot} — asserting at ${igDir}`);
+
+        // Subscribe to the plugin log bus (the established capture API — spec 86),
+        // then kick off the sync. syncPlatformHeadless calls runPlatformSync
+        // directly with an off-screen mount container and routes every line
+        // through fireLog, so onLog(...) sees it. (runSync only fires a workspace
+        // event that needs the sidebar React hook mounted — unreliable headless,
+        // which is why the first attempt wrote 0 notes.) We FIRE-AND-FORGET: the
+        // sync runs minutes past WebDriver's 30s renderer-script timeout, so we
+        // must not await it inside one execute() call — the renderer event loop
+        // keeps running it between the short poll calls below.
         await browser.executeObsidian(async ({ app }, pid) => {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const plugin = (app as any).plugins.plugins[pid];
             if (!plugin) throw new Error(`plugin ${pid} not loaded`);
-            // runSync resolves once syncState.instagram.timestamp advances
-            // (written by runPlatformSync on completion/stop) — or times out at 10 min.
-            await plugin.runSync("instagram");
-        }, PLUGIN_ID);
-
-        // Assert: ≥1 .md note landed under <syncFolder>/Instagram/
-        // Ideally also a sibling instagram-<code>/raw.json + media attachment.
-        const result = await browser.executeObsidian(async ({ app }, pid) => {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const plugin = (app as any).plugins.plugins[pid];
-            const syncFolder: string = plugin.settings.syncFolder as string;
-            const igFolder = `${syncFolder}/Instagram`;
-
-            const topLevel = await app.vault.adapter.list(igFolder).catch(() => ({
-                files: [] as string[],
-                folders: [] as string[],
-            }));
-            const mdNotes = (topLevel.files as string[]).filter((f) => f.endsWith(".md"));
-
-            // Optional: check sibling shortcode folders for raw.json + media.
-            let rawJsonCount = 0;
-            let attachmentCount = 0;
-            for (const folder of topLevel.folders as string[]) {
-                const inner = await app.vault.adapter.list(folder).catch(() => ({
-                    files: [] as string[],
-                    folders: [] as string[],
-                }));
-                const files = inner.files as string[];
-                if (files.some((f) => f.endsWith("raw.json"))) rawJsonCount++;
-                if (files.some((f) => /\.(jpg|jpeg|mp4|webp|png)$/i.test(f))) attachmentCount++;
-            }
-
-            return {
-                igFolder,
-                mdCount: mdNotes.length,
-                folderCount: (topLevel.folders as string[]).length,
-                rawJsonCount,
-                attachmentCount,
-            };
+            const w = window as any;
+            w.__roostLogs = [];
+            w.__roostLogCursor = 0;
+            plugin.onLog((msg: string) => { w.__roostLogs.push(msg); });
+            w.__roostIgSync = { done: false, error: null };
+            Promise.resolve()
+                .then(() => plugin.syncPlatformHeadless("instagram"))
+                .then(() => { w.__roostIgSync.done = true; })
+                .catch((e: unknown) => { w.__roostIgSync = { done: true, error: String(e) }; });
         }, PLUGIN_ID);
 
-        // eslint-disable-next-line no-console
-        console.log("[live-spec] vault assertion result:", JSON.stringify(result));
+        // Drain new log lines → live file + console, count .md notes on disk,
+        // and read the sync's settle flag. One short script call per tick.
+        let syncErr: string | null = null;
+        const drainAndCount = async (): Promise<{ mdCount: number; done: boolean; error: string | null }> => {
+            const probe = (await browser.executeObsidian(() => {
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                const w = window as any;
+                const logs: string[] = w.__roostLogs || [];
+                const from: number = w.__roostLogCursor || 0;
+                const fresh = logs.slice(from);
+                w.__roostLogCursor = logs.length;
+                const s = w.__roostIgSync || { done: false, error: null };
+                return { fresh, done: s.done as boolean, error: s.error as string | null };
+            })) as { fresh: string[]; done: boolean; error: string | null };
+            if (probe.fresh.length) {
+                const stamp = new Date().toISOString();
+                try { fs.appendFileSync(liveLog, probe.fresh.map((l) => `[${stamp}] ${l}`).join("\n") + "\n"); } catch { /* ignore */ }
+                // eslint-disable-next-line no-console
+                for (const l of probe.fresh) console.log("  [ig]", l);
+            }
+            let mdCount = 0;
+            try { mdCount = fs.existsSync(igDir) ? fs.readdirSync(igDir).filter((f) => f.endsWith(".md")).length : 0; } catch { /* ignore */ }
+            return { mdCount, done: probe.done, error: probe.error };
+        };
 
-        // Primary gate: at least one Instagram note must exist.
-        expect((result as { mdCount: number }).mdCount).toBeGreaterThan(0);
+        // Pass as soon as ≥1 note lands; bail early if the sync rejected.
+        await browser.waitUntil(
+            async () => {
+                const { mdCount, done, error } = await drainAndCount();
+                syncErr = error;
+                return error != null || mdCount > 0 || done === true;
+            },
+            {
+                timeout: 540_000,
+                interval: 5_000,
+                timeoutMsg: "no Instagram note appeared within 9 min — see tests/e2e/.ig-sync-live.log",
+            },
+        );
+        await drainAndCount(); // flush trailing log lines
+        if (syncErr) throw new Error(`syncPlatformHeadless("instagram") failed: ${syncErr}`);
 
-        // Informational (non-fatal) log for optional sibling artifacts.
-        // These are best-effort: media download or raw.json may be omitted on the
-        // first batch if the sync hit the stop signal early.
-        const r = result as { rawJsonCount: number; attachmentCount: number; igFolder: string };
+        // Assert on disk (Node fs) — count notes + sibling raw.json/media.
+        const mdNotes = fs.existsSync(igDir) ? fs.readdirSync(igDir).filter((f) => f.endsWith(".md")) : [];
+        const attachFolders = fs.existsSync(igDir)
+            ? fs.readdirSync(igDir, { withFileTypes: true })
+                .filter((d) => d.isDirectory() && d.name.startsWith("instagram-"))
+                .map((d) => d.name)
+            : [];
+        let rawJsonCount = 0;
+        let mediaCount = 0;
+        for (const f of attachFolders) {
+            const inner = fs.readdirSync(path.join(igDir, f));
+            if (inner.includes("raw.json")) rawJsonCount++;
+            if (inner.some((x) => /\.(jpg|jpeg|mp4|webp|png)$/i.test(x))) mediaCount++;
+        }
         // eslint-disable-next-line no-console
         console.log(
-            `[live-spec] ${r.igFolder}: ` +
-            `rawJson=${r.rawJsonCount}, attachments=${r.attachmentCount}`,
+            `[live-spec] ${igDir}: notes=${mdNotes.length} attachFolders=${attachFolders.length} ` +
+            `raw.json=${rawJsonCount} media=${mediaCount}  (full log: ${liveLog})`,
         );
+
+        // Primary gate: at least one Instagram note must exist on disk.
+        expect(mdNotes.length).toBeGreaterThan(0);
     });
 });

@@ -57,6 +57,19 @@ describe("paginateSaved", () => {
     expect(res.abortedRateLimited).toBe(true);
   });
 
+  it("backs off then aborts on a 5xx throttle code (e.g. IG 572)", async () => {
+    const igFetch: IgFetch = vi.fn().mockResolvedValue({ status: 572, body: "" });
+    const res = await paginateSaved({
+      igFetch, sleep: async () => {}, onRecords: async () => {}, collMap,
+      knownIds: new Set(), prevComplete: false, batchSize: 1, earlyOutThreshold: 3,
+      maxItems: null, isStopped: () => false, onLog: () => {}, onProgress: () => {}, maxBackoffRetries: 2,
+    });
+    // 572 must be treated as retryable throttle (backoff → graceful abort),
+    // NOT a hard stop. Retries = maxBackoffRetries + 1 attempts.
+    expect(res.abortedRateLimited).toBe(true);
+    expect((igFetch as ReturnType<typeof vi.fn>).mock.calls.length).toBe(3);
+  });
+
   it("honors maxItems cap", async () => {
     const igFetch: IgFetch = vi.fn().mockResolvedValue(page([{ code: "a" }, { code: "b" }], "MORE"));
     const res = await paginateSaved({
