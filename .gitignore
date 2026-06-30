@@ -31,6 +31,11 @@ tests/e2e/.ig-cookies.json
 tests/e2e/.ig-discovery-capture.json
 # Streamed live-sync log from the Instagram production sync e2e (diagnostic artifact)
 tests/e2e/.ig-sync-live.log
+# Reddit session cookies for live e2e tests — NEVER commit (session credentials)
+tests/e2e/.reddit-cookies.json
+# Streamed live-sync log + captured API shapes from the Reddit sync e2e (diagnostic artifacts)
+tests/e2e/.reddit-sync-live.log
+tests/e2e/.reddit-discovery-capture.json
 # Local secrets for ad-hoc test scripts (Spotify credentials, etc.)
 .env
 .env.*
