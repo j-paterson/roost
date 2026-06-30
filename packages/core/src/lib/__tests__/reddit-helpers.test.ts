@@ -1,6 +1,6 @@
 // packages/core/src/lib/__tests__/reddit-helpers.test.ts
 import { describe, it, expect } from "vitest";
-import { extractRedditMedia, buildRedditUrl, redditPreviewToPermanent } from "@/lib/reddit-helpers";
+import { extractRedditMedia, buildRedditUrl, redditPreviewToPermanent, extractRedditLink } from "@/lib/reddit-helpers";
 import type { BookmarkRecord } from "@/lib/twitter-helpers";
 
 const rec = (rawData: Record<string, unknown>): BookmarkRecord => ({ platform: "reddit", rawData } as never);
@@ -86,5 +86,32 @@ describe("extractRedditMedia", () => {
 describe("buildRedditUrl", () => {
   it("prefixes permalink", () => {
     expect(buildRedditUrl("/r/x/comments/abc/title/")).toBe("https://www.reddit.com/r/x/comments/abc/title/");
+  });
+});
+
+describe("extractRedditLink", () => {
+  const linkPost = { rawData: {
+    id: "abc", title: "Cool article", subreddit: "technology",
+    url_overridden_by_dest: "https://www.nytimes.com/2024/x.html",
+    post_hint: "link",
+    preview: { images: [{ source: { url: "https://preview.redd.it/p.jpg?width=640&amp;auto=webp" } }] },
+  }} as never;
+
+  it("returns a LinkCard for a link post (title=post title provisional, domain derived)", () => {
+    const card = extractRedditLink(linkPost);
+    expect(card).not.toBeNull();
+    expect(card!.url).toBe("https://www.nytimes.com/2024/x.html");
+    expect(card!.title).toBe("Cool article");
+    expect(card!.siteName).toBe("nytimes.com");
+    expect(card!.image).toContain("i.redd.it"); // permanent-ized preview (preview.redd.it → i.redd.it)
+    expect(card!.description).toBeUndefined();         // filled by OG backfill later
+  });
+
+  it("returns null for a self/text post", () => {
+    expect(extractRedditLink({ rawData: { id: "d", is_self: true, selftext: "hi" } } as never)).toBeNull();
+  });
+
+  it("returns null for an image/gallery/video post (handled as media, not link)", () => {
+    expect(extractRedditLink({ rawData: { id: "i", post_hint: "image", url_overridden_by_dest: "https://i.redd.it/x.jpg" } } as never)).toBeNull();
   });
 });

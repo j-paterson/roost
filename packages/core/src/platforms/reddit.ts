@@ -1,6 +1,6 @@
 import type { PlatformDescriptor } from "./descriptor";
 import { roostParseEpoch, roostBookmarkId } from "@/lib/normalize-helpers";
-import { extractRedditMedia, buildRedditUrl } from "@/lib/reddit-helpers";
+import { extractRedditMedia, buildRedditUrl, extractRedditLink } from "@/lib/reddit-helpers";
 import { syncReddit } from "@/sync/reddit-sync";
 // @ts-ignore — raw probe loaded as string by esbuild/vitest rawProbePlugin
 import redditProbeSource from "../probes/reddit-probe.probe";
@@ -25,6 +25,7 @@ export const reddit: PlatformDescriptor = {
     authorHandle: (r) => { const raw = r?.rawData || r?.castData || null; return raw?.author || null; },
     url: (r) => { const raw = r?.rawData || r?.castData || null; return raw?.permalink ? buildRedditUrl(raw.permalink) : null; },
     media: (r) => extractRedditMedia(r),
+    link: (r) => extractRedditLink(r),
     normalize: (item, options) => {
       const itemId: string | undefined = item.id;
       if (!itemId) return null;

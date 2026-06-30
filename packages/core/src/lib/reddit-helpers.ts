@@ -2,6 +2,8 @@
  *  docs/superpowers/specs/2026-06-30-reddit-saved-sync-design.md §4. */
 import type { RawApiData } from "./normalize-helpers";
 import type { BookmarkRecord } from "./twitter-helpers";
+import type { LinkCard } from "@/lib/link-card";
+import { domainFromUrl } from "@/lib/link-card";
 
 function getRaw(record: BookmarkRecord): RawApiData | null {
   return record?.rawData || record?.castData || null;
@@ -105,4 +107,22 @@ export function extractRedditMedia(record: BookmarkRecord): RedditMediaResult {
   // Link / rich:video / everything else
   out.kind = "link";
   return out;
+}
+
+/** External-link preview for a Reddit LINK post. Returns null unless
+ *  extractRedditMedia classified the post as kind "link" with a real URL.
+ *  Title is provisional (the Reddit post title); description is left empty
+ *  for the OG backfill. The image is Reddit's own preview (permanent-ized). */
+export function extractRedditLink(record: BookmarkRecord): LinkCard | null {
+  const media = extractRedditMedia(record);
+  if (media.kind !== "link" || !media.linkUrl) return null;
+  const raw = getRaw(record);
+  const title = typeof raw?.title === "string" ? raw.title.replace(/\n/g, " ") : undefined;
+  const siteName = domainFromUrl(media.linkUrl) ?? undefined;
+  return {
+    url: media.linkUrl,
+    title: title || undefined,
+    siteName,
+    image: media.coverUrl ?? undefined,
+  };
 }
