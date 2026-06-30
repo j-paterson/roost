@@ -22,7 +22,7 @@ import type { IncompleteByCategory } from "@/sync/vault-writer";
 /** Subset of byCategory keys that have backfill commands. raw-json items
  *  need full re-sync — handled by the sync flow, not the registry. */
 export type EnrichmentId =
-  | "articleBody" | "thread" | "mediaFiles" | "playback" | "tweetBody" | "transcript"  // data backfills
+  | "articleBody" | "thread" | "mediaFiles" | "playback" | "tweetBody" | "transcript" | "linkMeta"  // data backfills
   | "recipe" | "place" | "mediaExtraction" | "product"        // pipelines
   | "workout" | "tutorial" | "home";
 

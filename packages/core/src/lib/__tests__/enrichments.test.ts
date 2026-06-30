@@ -62,6 +62,7 @@ describe("countFor", () => {
       articleBody: fill(counts.articleBody),
       playback: fill(counts.playback),
       tweetBody: fill(counts.tweetBody),
+      linkMeta: fill(counts.linkMeta),
     };
   }
 

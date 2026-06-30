@@ -8,7 +8,7 @@ import type { PipelinesPending } from "@/ui/hub/state";
 // the type.
 const allOn = {
   recipe: true, place: true, mediaExtraction: true, product: true, workout: true, tutorial: true, home: true,
-  playback: true, articleBody: true, thread: true, mediaFiles: true, tweetBody: true, transcript: true, folder: true,
+  playback: true, articleBody: true, thread: true, mediaFiles: true, tweetBody: true, transcript: true, linkMeta: true, folder: true,
 };
 
 describe("buildPipelineRows", () => {

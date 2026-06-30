@@ -29,6 +29,9 @@ export interface IncompleteByCategory {
   playback: Set<string>;
   /** Twitter only. Tweet note whose body has not been rendered to markdown yet. */
   tweetBody: Set<string>;
+  /** A link bookmark (has link_url) still missing any OG preview field the
+   *  link-meta backfill fills: link_title, link_desc, or link_image. */
+  linkMeta: Set<string>;
 }
 
 /**
@@ -39,6 +42,14 @@ export interface IncompleteByCategory {
  * corpus on first rollout. Pure so the three-branch gate (esp. the non-obvious
  * `is_article` exclusion) is locked by a unit test independent of the scan harness.
  */
+/** A link bookmark (has link_url) still missing any preview field the OG
+ *  backfill fills. link_site alone is derivable, so it doesn't gate. */
+export function needsLinkMeta(fm: Record<string, unknown>): boolean {
+  if (typeof fm.link_url !== "string" || !fm.link_url) return false;
+  const missing = (k: string) => typeof fm[k] !== "string" || !(fm[k] as string);
+  return missing("link_title") || missing("link_desc") || missing("link_image");
+}
+
 export function needsTweetBodyRender(fm: Record<string, unknown>): boolean {
   return (
     fm.platform === "twitter"
@@ -146,6 +157,7 @@ export class VaultIndex {
       articleBody: new Set<string>(),
       playback: new Set<string>(),
       tweetBody: new Set<string>(),
+      linkMeta: new Set<string>(),
     };
     this.notePathMap.clear();
     const files = getSyncFiles(this.vault, this.syncFolder);
@@ -288,6 +300,9 @@ export class VaultIndex {
           // X Articles are excluded (Decision 4 — they already render real md).
           if (needsTweetBodyRender(fm)) {
             byCategory.tweetBody.add(id);
+          }
+          if (needsLinkMeta(fm)) {
+            byCategory.linkMeta.add(id);
           }
         }
       } catch { /* skip */ }
