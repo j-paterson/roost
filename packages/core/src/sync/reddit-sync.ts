@@ -50,8 +50,8 @@ interface PaginateResult {
  *
  * hardCap note: `rawCount` tracks every valid t3 item encountered (including
  * cross-page duplicates). When rawCount reaches hardCap the function returns
- * {hitHardCap:true, totalFetched:hardCap}. `totalFetched` separately counts
- * only unique items actually emitted — these two counters diverge whenever pages
+ * {hitHardCap:true, totalFetched:<unique items actually emitted>}. `totalFetched`
+ * counts only unique items emitted — these two counters diverge whenever pages
  * repeat ids (Reddit can return the same post on multiple listing pages).
  */
 export async function paginateSaved(args: PaginateArgs): Promise<PaginateResult> {
@@ -115,7 +115,7 @@ export async function paginateSaved(args: PaginateArgs): Promise<PaginateResult>
       rawCount++;
       if (rawCount >= args.hardCap) {
         await flush();
-        return { totalFetched: args.hardCap, earlyOut: false, abortedRateLimited: false, hitHardCap: true };
+        return { totalFetched, earlyOut: false, abortedRateLimited: false, hitHardCap: true };
       }
 
       // Cross-page dedup: seen tracks reddit:<id> keys for the lifetime of this call.

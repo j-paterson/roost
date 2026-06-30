@@ -21,7 +21,7 @@ describe("paginateSaved", () => {
   it("stops at the 1000-item hard cap", async () => {
     const fetch: RedditFetch = vi.fn().mockResolvedValue(listing(Array.from({length:100},(_,i)=>"x"+i), "t3_more"));
     const res = await paginateSaved({ fetch, sleep: async () => {}, onRecords: async () => {}, knownIds: new Set(), prevComplete: false, batchSize: 100, earlyOutThreshold: 3, maxItems: null, hardCap: 250, isStopped: () => false, onLog: () => {}, onProgress: () => {} });
-    expect(res.totalFetched).toBe(250); // 3 pages × 100 clamped to 250
+    expect(res.totalFetched).toBe(100); // stops at the hard cap; 100 unique emitted, raw scan hit the 250 cap
     expect(res.hitHardCap).toBe(true);
   });
 
