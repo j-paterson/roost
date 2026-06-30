@@ -43,6 +43,7 @@ export function sourceUrlFromFrontmatter(
     return `https://www.tiktok.com/${author}/video/${id}`;
   }
   if (platform === "instagram") return `https://www.instagram.com/p/${id}/`;
+  if (platform === "reddit") return `https://www.reddit.com/comments/${id}`;
   return null;
 }
 

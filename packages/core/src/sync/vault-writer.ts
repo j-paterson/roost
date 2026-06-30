@@ -3,6 +3,7 @@ import type { ElectronWebview, Platform } from "@/types/sync";
 import { TwitterRecordWriter } from "./vault-writer/twitter-record-writer";
 import { TikTokRecordWriter } from "./vault-writer/tiktok-record-writer";
 import { InstagramRecordWriter } from "./vault-writer/instagram-record-writer";
+import { RedditRecordWriter } from "./vault-writer/reddit-record-writer";
 import { VaultIndex, type IncompleteIdsResult } from "./vault-writer/vault-index";
 export type { IncompleteByCategory, IncompleteIdsResult } from "./vault-writer/vault-index";
 import { NoteFileWriter } from "./vault-writer/note-file-writer";
@@ -28,6 +29,9 @@ interface VaultWriterOpts {
   tiktokWebview?: ElectronWebview;
   /** Electron <webview> element for Instagram media downloads */
   instagramWebview?: ElectronWebview;
+  /** Resolved ffmpeg binary path for v.redd.it video muxing; undefined when
+   *  the ffmpeg lego is absent (video falls back to video-only, no audio). */
+  redditFfmpegPath?: string;
   onLog?: (msg: string) => void;
 }
 
@@ -42,6 +46,7 @@ export class VaultWriter {
   private twitterWriter: TwitterRecordWriter;
   private tiktokWriter: TikTokRecordWriter;
   private instagramWriter: InstagramRecordWriter;
+  private redditWriter: RedditRecordWriter;
   private resyncRunner: ResyncRunner;
   /** Table-driven dispatch for writeBatch — maps platform id to its write fn.
    *  Platforms absent from this map fall through to writeGenericRecord. */
@@ -103,6 +108,16 @@ export class VaultWriter {
       ensuredFolders: this.ensuredFolders,
       instagramWc: opts.instagramWebview,
     });
+    this.redditWriter = new RedditRecordWriter({
+      vault: opts.vault,
+      syncFolder: opts.syncFolder,
+      log: this.log,
+      index: this.index,
+      noteWriter: this.noteWriter,
+      mediaDownloader: this.mediaDownloader,
+      ensuredFolders: this.ensuredFolders,
+      ffmpegPath: opts.redditFfmpegPath,
+    });
     this.resyncRunner = new ResyncRunner({
       vault: opts.vault,
       syncFolder: opts.syncFolder,
@@ -114,11 +129,13 @@ export class VaultWriter {
       mediaDownloader: this.mediaDownloader,
       twitterWriter: this.twitterWriter,
       instagramWriter: this.instagramWriter,
+      redditWriter: this.redditWriter,
     });
     this.writeDispatch = {
       twitter: (r) => this.twitterWriter.writeTwitterRecord(r),
       tiktok: (r) => this.tiktokWriter.writeTikTokRecord(r),
       instagram: (r) => this.instagramWriter.writeInstagramRecord(r),
+      reddit: (r) => this.redditWriter.writeRedditRecord(r),
     };
   }
 

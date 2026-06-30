@@ -18,6 +18,7 @@ import type {
 import type { NormalizedRecord } from "@/lib/normalize";
 import { getPlatform } from "@/platforms/registry";
 import { VaultWriter } from "@/sync/vault-writer";
+import { findBinary } from "@/integrations/detect";
 import { ensureBasesFiles } from "@/sync/bases-setup";
 import { waitForMetadataQuiet } from "@/lib/metadata-cache-quiet";
 
@@ -103,6 +104,8 @@ export async function runPlatformSync(opts: RunPlatformSyncOpts): Promise<RunPla
 
   await ensureBasesFiles(app.vault, plugin.settings.syncFolder);
 
+  const redditFfmpegPath = findBinary("ffmpeg") ?? undefined;
+
   const writer = new VaultWriter({
     vault: app.vault,
     syncFolder: plugin.settings.syncFolder,
@@ -112,6 +115,7 @@ export async function runPlatformSync(opts: RunPlatformSyncOpts): Promise<RunPla
     // here would mis-classify TikTok media-missing items. Strict-parity guard.
     tiktokWebview: platform === "tiktok" ? wc : undefined,
     instagramWebview: platform === "instagram" ? wc : undefined,
+    redditFfmpegPath,
     onLog: log,
   });
 

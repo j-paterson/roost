@@ -6,6 +6,7 @@ import { type NoteFileWriter, articleFrontmatterFields } from "./note-file-write
 import { type MediaDownloader, type QuarantinedFile } from "./media-downloader";
 import { type TwitterRecordWriter } from "./twitter-record-writer";
 import { type InstagramRecordWriter } from "./instagram-record-writer";
+import { type RedditRecordWriter } from "./reddit-record-writer";
 import { loadQuotedTweetBitmap, type ThreadMeta } from "./twitter-record-writer";
 import { type NormalizedRecord } from "../../lib/normalize";
 import { renderCardAsync } from "../card-renderer";
@@ -33,6 +34,7 @@ interface ResyncRunnerOpts {
   mediaDownloader: MediaDownloader;
   twitterWriter: TwitterRecordWriter;
   instagramWriter: InstagramRecordWriter;
+  redditWriter: RedditRecordWriter;
 }
 
 export class ResyncRunner {
@@ -46,6 +48,7 @@ export class ResyncRunner {
   private mediaDownloader: MediaDownloader;
   private twitterWriter: TwitterRecordWriter;
   private instagramWriter: InstagramRecordWriter;
+  private redditWriter: RedditRecordWriter;
 
   constructor(opts: ResyncRunnerOpts) {
     this.vault = opts.vault;
@@ -58,6 +61,7 @@ export class ResyncRunner {
     this.mediaDownloader = opts.mediaDownloader;
     this.twitterWriter = opts.twitterWriter;
     this.instagramWriter = opts.instagramWriter;
+    this.redditWriter = opts.redditWriter;
   }
 
   // PUBLIC — called from VaultWriter.writeBatch
@@ -67,6 +71,7 @@ export class ResyncRunner {
       tiktok: (r) => this.resyncTikTok(r),
       twitter: (r) => this.resyncTwitter(r),
       instagram: (r) => this.resyncInstagram(r),
+      reddit: (r) => this.redditWriter.writeRedditRecord(r),
     };
     await resyncDispatch[platform as Platform]?.(record);
   }
