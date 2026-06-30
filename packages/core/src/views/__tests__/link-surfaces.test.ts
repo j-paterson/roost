@@ -5,7 +5,7 @@ import { resolveGalleryCover } from "@/views/gallery-cards";
 describe("gallery cover coexistence", () => {
   it("link-only item → link tile", () => {
     expect(resolveGalleryCover({ hasOwnMedia: false, linkUrl: "https://x", linkSite: "x.com", coverImg: "p.jpg" }))
-      .toMatchObject({ mode: "linktile", domain: "x.com" });
+      .toMatchObject({ mode: "linktile", domain: "x.com", badge: true });
   });
   it("item with its own media + a link → media cover + badge", () => {
     expect(resolveGalleryCover({ hasOwnMedia: true, linkUrl: "https://x", linkSite: "x.com", coverImg: "p.jpg" }))

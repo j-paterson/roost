@@ -30,7 +30,7 @@ export function resolveGalleryCover(s: {
   coverImg: string | null;
 }): GalleryCoverDecision {
   const isLink = !!s.linkUrl;
-  if (isLink && !s.hasOwnMedia) return { mode: "linktile", domain: s.linkSite ?? undefined, badge: false };
+  if (isLink && !s.hasOwnMedia) return { mode: "linktile", domain: s.linkSite ?? undefined, badge: true };
   return { mode: "media", badge: isLink };
 }
 
@@ -255,10 +255,10 @@ export function hydrateGalleryCard(
     coverEl.dataset.linkUrl = linkUrl;
     if (coverDecision.mode === "linktile") {
       coverEl.classList.add("roost-card-cover-linktile");
-      coverEl.dataset.domain = coverDecision.domain ?? "";
+      if (coverDecision.domain) coverEl.dataset.domain = coverDecision.domain;
     }
-    // Badge spans appear for both linktile (always) and media mode when badge===true.
-    if (coverDecision.mode === "linktile" || coverDecision.badge) {
+    // Badge field is self-describing: linktile always returns badge:true; media returns badge per isLink.
+    if (coverDecision.badge) {
       const badge = coverEl.createSpan({ cls: "roost-card-link-badge" });
       badge.textContent = "🔗";
     }
