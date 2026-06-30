@@ -18,6 +18,7 @@ import {
   downloadTwitterImage, downloadTwitterVideo,
 } from "../media-downloader";
 import { type ThreadSegment } from "../thread-fetcher";
+import { extractTwitterLink } from "@/lib/twitter-helpers";
 
 export interface ThreadSegmentMeta {
   rest_id: string;
@@ -99,6 +100,7 @@ export class TwitterRecordWriter {
   async writeTwitterRecord(record: NormalizedRecord): Promise<void> {
     const { text, url, published, itemId, handle, username } = this.noteWriter.extractCommon(record);
     const media = extractTwitterMedia(record);
+    const link = extractTwitterLink(record);
     const folder = media.folder;
     const folderPath = `${this.syncFolder}/X`;
     const attachFolder = `${folderPath}/twitter-${itemId}`;
@@ -111,6 +113,7 @@ export class TwitterRecordWriter {
     const isThreaded = mainThread.length > 0 || quotedThread.length > 0;
 
     let coverFile: string | null = null;
+    let cardThumbPath: string | null = null;
     // Real downloaded media embedded inline in the note body ("![[…]]"). The
     // threaded branch leaves this empty — thread media is the carousel (cover +
     // *.png/*.jpg pages), not inline embeds (Decision 4). card.png (the
@@ -158,6 +161,7 @@ export class TwitterRecordWriter {
           const embed = await this.mediaDownloader.downloadAndSave(() => downloadTwitterImage(media.cardMeta!.thumbnail!), attachFolder, "card-thumb.jpg");
           if (embed) {
             coverFile = `${attachFolder}/card-thumb.jpg`;
+            cardThumbPath = `${attachFolder}/card-thumb.jpg`;
             mediaEmbeds.push(`![[${attachFolder}/card-thumb.jpg]]`);
           }
         }
@@ -165,6 +169,7 @@ export class TwitterRecordWriter {
         const embed = await this.mediaDownloader.downloadAndSave(() => downloadTwitterImage(media.cardMeta!.thumbnail!), attachFolder, "card-thumb.jpg");
         if (embed) {
           coverFile = `${attachFolder}/card-thumb.jpg`;
+          cardThumbPath = `${attachFolder}/card-thumb.jpg`;
           mediaEmbeds.push(`![[${attachFolder}/card-thumb.jpg]]`);
         }
       } else if (text) {
@@ -214,6 +219,11 @@ export class TwitterRecordWriter {
       platform: "twitter",
       author: authorLink,
       url,
+      link_url: link?.url,
+      link_title: link?.title,
+      link_desc: link?.description,
+      link_site: link?.siteName,
+      link_image: link && cardThumbPath ? `[[${cardThumbPath}]]` : undefined,
       published: published ? published.split("T")[0] : undefined,
       saved: record.saved_at?.split("T")[0],
       collection: folder ?? undefined,
