@@ -87,6 +87,7 @@ import { THREAD_ENRICHMENT } from "@/sync/thread-backfill";
 import { RENDERED_TWEET_ENRICHMENT } from "@/sync/tweet-body-backfill";
 import { MEDIA_ENRICHMENT } from "@/sync/media-backfill";
 import { TRANSCRIPT_ENRICHMENT } from "@/sync/transcript-backfill";
+import { LINK_META_ENRICHMENT } from "@/sync/link-meta-backfill";
 import { PLAYBACK_ENRICHMENT } from "@/pipeline/playback-enrichment";
 import { RECIPE_ENRICHMENT } from "@/pipeline/recipe-pipeline";
 import { PLACE_ENRICHMENT } from "@/pipeline/places-pipeline";
@@ -104,6 +105,7 @@ export const ENRICHMENTS: readonly EnrichmentDef[] = [
   RENDERED_TWEET_ENRICHMENT,
   MEDIA_ENRICHMENT,
   TRANSCRIPT_ENRICHMENT,
+  LINK_META_ENRICHMENT,
   PLAYBACK_ENRICHMENT,
   RECIPE_ENRICHMENT,
   PLACE_ENRICHMENT,
