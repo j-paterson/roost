@@ -4,8 +4,9 @@ import {
   roostBookmarkId,
 } from "@/lib/normalize-helpers";
 import { extractInstagramMedia, buildInstagramUrl } from "@/lib/instagram-helpers";
+import { syncInstagram } from "@/sync/instagram-sync";
 // @ts-ignore — raw probe loaded as string by esbuild/vitest rawProbePlugin
-import instagramDiscoveryProbeSource from "../probes/instagram-discovery.probe";
+import instagramProbeSource from "../probes/instagram-probe.probe";
 
 /** Phase 2 prep: parse + vault data are live, but enabled stays false until the
  *  sync fn lands (Task 9) so the Hub never surfaces a card that can't sync. */
@@ -17,8 +18,8 @@ export const instagram: PlatformDescriptor = {
   origin: "https://www.instagram.com",
   profileUrl: "https://www.instagram.com/",
   authCookies: ["sessionid"],
-  enabled: false,
-  probeSource: instagramDiscoveryProbeSource,
+  enabled: true,
+  probeSource: instagramProbeSource,
   vault: { folder: "Instagram", attachPrefix: "instagram", icon: "camera" },
   parse: {
     id: (record) => {
@@ -57,5 +58,6 @@ export const instagram: PlatformDescriptor = {
       };
     },
   },
-  // sync intentionally omitted until Task 9.
+  sync: (wc, webviewEl, opts, onProgress, onRecords, onLog) =>
+    syncInstagram(wc, webviewEl, opts, onProgress, onRecords, onLog),
 };

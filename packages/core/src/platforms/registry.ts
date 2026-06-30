@@ -10,11 +10,16 @@ import { tiktok } from "./tiktok";
 import { twitter } from "./twitter";
 import { instagram } from "./instagram";
 
-export const PLATFORMS: Record<Platform, PlatformDescriptor> = {
-  tiktok,
-  twitter,
-  instagram,
-};
+// Use getter properties so each read returns the live module binding value.
+// This breaks the circular-import snapshot problem where
+// instagram.ts → instagram-sync.ts → normalize.ts → registry.ts → instagram.ts
+// would capture instagram=undefined in the PLATFORMS object literal before
+// instagram.ts finishes evaluating.
+export const PLATFORMS = {
+  get tiktok() { return tiktok; },
+  get twitter() { return twitter; },
+  get instagram() { return instagram; },
+} as unknown as Record<Platform, PlatformDescriptor>;
 
 /**
  * Look up a platform descriptor by its canonical id.

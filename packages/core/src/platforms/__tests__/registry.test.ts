@@ -23,18 +23,18 @@ describe("platform registry", () => {
     expect(ids).toContain("tiktok");
     expect(ids).toContain("twitter");
   });
-  it("instagram is a registered but DISABLED platform (Phase 2: parse+vault wired, sync pending)", () => {
+  it("instagram is a registered and ENABLED platform (Phase 2: Task 9 — sync wired)", () => {
     const ig = getPlatform("instagram");
-    expect(ig.enabled).toBe(false);
+    expect(ig.enabled).toBe(true);
     expect(ig.origin).toBe("https://www.instagram.com");
     expect(ig.profileUrl).toBe("https://www.instagram.com/");
     expect(ig.authCookies).toEqual(["sessionid"]);
-    expect(ig.probeSource.length).toBeGreaterThan(0); // the observer probe is wired
-    expect(ig.sync).toBeUndefined();   // sync arrives in Task 9
+    expect(ig.probeSource.length).toBeGreaterThan(0); // active probe wired
+    expect(typeof ig.sync).toBe("function"); // Task 9: sync wired
     expect(ig.parse).toBeDefined();    // Phase 2: parsers wired (Task 2)
     expect(ig.vault).toEqual({ folder: "Instagram", attachPrefix: "instagram", icon: "camera" });
   });
-  it("enabledPlatforms excludes the disabled instagram", () => {
-    expect(enabledPlatforms().map((p) => p.id).sort()).toEqual(["tiktok", "twitter"]);
+  it("enabledPlatforms includes instagram (Task 9)", () => {
+    expect(enabledPlatforms().map((p) => p.id).sort()).toEqual(["instagram", "tiktok", "twitter"]);
   });
 });
