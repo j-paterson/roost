@@ -160,7 +160,7 @@ function renderFeedExpandedItem(
     entryToExpandedCardData(entry, feedResolvers(ctx), actions ? [actions] : []),
   );
   // After the expanded card body, append a full-width link card when the entry has a
-  // scraped link preview. data-link-url is tagged here; Task 11 wires the click handler.
+  // scraped link preview. Link preview card — click opens the URL in a RoostLinkView tab.
   const feedLinkUrl = safeGetValue(entry, "note.link_url")?.toString();
   if (feedLinkUrl) {
     const feedLinkCard = renderLinkCard(inner, {

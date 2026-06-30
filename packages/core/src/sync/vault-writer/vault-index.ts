@@ -35,6 +35,8 @@ export interface IncompleteByCategory {
   linkMeta: Set<string>;
 }
 
+export { needsLinkMeta };
+
 /**
  * Tweet-body first-rollout predicate: a Twitter note whose body has never been
  * rendered to markdown (no `enrichment_v_tweetBody` stamp). X Articles are excluded
@@ -43,8 +45,6 @@ export interface IncompleteByCategory {
  * corpus on first rollout. Pure so the three-branch gate (esp. the non-obvious
  * `is_article` exclusion) is locked by a unit test independent of the scan harness.
  */
-export { needsLinkMeta };
-
 export function needsTweetBodyRender(fm: Record<string, unknown>): boolean {
   return (
     fm.platform === "twitter"
@@ -321,6 +321,7 @@ export class VaultIndex {
     if (byCategory.mediaFiles.size) parts.push(`${byCategory.mediaFiles.size} media`);
     if (byCategory.thread.size) parts.push(`${byCategory.thread.size} thread`);
     if (byCategory.articleBody.size) parts.push(`${byCategory.articleBody.size} article-body`);
+    if (byCategory.linkMeta.size) parts.push(`${byCategory.linkMeta.size} link-meta`);
     if (missingVideo) parts.push(`${missingVideo} need video webview`);
     const breakdown = parts.length ? ` — ${parts.join(" · ")}` : "";
     this.log(`Scan done in ${elapsed}s: ${all.size} incomplete${breakdown}`);

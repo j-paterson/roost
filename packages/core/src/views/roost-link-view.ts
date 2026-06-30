@@ -56,7 +56,7 @@ export class RoostLinkView extends ItemView {
   }
 }
 
-/** Open (or reuse) a RoostLinkView tab for `url`. */
+/** Open a new RoostLinkView tab for `url`. */
 export async function openLinkInView(app: App, url: string): Promise<void> {
   const leaf = app.workspace.getLeaf("tab");
   await leaf.setViewState({ type: VIEW_TYPE_ROOST_LINK, active: true, state: { url } });
