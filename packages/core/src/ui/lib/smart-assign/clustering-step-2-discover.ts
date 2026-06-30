@@ -18,6 +18,7 @@ import {
 import { scoreWithSubcategories } from "@/pipeline/score-with-subcategories";
 
 import type { SmartAssignClusteringHost } from "@/ui/lib/smart-assign/clustering";
+import { PIPELINE_STEP } from "@/ui/lib/smart-assign/pipeline-steps";
 import type { ClusteringStep0Slice, ClusteringStep1Slice, ClusteringStep2Slice } from "@/ui/lib/smart-assign/clustering-context";
 
 export async function runClusteringStep2DiscoverAndScore(
@@ -66,7 +67,7 @@ export async function runClusteringStep2DiscoverAndScore(
     discovered = dedup.discovered;
 
     if (discovered.length > 0) {
-      host.setPipelineStep(3);
+      host.setPipelineStep(PIPELINE_STEP.DESCRIBE);
       host.log(`\n── Step 3: Generating contrastive descriptions for ${discovered.length} new categories ──`);
       const clusterDefs = discovered.map(d => ({ name: d.name, memberIds: d.itemIds }));
       const newDescResult = await generateClusterDescriptions({
@@ -94,7 +95,7 @@ export async function runClusteringStep2DiscoverAndScore(
       host.setNewClusterDescriptions(new Map(newDescResult.descriptions));
       host.setNewClusterNotDescriptions(new Map(newDescResult.notDescriptions));
 
-      host.setPipelineStep(4);
+      host.setPipelineStep(PIPELINE_STEP.SCORE_NEW);
       host.setSyncProgress({ phase: "scoring", count: 0, written: 0, skipped: 0, resynced: 0 });
       const newCollections: Record<string, string[]> = {};
       for (const d of discovered) newCollections[d.name] = d.itemIds;

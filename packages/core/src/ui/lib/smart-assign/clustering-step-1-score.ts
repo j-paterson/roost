@@ -21,6 +21,7 @@ import { scoreWithSubcategories } from "@/pipeline/score-with-subcategories";
 import { loadTrainingSet, suppressionMap } from "@/pipeline/training-set";
 
 import type { SmartAssignClusteringHost } from "@/ui/lib/smart-assign/clustering";
+import { PIPELINE_STEP } from "@/ui/lib/smart-assign/pipeline-steps";
 import type { ClusteringStep0Slice, ClusteringStep1Slice } from "@/ui/lib/smart-assign/clustering-context";
 
 export async function runClusteringStep1ScoreKnown(
@@ -28,7 +29,7 @@ export async function runClusteringStep1ScoreKnown(
   signal: StopSignal,
   ctx: Pick<ClusteringStep0Slice, "input" | "cache" | "collections" | "unsortedItemIds" | "embedder">,
 ): Promise<ClusteringStep1Slice | null> {
-  host.setPipelineStep(1);
+  host.setPipelineStep(PIPELINE_STEP.SCORE_KNOWN);
   host.log(`\n── Step 1: Score against known collections ──`);
   host.log(`Scoring ${ctx.unsortedItemIds.length} unsorted items against ${Object.keys(ctx.collections).length} known collections...`);
   host.setSyncProgress({ phase: "scoring", count: ctx.unsortedItemIds.length, written: 0, skipped: 0, resynced: 0 });
@@ -209,7 +210,7 @@ export async function runClusteringStep1ScoreKnown(
   host.setMatchDetailMap(phase1MatchDetails);
   host.log(`Phase 1: ${phase1Assignments.size} items matched to known collections, ${phase1Unmatched.length} unmatched`);
 
-  host.setPipelineStep(2);
+  host.setPipelineStep(PIPELINE_STEP.DISCOVER);
 
   return {
     phase1Assignments,

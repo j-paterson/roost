@@ -29,6 +29,7 @@ import { loadTrainingSet } from "@/pipeline/training-set";
 import { loadRetrainMeta } from "@/pipeline/head-store";
 import type { TrainingSet } from "@/pipeline/training-set";
 import { maybeRetrainAtRunStart, retrainNoticeMessage } from "@/ui/lib/smart-assign/clustering";
+import { PIPELINE_STEP } from "@/ui/lib/smart-assign/pipeline-steps";
 import type { RetrainOutcome } from "@/pipeline/retrain";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -41,6 +42,8 @@ function makeHost(autoRetrain: boolean) {
     app: { vault: fakeVault },
     plugin: { settings: { smartAssignAutoRetrain: autoRetrain } },
     log: vi.fn(),
+    setPipelineStep: vi.fn(),
+    setSyncProgress: vi.fn(),
   } as unknown as Parameters<typeof maybeRetrainAtRunStart>[0];
 }
 
@@ -54,42 +57,67 @@ describe("maybeRetrainAtRunStart", () => {
     vi.mocked(newLabelsSince).mockReturnValue(11);
   });
 
-  it("calls runRetrain when flag is ON and shouldRetrain returns true", () => {
+  it("calls runRetrain when flag is ON and shouldRetrain returns true", async () => {
     vi.mocked(shouldRetrain).mockReturnValue(true);
     const host = makeHost(true);
 
-    maybeRetrainAtRunStart(host);
+    await maybeRetrainAtRunStart(host);
 
     expect(vi.mocked(runRetrain)).toHaveBeenCalledOnce();
     expect(vi.mocked(runRetrain)).toHaveBeenCalledWith(fakeVault, host.log);
   });
 
-  it("does NOT call runRetrain when flag is OFF (even if shouldRetrain would return true)", () => {
+  it("surfaces retrain as its own pipeline step (with a start log) before running it", async () => {
+    vi.mocked(shouldRetrain).mockReturnValue(true);
+    const order: string[] = [];
+    const host = makeHost(true);
+    vi.mocked(host.setPipelineStep).mockImplementation(() => { order.push("step"); });
+    vi.mocked(runRetrain).mockImplementation(() => { order.push("retrain"); return { ran: false, swapped: false, reason: "x" }; });
+
+    await maybeRetrainAtRunStart(host);
+
+    expect(host.setPipelineStep).toHaveBeenCalledWith(PIPELINE_STEP.RETRAIN);
+    expect(host.log).toHaveBeenCalledWith(expect.stringContaining("Retrain"));
+    // The step must be set BEFORE the (blocking) retrain runs, so the UI paints it.
+    expect(order).toEqual(["step", "retrain"]);
+  });
+
+  it("does NOT set the Retrain step or call runRetrain when shouldRetrain returns false", async () => {
+    vi.mocked(shouldRetrain).mockReturnValue(false);
+    const host = makeHost(true);
+
+    await maybeRetrainAtRunStart(host);
+
+    expect(vi.mocked(runRetrain)).not.toHaveBeenCalled();
+    expect(host.setPipelineStep).not.toHaveBeenCalled();
+  });
+
+  it("does NOT call runRetrain when flag is OFF (even if shouldRetrain would return true)", async () => {
     vi.mocked(shouldRetrain).mockReturnValue(true);
     const host = makeHost(false);
 
-    maybeRetrainAtRunStart(host);
+    await maybeRetrainAtRunStart(host);
 
     expect(vi.mocked(runRetrain)).not.toHaveBeenCalled();
     // Should not even check the training set when disabled
     expect(vi.mocked(loadTrainingSet)).not.toHaveBeenCalled();
   });
 
-  it("does NOT call runRetrain when flag is ON but shouldRetrain returns false", () => {
+  it("does NOT call runRetrain when flag is ON but shouldRetrain returns false", async () => {
     vi.mocked(shouldRetrain).mockReturnValue(false);
     const host = makeHost(true);
 
-    maybeRetrainAtRunStart(host);
+    await maybeRetrainAtRunStart(host);
 
     expect(vi.mocked(runRetrain)).not.toHaveBeenCalled();
   });
 
-  it("passes newLabelsSince result to shouldRetrain with newlyEligibleCount 0", () => {
+  it("passes newLabelsSince result to shouldRetrain with newlyEligibleCount 0", async () => {
     vi.mocked(newLabelsSince).mockReturnValue(42);
     vi.mocked(shouldRetrain).mockReturnValue(false);
     const host = makeHost(true);
 
-    maybeRetrainAtRunStart(host);
+    await maybeRetrainAtRunStart(host);
 
     expect(vi.mocked(shouldRetrain)).toHaveBeenCalledWith({
       newLabelsSinceLastTrain: 42,
@@ -97,30 +125,30 @@ describe("maybeRetrainAtRunStart", () => {
     });
   });
 
-  it("uses lastRetrainTs from loadRetrainMeta as the sinceTs watermark", () => {
+  it("uses lastRetrainTs from loadRetrainMeta as the sinceTs watermark", async () => {
     vi.mocked(loadRetrainMeta).mockReturnValue({ lastRetrainTs: 9999 });
     vi.mocked(shouldRetrain).mockReturnValue(false);
     const host = makeHost(true);
 
-    maybeRetrainAtRunStart(host);
+    await maybeRetrainAtRunStart(host);
 
     expect(vi.mocked(newLabelsSince)).toHaveBeenCalledWith(fakeTs, 9999);
   });
 
-  it("logs and does NOT re-throw when an error occurs mid-check", () => {
+  it("logs and does NOT re-throw when an error occurs mid-check", async () => {
     vi.mocked(loadTrainingSet).mockImplementation(() => { throw new Error("disk error"); });
     const host = makeHost(true);
 
-    expect(() => maybeRetrainAtRunStart(host)).not.toThrow();
+    await expect(maybeRetrainAtRunStart(host)).resolves.toBeUndefined();
     expect(host.log).toHaveBeenCalledWith(expect.stringContaining("disk error"));
   });
 
-  it("logs and does NOT re-throw when runRetrain throws", () => {
+  it("logs and does NOT re-throw when runRetrain throws", async () => {
     vi.mocked(shouldRetrain).mockReturnValue(true);
     vi.mocked(runRetrain).mockImplementation(() => { throw new Error("retrain boom"); });
     const host = makeHost(true);
 
-    expect(() => maybeRetrainAtRunStart(host)).not.toThrow();
+    await expect(maybeRetrainAtRunStart(host)).resolves.toBeUndefined();
     expect(host.log).toHaveBeenCalledWith(expect.stringContaining("retrain boom"));
   });
 });

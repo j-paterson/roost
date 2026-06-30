@@ -31,6 +31,7 @@ import { runSmartAssignClustering, type SmartAssignClusteringHost } from "@/ui/l
 import { runClusteringStep0Embed } from "@/ui/lib/smart-assign/clustering-step-0-embed";
 import { runClusteringStep1ScoreKnown } from "@/ui/lib/smart-assign/clustering-step-1-score";
 import { runClusteringStep2DiscoverAndScore } from "@/ui/lib/smart-assign/clustering-step-2-discover";
+import { PIPELINE_STEP } from "@/ui/lib/smart-assign/pipeline-steps";
 import type { EmbeddingCacheEntry, SmartAssignInput, ClassifyProposalData } from "@/types/roost";
 import type { Embedder } from "@/lib/embedder";
 import type { StopSignal } from "@/types/sync";
@@ -336,11 +337,12 @@ describe("clustering integration (steps 0→1→2)", () => {
     installStandardMock();
     await runSmartAssignClustering(host);
 
-    // 1. Pipeline progressed through steps 0, 1, 2, and reached step 5
-    expect(spies.steps).toContain(0);
-    expect(spies.steps).toContain(1);
-    expect(spies.steps).toContain(2);
-    expect(spies.steps[spies.steps.length - 1]).toBe(5);
+    // 1. Pipeline progressed through Embed → Score Known → Discover, ending at Review.
+    // (Retrain step is skipped here: smartAssignAutoRetrain is unset.)
+    expect(spies.steps).toContain(PIPELINE_STEP.EMBED);
+    expect(spies.steps).toContain(PIPELINE_STEP.SCORE_KNOWN);
+    expect(spies.steps).toContain(PIPELINE_STEP.DISCOVER);
+    expect(spies.steps[spies.steps.length - 1]).toBe(PIPELINE_STEP.REVIEW);
 
     // 2. Phase-1 routing: t_cook → Cooking, t_trav → Travel; no fit* items there
     const matched = spies.matched!;

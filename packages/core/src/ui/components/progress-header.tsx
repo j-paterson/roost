@@ -1,8 +1,7 @@
 import * as React from "react";
 import { Pill } from "./ui/pill";
 import { Button } from "./ui/button";
-
-const PIPELINE_STEPS = ["Embed", "Score Known", "Discover", "Describe", "Score New", "Review"] as const;
+import { PIPELINE_STEPS } from "@/ui/lib/smart-assign/pipeline-steps";
 
 export interface SyncProgress {
   phase: string;
@@ -96,6 +95,8 @@ export function ProgressHeader({ syncing, syncProgress, pipelineStep, categoryCo
               <span>processing...</span>
             ) : syncProgress.phase === "scoring" ? (
               <span>{syncProgress.written} / {syncProgress.count} items scored</span>
+            ) : syncProgress.phase === "retraining" ? (
+              <span>retraining classifier...</span>
             ) : syncProgress.phase === "writing" ? (
               <span>{syncProgress.written} / {syncProgress.count} items written</span>
             ) : syncProgress.phase === "renaming" ? (
@@ -117,7 +118,7 @@ export function ProgressHeader({ syncing, syncProgress, pipelineStep, categoryCo
             )}
           </div>
           <div className="h-1.5 rounded-full bg-border overflow-hidden">
-            {syncProgress.phase === "clustering" || syncProgress.phase === "scanning" || syncProgress.phase === "setup" ? (
+            {syncProgress.phase === "clustering" || syncProgress.phase === "scanning" || syncProgress.phase === "setup" || syncProgress.phase === "retraining" ? (
               <div className="h-full bg-primary rounded-full w-full animate-pulse" />
             ) : (
               <div

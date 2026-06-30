@@ -1,5 +1,6 @@
 import type { ClassifyProposalData, EmbeddingCacheEntry, MatchDetail } from "@/types/roost";
 import type { SmartAssignClusteringHost } from "@/ui/lib/smart-assign/clustering";
+import { PIPELINE_STEP } from "@/ui/lib/smart-assign/pipeline-steps";
 
 export function runClusteringStep5Finalize(
   host: SmartAssignClusteringHost,
@@ -30,7 +31,7 @@ export function runClusteringStep5Finalize(
   host.setUserRenames(new Map());
 
   host.log(`\n── Step 5: Review ──`);
-  host.setPipelineStep(5);
+  host.setPipelineStep(PIPELINE_STEP.REVIEW);
   const allProposals = args.result?.proposals || [];
   host.applyFilter({
     folders: allProposals.map(p => ({

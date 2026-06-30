@@ -14,6 +14,7 @@ import { runClusteringStep1ScoreKnown } from "@/ui/lib/smart-assign/clustering-s
 import { runClusteringStep2DiscoverAndScore } from "@/ui/lib/smart-assign/clustering-step-2-discover";
 import { runClusteringStep5Finalize } from "@/ui/lib/smart-assign/clustering-step-5-finalize";
 import { buildClusteringContext } from "@/ui/lib/smart-assign/clustering-context";
+import { PIPELINE_STEP } from "@/ui/lib/smart-assign/pipeline-steps";
 import { loadTagDetectors, scoreWithTagDetectors, type TagAssignment } from "@/pipeline/evaluate";
 import { augmentUncensoredAssignments } from "@/pipeline/uncensored-augment";
 import { buildFileIndex, vaultBasePath } from "@/lib/vault-utils";
@@ -93,19 +94,34 @@ export function retrainNoticeMessage(outcome: RetrainOutcome): string | null {
  * enabled, the trigger threshold is met, and is wrapped in its own try/catch so
  * a retrain failure never aborts the run.
  *
+ * runRetrain is synchronous and CPU-bound — on large training sets it trains the
+ * stacked heads many times (k-fold gate + deploy) and can block for a while. So
+ * we surface it as its OWN pipeline step ("Retrain") and yield once before the
+ * blocking work, letting React commit/paint the step + start log first. Without
+ * this the run looks frozen on "Embed" with no indication anything is happening.
+ *
  * Exported for unit-testing in isolation (host interface is a minimal subset).
  */
-export function maybeRetrainAtRunStart(host: Pick<SmartAssignClusteringHost, "app" | "plugin" | "log">): void {
+export async function maybeRetrainAtRunStart(
+  host: Pick<SmartAssignClusteringHost, "app" | "plugin" | "log" | "setPipelineStep" | "setSyncProgress">,
+): Promise<void> {
   if (!host.plugin.settings.smartAssignAutoRetrain) return;
   try {
     const vault = host.app.vault;
     const ts = loadTrainingSet(vault);
     const since = loadRetrainMeta(vault).lastRetrainTs;
-    if (shouldRetrain({ newLabelsSinceLastTrain: newLabelsSince(ts, since), newlyEligibleCount: 0 })) {
-      const outcome = runRetrain(vault, host.log);
-      const msg = retrainNoticeMessage(outcome);
-      if (msg) new Notice(msg);
-    }
+    if (!shouldRetrain({ newLabelsSinceLastTrain: newLabelsSince(ts, since), newlyEligibleCount: 0 })) return;
+
+    host.setPipelineStep(PIPELINE_STEP.RETRAIN);
+    host.setSyncProgress({ phase: "retraining", count: 0, written: 0, skipped: 0, resynced: 0 });
+    host.log("\n── Retrain: updating classifier from new labels ──");
+    // Yield so React commits the Retrain step + start log BEFORE the blocking
+    // synchronous train begins (otherwise the paint is starved until it returns).
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+    const outcome = runRetrain(vault, host.log);
+    const msg = retrainNoticeMessage(outcome);
+    if (msg) new Notice(msg);
   } catch (e: unknown) {
     host.log(`[retrain] failed (kept current head): ${e instanceof Error ? e.message : String(e)}`);
   }
@@ -113,7 +129,7 @@ export function maybeRetrainAtRunStart(host: Pick<SmartAssignClusteringHost, "ap
 
 export async function runSmartAssignClustering(host: SmartAssignClusteringHost): Promise<void> {
   host.setMode("staging");
-  host.setPipelineStep(0);
+  host.setPipelineStep(PIPELINE_STEP.EMBED);
   const signal: StopSignal = { stopped: false, stop() { this.stopped = true; host.log("Stop requested..."); } };
   host.refs.stopSignalRef.current = signal;
 
@@ -154,7 +170,7 @@ export async function runSmartAssignClustering(host: SmartAssignClusteringHost):
     }
 
     // ── Self-Improving Loop: retrain BEFORE scoring so this run uses the improved head ──
-    maybeRetrainAtRunStart(host);
+    await maybeRetrainAtRunStart(host);
 
     const step1 = await runClusteringStep1ScoreKnown(host, signal, step0);
     if (!step1) return;
