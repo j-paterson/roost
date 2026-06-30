@@ -493,3 +493,22 @@ button.roost-tree-action.roost-tree-action:disabled {
   font-style: italic;
   color: var(--text-muted);
 }
+
+/* ── Link card ── */
+.roost-linkcard { display: flex; gap: 0; border: 1px solid var(--background-modifier-border);
+  border-radius: 10px; overflow: hidden; cursor: pointer; background: var(--background-secondary); }
+.roost-linkcard:hover { border-color: var(--interactive-accent); }
+.roost-linkcard-thumb { width: 120px; flex: 0 0 120px; background-size: cover; background-position: center; }
+.roost-linkcard-body { padding: 11px 13px; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.roost-linkcard-title { font-weight: 600; font-size: 14px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.roost-linkcard-desc { color: var(--text-muted); font-size: 12.5px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.roost-linkcard-site { color: var(--text-muted); font-size: 12px; margin-top: auto; }
+.roost-linkcard-compact { flex-direction: column; }
+.roost-linkcard-compact .roost-linkcard-thumb { width: 100%; flex: none; height: 120px; }
+/* link-tile cover (gallery) + badge */
+.roost-card-cover-linktile { position: relative; }
+.roost-card-cover-linktile::after { content: attr(data-domain); position: absolute; left: 0; right: 0; bottom: 0;
+  background: linear-gradient(transparent, rgba(0,0,0,.82)); color: #fff; font-size: 11px; font-weight: 600;
+  padding: 22px 10px 8px; }
+.roost-card-link-badge { position: absolute; top: 7px; right: 7px; background: rgba(0,0,0,.6); color: #fff;
+  font-size: 10px; padding: 2px 6px; border-radius: 999px; }
