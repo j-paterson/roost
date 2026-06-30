@@ -1,6 +1,6 @@
 # Roost — Obsidian Bookmark Organizer
 
-Sync, categorize, and visualize social media bookmarks from TikTok, X/Twitter, and Instagram inside Obsidian.
+Sync, categorize, and visualize social media bookmarks from TikTok, X/Twitter, Instagram, and Reddit inside Obsidian.
 
 ## Overview
 
@@ -72,9 +72,9 @@ packages/core/src/
 │   ├── registry.ts                  #   card+parsers+vault{folder,attachPrefix,icon}. getPlatform()/
 │   │                                #   enabledPlatforms(). PLATFORMS uses getter props (lazy bind,
 │   │                                #   breaks the descriptor→sync→normalize→registry import cycle).
-│   └── tiktok.ts, twitter.ts, instagram.ts  # "add a platform = one descriptor". eagle = special case.
+│   └── tiktok.ts, twitter.ts, instagram.ts, reddit.ts  # "add a platform = one descriptor". eagle = special case.
 ├── sync/
-│   ├── tiktok-sync.ts, twitter-sync.ts, instagram-sync.ts, run-platform-sync.ts
+│   ├── tiktok-sync.ts, twitter-sync.ts, instagram-sync.ts, reddit-sync.ts, run-platform-sync.ts
 │   ├── vault-writer.ts              # Notes + media + scanIncompleteIds buckets
 │   ├── article-backfill.ts, thread-backfill.ts, media-backfill.ts
 │   └── …                            # webview-manager, eagle-import, bases-setup, card-renderer
@@ -92,7 +92,7 @@ packages/core/src/
 │   ├── extract.ts, vault-helpers.ts, vault-utils.ts, roost-paths.ts
 │   └── …
 ├── types/                           # roost.d.ts, sync.ts, plugin.ts
-├── probes/                          # tiktok-probe.js, twitter-probe.js, instagram-probe.js (active fetch+media), instagram-discovery.js (passive observer)
+├── probes/                          # tiktok-probe.js, twitter-probe.js, instagram-probe.js (active fetch+media), instagram-discovery.js (passive observer), reddit-probe.js (active fetch), reddit-discovery.js (passive observer)
 └── styles/                          # globals.css, bases-view.css
 ```
 
@@ -277,6 +277,12 @@ Folder membership is a **plain "Backfill X bookmark folders" Cmd+P command** (`r
 Unlike TikTok/X (DOM/GraphQL scroll), Instagram's saved grid is a clean paginated REST API, so the sync loop runs in **TypeScript**, not injected JS. The active probe (`probes/instagram-probe.js`) is thin: it harvests the live `x-asbd-id` + `x-ig-www-claim` from the SPA's own traffic and exposes two page-context helpers — `__roostIgFetch(path)` (authenticated same-origin GET, `X-IG-App-ID: 936619743392459`, claim capture/resend) and `__roostIgFetchMediaBase64(url)` (time-limited CDN media → base64, fetched during sync). `sync/instagram-sync.ts` drives it: `collections/list` → folder map, then paginate `/api/v1/feed/saved/posts/?count=50&max_id=…` while `more_available`, stamping each item's `saved_collection_ids` → `_roost_collections`. Pacing = 1–3s jitter, `count ≤ 50`, exponential backoff + graceful abort on 429/`FeedbackRequired`. The pure `paginateSaved` (injected `igFetch`/`sleep`) is fully unit-tested; **early-out** mirrors TikTok/X (known-ids, `EARLY_OUT_THRESHOLD` consecutive all-known pages, gated on a real processed item). `roost_id` = `instagram:<shortcode>`. `InstagramRecordWriter` (mirrors the TikTok writer) downloads image/video/carousel media via the webview during sync, writes `raw.json`, and files collections as `collection/<name>` tags + a `collections:` frontmatter list. The gated live spec `tests/e2e/91-instagram-sync.live.spec.ts` drives the production `runSync("instagram")` path end-to-end. (Plan: `docs/superpowers/plans/2026-06-30-instagram-ingestion-phase2.md`.)
 
 **Cross-platform abstraction.** Phase 2 routed the per-platform branches through the registry rather than growing `if (platform === …)` chains: folder/attachment-prefix/icon live in `descriptor.vault`; `VaultWriter.writeBatch` and `ResyncRunner.resyncRecord` dispatch through tables; `extract.ts`/`normalize.ts` already dispatch via `descriptor.parse.*`.
+
+### Reddit Saved-Posts Sync (2026-06-30)
+
+Reddit reuses the same registry-driven, TypeScript-loop shape as Instagram. The active probe (`probes/reddit-probe.js`) exposes one page-context helper — `__roostRedditFetch(path)` — an authenticated same-origin GET (`credentials:"include"`, `Accept: application/json`) that returns `JSON.stringify({status, body})` and never rejects (`{status:-1,error}` on throw). `sync/reddit-sync.ts` drives it: resolve the username from `/api/me.json`, then paginate `…/saved.json?type=links&raw_json=1&after=…` following `data.after` until null. Only **posts (kind `t3`)** are kept (the `type=links` param plus a client-side filter); comments are dropped. Pacing = 8–12s jitter between pages, exponential backoff + graceful abort on 429/5xx. A **dual counter** separates the 1000-item hard cap (Reddit's listing ceiling, tracked by raw `rawCount`) from the unique-after-dedupe `totalFetched`; ids are deduped across pages by `reddit:<id>`. The pure `paginateSaved` (injected `redditFetch`/`sleep`) is fully unit-tested. `roost_id` = `reddit:<id>`.
+
+Media is downloaded with Obsidian's `requestUrl` — **not** the webview — because redd.it serves no CORS headers; each request carries a Chrome `User-Agent` + `Referer: https://www.reddit.com/` (`sync/media-downloader.ts::downloadRedditImage`). `extractRedditMedia` (`lib/reddit-helpers.ts`) classifies each post into image / gallery (`media_metadata`, status `"valid"`, id-sorted, preview→`i.redd.it`) / video (v.redd.it) / link / self, recursing one level into `crosspost_parent_list`. v.redd.it video is muxed: download the `fallback_url` video stream, fetch `DASHPlaylist.mpd`, parse the audio `<BaseURL>` (`parseRedditAudioBaseUrl` covers every naming era — `CMAF_AUDIO_*`, `DASH_AUDIO_*`, `DASH_audio.mp4`, bare `audio`), and `ffmpeg`-mux video+audio (`muxRedditVideo`, ffmpeg resolved via `findBinary` in `run-platform-sync.ts`); when ffmpeg is absent or the track has no audio it falls back to **video-only**. `muxRedditVideo` cleans up its temp files in a `finally`; the writer guards `fs.existsSync(outPath)` before importing bytes. `RedditRecordWriter` (mirrors the Instagram writer) writes `raw.json`, renders selftext as the note body (`[removed]`/`[deleted]`→stub), and files the subreddit as both a `subreddit/<sanitized>` tag and an `r/<name>` frontmatter field. The gated live spec `tests/e2e/92-reddit-sync.live.spec.ts` drives the production `syncPlatformHeadless("reddit")` path end-to-end (live-validated against a real account 2026-06-30). Deferred by design: saved comments, GDPR-export backfill beyond 1000, OAuth. (Plan: `docs/superpowers/plans/2026-06-30-reddit-saved-sync.md`.)
 
 **How it works:**
 
