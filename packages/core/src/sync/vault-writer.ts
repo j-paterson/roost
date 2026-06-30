@@ -2,6 +2,7 @@ import { Vault, MetadataCache } from "obsidian";
 import type { ElectronWebview } from "@/types/sync";
 import { TwitterRecordWriter } from "./vault-writer/twitter-record-writer";
 import { TikTokRecordWriter } from "./vault-writer/tiktok-record-writer";
+import { InstagramRecordWriter } from "./vault-writer/instagram-record-writer";
 import { VaultIndex, type IncompleteIdsResult } from "./vault-writer/vault-index";
 export type { IncompleteByCategory, IncompleteIdsResult } from "./vault-writer/vault-index";
 import { NoteFileWriter } from "./vault-writer/note-file-writer";
@@ -25,6 +26,8 @@ interface VaultWriterOpts {
   metadataCache?: MetadataCache;
   /** Electron <webview> element for TikTok video downloads (private Electron API) */
   tiktokWebview?: ElectronWebview;
+  /** Electron <webview> element for Instagram media downloads */
+  instagramWebview?: ElectronWebview;
   onLog?: (msg: string) => void;
 }
 
@@ -38,6 +41,7 @@ export class VaultWriter {
   private mediaDownloader: MediaDownloader;
   private twitterWriter: TwitterRecordWriter;
   private tiktokWriter: TikTokRecordWriter;
+  private instagramWriter: InstagramRecordWriter;
   private resyncRunner: ResyncRunner;
   /** Cumulative counters across all writeBatch calls */
   private cumulative = { pushed: 0, resynced: 0, skipped: 0, processed: 0 };
@@ -86,16 +90,28 @@ export class VaultWriter {
       ensuredFolders: this.ensuredFolders,
       tiktokWc: opts.tiktokWebview,
     });
+    this.instagramWriter = new InstagramRecordWriter({
+      vault: opts.vault,
+      syncFolder: opts.syncFolder,
+      log: this.log,
+      index: this.index,
+      noteWriter: this.noteWriter,
+      mediaDownloader: this.mediaDownloader,
+      ensuredFolders: this.ensuredFolders,
+      instagramWc: opts.instagramWebview,
+    });
     this.resyncRunner = new ResyncRunner({
       vault: opts.vault,
       syncFolder: opts.syncFolder,
       tiktokWc: opts.tiktokWebview,
+      instagramWc: opts.instagramWebview,
       log: this.log,
       index: this.index,
       ensuredFolders: this.ensuredFolders,
       noteWriter: this.noteWriter,
       mediaDownloader: this.mediaDownloader,
       twitterWriter: this.twitterWriter,
+      instagramWriter: this.instagramWriter,
     });
   }
 
@@ -157,6 +173,8 @@ export class VaultWriter {
           await this.twitterWriter.writeTwitterRecord(record);
         } else if (platform === "tiktok") {
           await this.tiktokWriter.writeTikTokRecord(record);
+        } else if (platform === "instagram") {
+          await this.instagramWriter.writeInstagramRecord(record);
         } else {
           await this.noteWriter.writeGenericRecord(record);
         }

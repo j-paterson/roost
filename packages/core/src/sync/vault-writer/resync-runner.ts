@@ -5,6 +5,7 @@ import { type VaultIndex } from "./vault-index";
 import { type NoteFileWriter, articleFrontmatterFields } from "./note-file-writer";
 import { type MediaDownloader, type QuarantinedFile } from "./media-downloader";
 import { type TwitterRecordWriter } from "./twitter-record-writer";
+import { type InstagramRecordWriter } from "./instagram-record-writer";
 import { loadQuotedTweetBitmap, type ThreadMeta } from "./twitter-record-writer";
 import { type NormalizedRecord } from "../../lib/normalize";
 import { renderCardAsync } from "../card-renderer";
@@ -25,35 +26,41 @@ interface ResyncRunnerOpts {
   vault: Vault;
   syncFolder: string;
   tiktokWc: ElectronWebview | undefined;
+  instagramWc: ElectronWebview | undefined;
   log: (msg: string) => void;
   index: VaultIndex;
   ensuredFolders: Set<string>;
   noteWriter: NoteFileWriter;
   mediaDownloader: MediaDownloader;
   twitterWriter: TwitterRecordWriter;
+  instagramWriter: InstagramRecordWriter;
 }
 
 export class ResyncRunner {
   private vault: Vault;
   private syncFolder: string;
   private tiktokWc: ElectronWebview | undefined;
+  private instagramWc: ElectronWebview | undefined;
   private log: (msg: string) => void;
   private index: VaultIndex;
   private ensuredFolders: Set<string>;
   private noteWriter: NoteFileWriter;
   private mediaDownloader: MediaDownloader;
   private twitterWriter: TwitterRecordWriter;
+  private instagramWriter: InstagramRecordWriter;
 
   constructor(opts: ResyncRunnerOpts) {
     this.vault = opts.vault;
     this.syncFolder = opts.syncFolder;
     this.tiktokWc = opts.tiktokWc;
+    this.instagramWc = opts.instagramWc;
     this.log = opts.log;
     this.index = opts.index;
     this.ensuredFolders = opts.ensuredFolders;
     this.noteWriter = opts.noteWriter;
     this.mediaDownloader = opts.mediaDownloader;
     this.twitterWriter = opts.twitterWriter;
+    this.instagramWriter = opts.instagramWriter;
   }
 
   // PUBLIC — called from VaultWriter.writeBatch
@@ -263,6 +270,10 @@ export class ResyncRunner {
           await this.noteWriter.rewriteNoteBody(record);
         }
       }
+    } else if (platform === "instagram") {
+      // IG CDN URLs expire, so media re-fetch only works while a live IG
+      // webview exists; best-effort. Re-render note + raw.json from rawData.
+      await this.instagramWriter.writeInstagramRecord(record);
     }
   }
 }

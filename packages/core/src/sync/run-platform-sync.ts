@@ -110,6 +110,7 @@ export async function runPlatformSync(opts: RunPlatformSyncOpts): Promise<RunPla
     // for TikTok notes regardless of the active sync platform, so a Twitter webview
     // here would mis-classify TikTok media-missing items. Strict-parity guard.
     tiktokWebview: platform === "tiktok" ? wc : undefined,
+    instagramWebview: platform === "instagram" ? wc : undefined,
     onLog: log,
   });
 
