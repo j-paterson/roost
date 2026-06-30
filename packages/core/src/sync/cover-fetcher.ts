@@ -10,6 +10,7 @@ import { App, TFile, requestUrl } from "obsidian";
 import { getNoteAuthor, getNoteTitle, safeGetValue } from "@/lib/bases-entry";
 import { hasValue } from "@/views/content-detector";
 import type { BasesEntry } from "obsidian";
+import { domainFromUrl } from "@/lib/link-card";
 
 const COVERS_FOLDER = "assets/covers";
 
@@ -108,20 +109,35 @@ async function fetchBookCover(title: string, author: string | null): Promise<str
   } catch { return null; }
 }
 
-async function fetchOgImage(url: string): Promise<string | null> {
+function metaContent(html: string, key: string): string | null {
+  const m = html.match(new RegExp(`<meta\\s+(?:property|name)="${key}"\\s+content="([^"]*)"`, "i"))
+    || html.match(new RegExp(`<meta\\s+content="([^"]*)"\\s+(?:property|name)="${key}"`, "i"));
+  return m ? m[1] : null;
+}
+
+export interface OgMetadata { title: string | null; description: string | null; image: string | null; siteName: string | null; }
+
+/** Fetch a URL and parse Open Graph + fallbacks. Never throws — returns
+ *  all-null on any failure (dead link, non-200, no tags). */
+export async function fetchOgMetadata(url: string): Promise<OgMetadata> {
   try {
     const resp = await requestUrl({ url, headers: { "User-Agent": "ObsidianCoverFetcher/1.0" } });
+    if (resp.status < 200 || resp.status >= 300) return { title: null, description: null, image: null, siteName: null };
     const html = resp.text;
-    // Look for og:image meta tag
-    const match = html.match(/<meta\s+(?:property|name)="og:image"\s+content="([^"]+)"/i)
-      || html.match(/<meta\s+content="([^"]+)"\s+(?:property|name)="og:image"/i);
-    if (match) {
-      let imgUrl = match[1];
-      if (imgUrl.startsWith("//")) imgUrl = "https:" + imgUrl;
-      return imgUrl;
-    }
-    return null;
-  } catch { return null; }
+    const titleTag = html.match(/<title[^>]*>([^<]*)<\/title>/i)?.[1]?.trim() || null;
+    return {
+      title: metaContent(html, "og:title") || titleTag,
+      description: metaContent(html, "og:description"),
+      image: metaContent(html, "og:image"),
+      siteName: metaContent(html, "og:site_name") || domainFromUrl(url),
+    };
+  } catch {
+    return { title: null, description: null, image: null, siteName: null };
+  }
+}
+
+async function fetchOgImage(url: string): Promise<string | null> {
+  return (await fetchOgMetadata(url)).image;
 }
 
 // ─── Cover resolution ─────────────────────────────────────────
