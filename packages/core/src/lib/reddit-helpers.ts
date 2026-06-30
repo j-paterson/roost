@@ -15,6 +15,15 @@ export function redditPreviewToPermanent(url: string): string {
   return url.split("?")[0].replace("/preview.", "/i.");
 }
 
+/** The signed, download-ready form of a Reddit preview URL: HTML entities
+ *  decoded (Reddit returns `&amp;` in JSON) and the `?...&s=<sig>` signature
+ *  KEPT. Video/link posters live on (external-)preview.redd.it and 404 without
+ *  their signature — unlike uploaded image/gallery posts there is no permanent
+ *  i.redd.it copy, so they must be fetched from this signed URL at sync time. */
+export function redditSignedPreviewUrl(url: string): string {
+  return url ? url.replace(/&amp;/g, "&") : url;
+}
+
 export function buildRedditUrl(permalink: string): string {
   if (!permalink) return "";
   return permalink.startsWith("http") ? permalink : `https://www.reddit.com${permalink}`;
@@ -33,18 +42,19 @@ export interface RedditMediaResult {
   videoId: string | null;
   hasAudio: boolean;
   isGif: boolean;
-  coverUrl: string | null;   // permanent poster
+  coverUrl: string | null;   // permanent poster (remote reference)
+  coverDownloadUrl: string | null;  // signed poster to fetch at sync time
   linkUrl: string | null;    // external link / non-media url
   selftext: string;
 }
 
 function empty(): RedditMediaResult {
-  return { kind: "link", images: [], videoUrl: null, dashUrl: null, videoId: null, hasAudio: false, isGif: false, coverUrl: null, linkUrl: null, selftext: "" };
+  return { kind: "link", images: [], videoUrl: null, dashUrl: null, videoId: null, hasAudio: false, isGif: false, coverUrl: null, coverDownloadUrl: null, linkUrl: null, selftext: "" };
 }
 
-function posterFrom(raw: RawApiData): string | null {
+function rawPosterUrl(raw: RawApiData): string | null {
   const u = raw?.preview?.images?.[0]?.source?.url;
-  return typeof u === "string" ? redditPreviewToPermanent(u) : null;
+  return typeof u === "string" ? u : null;
 }
 
 export function extractRedditMedia(record: BookmarkRecord): RedditMediaResult {
@@ -59,7 +69,9 @@ export function extractRedditMedia(record: BookmarkRecord): RedditMediaResult {
   const out = empty();
   out.linkUrl = (raw.url_overridden_by_dest as string) || (raw.url as string) || null;
   out.selftext = typeof raw.selftext === "string" ? raw.selftext : "";
-  out.coverUrl = posterFrom(raw);
+  const rawPoster = rawPosterUrl(raw);
+  out.coverUrl = rawPoster ? redditPreviewToPermanent(rawPoster) : null;
+  out.coverDownloadUrl = rawPoster ? redditSignedPreviewUrl(rawPoster) : null;
 
   // Video (v.redd.it)
   if (raw.is_video) {

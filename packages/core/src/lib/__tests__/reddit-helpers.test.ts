@@ -57,6 +57,22 @@ describe("extractRedditMedia", () => {
     expect(r.dashUrl).toBe("https://v.redd.it/vid1/DASHPlaylist.mpd");
     expect(r.videoId).toBe("vid1"); expect(r.hasAudio).toBe(true);
     expect(r.coverUrl).toBe("https://i.redd.it/p.jpg");
+    // The download URL keeps the signature so the poster actually resolves.
+    expect(r.coverDownloadUrl).toBe("https://preview.redd.it/p.jpg?s=z");
+  });
+
+  it("video poster on external-preview keeps its signature for download (no dead i.redd.it rewrite)", () => {
+    const signed = "https://external-preview.redd.it/abc.png?format=pjpg&amp;auto=webp&amp;s=deadbeef";
+    const r = extractRedditMedia(rec({
+      is_video: true, post_hint: "hosted:video",
+      secure_media: { reddit_video: { fallback_url: "https://v.redd.it/vid2/DASH_720.mp4?x=1", dash_url: "https://v.redd.it/vid2/DASHPlaylist.mpd", has_audio: false } },
+      preview: { images: [{ source: { url: signed } }] },
+    }));
+    // Download URL: HTML entities decoded, signature query intact.
+    expect(r.coverDownloadUrl).toBe("https://external-preview.redd.it/abc.png?format=pjpg&auto=webp&s=deadbeef");
+    // The "permanent" form is the broken one for external-preview — proves why
+    // the writer must download from coverDownloadUrl, not coverUrl.
+    expect(r.coverDownloadUrl).not.toContain("/i.redd.it/");
   });
 
   it("crosspost → recurses into parent media", () => {

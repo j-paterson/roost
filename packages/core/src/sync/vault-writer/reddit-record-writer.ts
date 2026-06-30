@@ -97,17 +97,23 @@ export class RedditRecordWriter {
       } finally {
         try { if (fs.existsSync(outPath)) fs.unlinkSync(outPath); } catch { /* ignore */ }
       }
-      if (media.coverUrl) {
+      // Video posters live on signed (external-)preview.redd.it with no permanent
+      // i.redd.it copy — fetch the signed URL (query intact) or the cover 404s.
+      const posterUrl = media.coverDownloadUrl ?? media.coverUrl;
+      if (posterUrl) {
         const embed = await this.mediaDownloader.downloadAndSave(
-          () => downloadRedditImage(media.coverUrl!), attachFolder, "cover.jpg",
+          () => downloadRedditImage(posterUrl), attachFolder, "cover.jpg",
         );
         if (embed) coverFile = `${attachFolder}/cover.jpg`; // poster is the gallery cover
       }
-    } else if (media.kind === "link" && media.coverUrl) {
-      const embed = await this.mediaDownloader.downloadAndSave(
-        () => downloadRedditImage(media.coverUrl!), attachFolder, "cover.jpg",
-      );
-      if (embed) coverFile = `${attachFolder}/cover.jpg`;
+    } else if (media.kind === "link") {
+      const posterUrl = media.coverDownloadUrl ?? media.coverUrl;
+      if (posterUrl) {
+        const embed = await this.mediaDownloader.downloadAndSave(
+          () => downloadRedditImage(posterUrl), attachFolder, "cover.jpg",
+        );
+        if (embed) coverFile = `${attachFolder}/cover.jpg`;
+      }
     }
 
     await ensureFolder(this.vault, attachFolder, this.ensuredFolders);
