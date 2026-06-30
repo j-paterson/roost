@@ -128,6 +128,39 @@ export async function exportCookies(
   }
 
   const json = JSON.stringify(exported, null, 2);
+
+  // Preferred: write the cookie file straight into the repo's tests/e2e dir.
+  // The plugin runs against the VAULT, not the repo, so the repo root comes
+  // from ROOST_REPO (set alongside ROOST_DEV_COMMANDS when developing). On
+  // success we're done — no clipboard step.
+  const repoDir =
+    typeof process !== "undefined" ? process.env?.ROOST_REPO?.trim() : undefined;
+  if (repoDir) {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const fs = require("fs");
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const nodePath = require("path");
+      const outPath = nodePath.isAbsolute(target.file)
+        ? target.file
+        : nodePath.join(repoDir, target.file);
+      fs.mkdirSync(nodePath.dirname(outPath), { recursive: true });
+      fs.writeFileSync(outPath, json, "utf8");
+      new Notice(
+        `${target.label} cookies written to ${outPath} (${exported.length} cookies).\n\n` +
+          `SECURITY: it's gitignored — do NOT commit it.`,
+        12000,
+      );
+      return;
+    } catch (e) {
+      new Notice(
+        `Could not write ${target.file} (${String(e)}). Falling back to clipboard.`,
+        8000,
+      );
+    }
+  }
+
+  // Fallback: clipboard (ROOST_REPO unset, or the file write failed above).
   try {
     await navigator.clipboard.writeText(json);
   } catch (e) {
@@ -144,6 +177,7 @@ export async function exportCookies(
   new Notice(
     `${target.label} cookies copied to clipboard (${exported.length} cookies).\n\n` +
       `Paste into  ${target.file}  in the project repo to enable live tests.\n\n` +
+      `(Set ROOST_REPO=<repo path> to have this command write the file directly.)\n\n` +
       `SECURITY: Cookies are session credentials — do NOT commit that file. It is in .gitignore.`,
     12000,
   );
