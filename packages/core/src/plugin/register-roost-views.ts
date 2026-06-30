@@ -6,6 +6,7 @@ import type { QueryController } from "obsidian";
 import type { Plugin } from "obsidian";
 import { RoostView, VIEW_TYPE_ROOST } from "@/views/roost-view";
 import { RoostWebviewView, VIEW_TYPE_ROOST_WEBVIEW } from "@/views/roost-webview-view";
+import { RoostLinkView, VIEW_TYPE_ROOST_LINK } from "@/views/roost-link-view";
 import { RoostHubView, VIEW_TYPE_ROOST_HUB } from "@/views/roost-hub-view";
 import { BookmarksBasesView, BASES_VIEW_ID } from "@/views/bookmarks-bases-view";
 import { bookmarksViewOptions } from "@/views/bookmarks-view-options";
@@ -28,6 +29,7 @@ export function registerRoostViews(
 ): void {
   host.registerView(VIEW_TYPE_ROOST, (leaf) => new RoostView(leaf, host));
   host.registerView(VIEW_TYPE_ROOST_WEBVIEW, (leaf) => new RoostWebviewView(leaf, host));
+  host.registerView(VIEW_TYPE_ROOST_LINK, (leaf) => new RoostLinkView(leaf));
   host.registerView(VIEW_TYPE_ROOST_HUB, (leaf) => new RoostHubView(leaf, host));
 
   registerRoostCardBlock(host);

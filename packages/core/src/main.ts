@@ -1,6 +1,7 @@
 import { Plugin, FileSystemAdapter } from "obsidian";
 import { VIEW_TYPE_ROOST } from "./views/roost-view";
 import { VIEW_TYPE_ROOST_WEBVIEW } from "./views/roost-webview-view";
+import { VIEW_TYPE_ROOST_LINK, openLinkInView } from "./views/roost-link-view";
 import { migrateRoostLayout } from "@/lib/roost-layout-migrate";
 import { registerRoostViews } from "@/plugin/register-roost-views";
 import { registerRoostCommands } from "@/plugin/register-roost-commands";
@@ -323,6 +324,10 @@ export default class RoostPlugin extends Plugin {
     await this.ws().openWebview(platform);
   }
 
+  async openLink(url: string): Promise<void> {
+    await openLinkInView(this.app, url);
+  }
+
   async refreshAuthStatus(): Promise<void> {
     const wm = this.getWebviewManager();
     const next = { ...this.authStatus };
@@ -360,6 +365,7 @@ export default class RoostPlugin extends Plugin {
   onunload() {
     this.app.workspace.detachLeavesOfType(VIEW_TYPE_ROOST);
     this.app.workspace.detachLeavesOfType(VIEW_TYPE_ROOST_WEBVIEW);
+    this.app.workspace.detachLeavesOfType(VIEW_TYPE_ROOST_LINK);
     this.workspace?.destroy();
     this.workspace = null;
     teardownInlinePlayer();

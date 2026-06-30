@@ -87,6 +87,7 @@ export interface IRoostPlugin {
   openBookmarksBase(): Promise<void>;
   openExplorerBase(): Promise<void>;
   openWebview(platform: Platform): Promise<void>;
+  openLink(url: string): Promise<void>;
   closeWebview(): void;
   setFilter(filter: RoostFilter): void;
   saveSettings(): Promise<void>;

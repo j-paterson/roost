@@ -512,3 +512,11 @@ button.roost-tree-action.roost-tree-action:disabled {
   padding: 22px 10px 8px; }
 .roost-card-link-badge { position: absolute; top: 7px; right: 7px; background: rgba(0,0,0,.6); color: #fff;
   font-size: 10px; padding: 2px 6px; border-radius: 999px; }
+
+/* ── RoostLinkView ── */
+.roost-linkview-bar { display: flex; align-items: center; gap: 10px; padding: 8px 12px;
+  border-bottom: 1px solid var(--background-modifier-border); }
+.roost-linkview-domain { font-weight: 600; color: var(--text-normal); }
+a.roost-linkview-open { font-size: 0.82em; color: var(--text-muted); text-decoration: none; }
+a.roost-linkview-open:hover { color: var(--interactive-accent); }
+.roost-linkview-webview { flex: 1; width: 100%; height: 100%; border: 0; }

@@ -9,6 +9,7 @@ import { ContentType, detectContentType, extractDomain, hasValue } from "@/views
 import { EXPLORER_RICH_FIELDS, EXPLORER_SKIP_PROPS } from "@/views/explorer-view-options";
 import type { ExplorerCardConfig } from "@/views/explorer-hydrate-card";
 import { renderLinkCard } from "@/views/link-card-renderer";
+import { openLinkInView } from "@/views/roost-link-view";
 
 export interface ExplorerExpandedHost {
   app: App;
@@ -139,13 +140,19 @@ export function renderExplorerExpandedPanel(
   // anchor. Keep the bare-<a> path only as fallback for a generic note.url field.
   const linkUrlRaw = safeGetValue(entry, "note.link_url")?.toString();
   if (linkUrlRaw) {
-    renderLinkCard(info, {
+    const expandedLinkCard = renderLinkCard(info, {
       url: linkUrlRaw,
       title: safeGetValue(entry, "note.link_title")?.toString(),
       description: safeGetValue(entry, "note.link_desc")?.toString(),
       site: safeGetValue(entry, "note.link_site")?.toString(),
       imageSrc: host.resolveImageUrl(entry, "note.link_image"),
     }, { compact: true });
+    if (expandedLinkCard) {
+      expandedLinkCard.addEventListener("click", (e) => {
+        e.stopPropagation();
+        void openLinkInView(host.app, linkUrlRaw);
+      });
+    }
   } else {
     const urlRaw = safeGetValue(entry, "note.url");
     const urlStr = hasValue(urlRaw) ? String(urlRaw) : null;

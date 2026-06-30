@@ -64,6 +64,8 @@ export interface GalleryCardHandlers {
   isTextTileCover: (entry: BasesEntry) => boolean;
   /** Pipeline type for the compact-card overlay icon, resolved from frontmatter. */
   pipelineTypeForEntry: (entry: BasesEntry) => PipelineType | null;
+  /** Called when the user clicks the 🔗 badge on a link card. */
+  onOpenLink?: (url: string) => void;
 }
 
 /** Render the cover area as a text tile (author + tweet body) instead of the
@@ -261,6 +263,14 @@ export function hydrateGalleryCard(
     if (coverDecision.badge) {
       const badge = coverEl.createSpan({ cls: "roost-card-link-badge" });
       badge.textContent = "🔗";
+      if (handlers.onOpenLink) {
+        const capturedUrl = linkUrl;
+        const capturedOpen = handlers.onOpenLink;
+        badge.addEventListener("click", (e) => {
+          e.stopPropagation();
+          capturedOpen(capturedUrl);
+        });
+      }
     }
   }
 

@@ -61,6 +61,7 @@ import { createBookmarksPipelineHost } from "@/views/gallery-pipeline-setup";
 import { pipelineTypeFromFrontmatter } from "@/pipeline/extraction-from-frontmatter";
 import type { PipelineGalleryHost } from "@/views/gallery-pipeline-host";
 import { isPipelineSubstituteView } from "@/views/pipeline-views/registry";
+import { openLinkInView } from "@/views/roost-link-view";
 import { isCategoryPipelineActive } from "@/lib/pipeline-gate-plugin";
 import { CATEGORY_FIELD } from "@/config";
 import { safeGetValue } from "@/lib/bases-entry";
@@ -562,6 +563,7 @@ export class BookmarksBasesView extends BasesView
       hasMultipleImages: (entry: BasesEntry) => galleryHasMultipleImages(this.app, entry),
       isTextTileCover: (entry: BasesEntry) => galleryIsTextTileCover(this.app, entry),
       pipelineTypeForEntry: (entry: BasesEntry) => pipelineTypeFromFrontmatter(this.app.metadataCache.getFileCache(entry.file)?.frontmatter ?? {}),
+      onOpenLink: (url: string) => { void openLinkInView(this.app, url); },
       onSelect: (roostId: string, e: MouseEvent) => {
         if (e.shiftKey) {
           this.gallerySelection.selectRange(roostId, this.getOrderedVisibleRoostIds());

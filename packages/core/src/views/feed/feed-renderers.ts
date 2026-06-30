@@ -22,6 +22,7 @@ import {
 import { resolveImageUrl, resolveVideoUrl, resolveAllImages } from "@/views/feed/card-helpers";
 import { readGuess } from "@/views/feed/training-mode";
 import { renderLinkCard } from "@/views/link-card-renderer";
+import { openLinkInView } from "@/views/roost-link-view";
 
 /** In-session mute preference shared across all TikTok feed items.
  *  Persisted only for the lifetime of the plugin process. */
@@ -162,13 +163,19 @@ function renderFeedExpandedItem(
   // scraped link preview. data-link-url is tagged here; Task 11 wires the click handler.
   const feedLinkUrl = safeGetValue(entry, "note.link_url")?.toString();
   if (feedLinkUrl) {
-    renderLinkCard(inner, {
+    const feedLinkCard = renderLinkCard(inner, {
       url: feedLinkUrl,
       title: safeGetValue(entry, "note.link_title")?.toString(),
       description: safeGetValue(entry, "note.link_desc")?.toString(),
       site: safeGetValue(entry, "note.link_site")?.toString(),
       imageSrc: resolveImageUrl(ctx.app, entry, "note.link_image"),
     }, { compact: false });
+    if (feedLinkCard) {
+      feedLinkCard.addEventListener("click", (e) => {
+        e.stopPropagation();
+        void openLinkInView(ctx.app, feedLinkUrl);
+      });
+    }
   }
   // Mount on the slot `container` (not `inner`) so the bar overlays at the SAME
   // absolute position for every item type (tweet/image/video), independent of content.
