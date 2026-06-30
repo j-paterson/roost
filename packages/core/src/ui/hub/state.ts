@@ -65,7 +65,7 @@ export interface PipelinesPending {
 
 export interface HubState {
   prereqs: { folder: PrereqStatus; ollama: PrereqStatus };
-  platforms: { tiktok: PlatformState; x: PlatformState; instagram: PlatformState; eagle: PlatformState };
+  platforms: { tiktok: PlatformState; x: PlatformState; instagram: PlatformState; reddit: PlatformState; eagle: PlatformState };
   global: {
     lastFullUpdate: SyncTimestamp | null;
     anythingToUpdate: boolean;
@@ -176,6 +176,7 @@ export function deriveHubState(input: HubInputs): HubState {
     tiktok: deriveSocialPlatform(input.syncStateByPlatform.tiktok, backlogs, auth.tiktok ?? "unknown"),
     x: deriveSocialPlatform(input.syncStateByPlatform.twitter, backlogs, auth.twitter ?? "unknown"),
     instagram: deriveSocialPlatform(input.syncStateByPlatform.instagram, backlogs, auth.instagram ?? "unknown"),
+    reddit: deriveSocialPlatform(input.syncStateByPlatform.reddit, backlogs, auth.reddit ?? "unknown"),
     eagle: deriveEagle(input),
   };
 
@@ -185,7 +186,8 @@ export function deriveHubState(input: HubInputs): HubState {
   const anythingToUpdate =
     platforms.tiktok.kind === "connected-idle" ||
     platforms.x.kind === "connected-idle" ||
-    platforms.instagram.kind === "connected-idle";
+    platforms.instagram.kind === "connected-idle" ||
+    platforms.reddit.kind === "connected-idle";
 
   // Ollama is intentionally excluded here: it's an AI-features prereq, not
   // a sync prereq. The status strip and hub still surface its state, but a
@@ -195,14 +197,17 @@ export function deriveHubState(input: HubInputs): HubState {
     platforms.tiktok.kind === "error" ||
     platforms.x.kind === "error" ||
     platforms.instagram.kind === "error" ||
+    platforms.reddit.kind === "error" ||
     platforms.tiktok.kind === "expired-auth" ||
     platforms.x.kind === "expired-auth" ||
-    platforms.instagram.kind === "expired-auth";
+    platforms.instagram.kind === "expired-auth" ||
+    platforms.reddit.kind === "expired-auth";
 
   const timestamps = [
     input.syncStateByPlatform.tiktok?.timestamp,
     input.syncStateByPlatform.twitter?.timestamp,
     input.syncStateByPlatform.instagram?.timestamp,
+    input.syncStateByPlatform.reddit?.timestamp,
   ].filter((t): t is number => typeof t === "number" && t > 0);
   const lastFullUpdate = timestamps.length > 0 ? Math.max(...timestamps) : null;
 

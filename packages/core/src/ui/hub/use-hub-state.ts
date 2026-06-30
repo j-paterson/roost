@@ -40,6 +40,7 @@ function gatherInputs(
       tiktok: plugin.authStatus.tiktok,
       twitter: plugin.authStatus.twitter,
       instagram: plugin.authStatus.instagram,
+      reddit: plugin.authStatus.reddit,
     },
     eagleConfigured:
       (settings.eagleToken ?? "").length > 0 &&

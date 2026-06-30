@@ -168,10 +168,11 @@ export function HubBody({ app, plugin }: { app: App; plugin: IRoostPlugin }) {
     if (state.platforms.tiktok.kind === "connected-idle") targets.push("tiktok");
     if (state.platforms.x.kind === "connected-idle") targets.push("twitter");
     if (state.platforms.instagram.kind === "connected-idle") targets.push("instagram");
+    if (state.platforms.reddit.kind === "connected-idle") targets.push("reddit");
     // Defensive: the action bar already disables the buttons when nothing is
     // connected, but never let a click silently do nothing.
     if (targets.length === 0) {
-      new Notice("Connect TikTok, X/Twitter, or Instagram first, then sync.");
+      new Notice("Connect TikTok, X/Twitter, Instagram, or Reddit first, then sync.");
       return;
     }
     setGlobalRunning(true);

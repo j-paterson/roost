@@ -6,7 +6,7 @@ import type { LiveSync } from "@/ui/hub/hub-body";
 import type { SyncProgress } from "@/ui/components/progress-header";
 import { enabledPlatforms } from "@/platforms/registry";
 
-export type PlatformId = "tiktok" | "x" | "instagram" | "eagle";
+export type PlatformId = "tiktok" | "x" | "instagram" | "reddit" | "eagle";
 
 // Module-level lookup built once from the registry: hubId → descriptor.
 // Eagle is not a sync platform and is handled by explicit literals below.

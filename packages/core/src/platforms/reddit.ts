@@ -11,7 +11,7 @@ export const reddit: PlatformDescriptor = {
   id: "reddit",
   hubId: "reddit",
   displayName: "Reddit",
-  card: { title: "Reddit", eduCopy: "Reddit saved posts (login + discovery)." },
+  card: { title: "Reddit", eduCopy: "Syncs your saved Reddit posts." },
   origin: "https://www.reddit.com",
   profileUrl: "https://www.reddit.com/",
   authCookies: ["reddit_session"],
