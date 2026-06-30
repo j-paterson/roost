@@ -197,11 +197,13 @@ export async function muxRedditVideo(opts: MuxRedditVideoOpts): Promise<boolean>
           audioTmp = path.join(tmpDir, `${videoId}-audio.mp4`);
           fs.writeFileSync(audioTmp, Buffer.from(audioRes.arrayBuffer));
 
-          // Mux: mirror execFileSync pattern from pipeline/describe-items.ts extractKeyframes
+          // Mux the two LOCAL temp files. Note: NO -user_agent/-headers here —
+          // those are HTTP-protocol input options and ffmpeg rejects them for
+          // file inputs ("Option user_agent not found"), which silently forced
+          // every audio-bearing video into the video-only fallback. The streams
+          // are already downloaded via requestUrl, so ffmpeg just remuxes them.
           execFileSync(ffmpegPath, [
             "-y",
-            "-user_agent", REDDIT_UA,
-            "-headers", "Referer: https://www.reddit.com/",
             "-i", videoTmp,
             "-i", audioTmp,
             "-c:v", "copy",

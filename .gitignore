@@ -36,6 +36,9 @@ tests/e2e/.reddit-cookies.json
 # Streamed live-sync log + captured API shapes from the Reddit sync e2e (diagnostic artifacts)
 tests/e2e/.reddit-sync-live.log
 tests/e2e/.reddit-discovery-capture.json
+# Video-mux proof e2e: streamed log + copied-out video.mp4/raw.json artifacts
+tests/e2e/.reddit-mux-live.log
+tests/e2e/.reddit-video-mux-proof/
 # Local secrets for ad-hoc test scripts (Spotify credentials, etc.)
 .env
 .env.*
