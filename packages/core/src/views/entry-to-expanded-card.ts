@@ -42,6 +42,7 @@ export function sourceUrlFromFrontmatter(
   if (platform === "tiktok" && author?.startsWith("@")) {
     return `https://www.tiktok.com/${author}/video/${id}`;
   }
+  if (platform === "instagram") return `https://www.instagram.com/p/${id}/`;
   return null;
 }
 

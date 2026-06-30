@@ -2,6 +2,7 @@ import { Vault, TFile } from "obsidian";
 import { buildFrontmatter, ensureAuthorNote, updateNoteFrontmatter, type FrontmatterValue } from "@/lib/vault-helpers";
 import { getEnrichmentById, enrichmentVersionField, type EnrichmentId } from "@/lib/enrichments";
 import { getBookmarkPlatform, getBookmarkItemId, extractBookmarkText, extractBookmarkAuthor, extractBookmarkAuthorUsername, extractBookmarkUrl, extractBookmarkPublishedAt, sanitizeFilename } from "../../lib/extract";
+import { getPlatform, PLATFORMS } from "@/platforms/registry";
 import { renderTweetBody } from "@/lib/tweet-render";
 import { articleWordCount, type ArticleResultRaw } from "@/lib/article-extract";
 import { type NormalizedRecord } from "../../lib/normalize";
@@ -142,10 +143,8 @@ export class NoteFileWriter {
     if (!itemId) return;
     const username = extractBookmarkAuthorUsername(record);
     const handle = username ? `@${username}` : extractBookmarkAuthor(record);
-    const folderPath = platform === "twitter"
-      ? `${this.syncFolder}/X`
-      : platform === "tiktok"
-      ? `${this.syncFolder}/TikTok`
+    const folderPath = (platform in PLATFORMS && getPlatform(platform as never).vault)
+      ? `${this.syncFolder}/${getPlatform(platform as never).vault!.folder}`
       : `${this.syncFolder}/Other`;
     const noteFile = this.index.findNoteForId(record.id, folderPath, handle, itemId);
     if (!noteFile) return;

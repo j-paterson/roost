@@ -31,3 +31,16 @@ export function getPlatform(id: Platform): PlatformDescriptor {
 export function enabledPlatforms(): PlatformDescriptor[] {
   return Object.values(PLATFORMS).filter((p) => p.enabled);
 }
+
+/** Vault folder names for all platforms that define a vault block. */
+export function platformFolders(): string[] {
+  return Object.values(PLATFORMS).map((p) => p.vault?.folder).filter((f): f is string => !!f);
+}
+
+/** Map a vault folder name back to its platform id (e.g. "X" → "twitter"). */
+export function folderToPlatform(folder: string): Platform | null {
+  for (const p of Object.values(PLATFORMS)) {
+    if (p.vault?.folder === folder) return p.id;
+  }
+  return null;
+}

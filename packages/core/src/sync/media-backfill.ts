@@ -24,6 +24,8 @@ import { cacheDir } from "@/lib/roost-paths";
 import { walkDir } from "@/lib/fs-walk";
 import type { IRoostPlugin } from "@/types/plugin";
 import type { EnrichmentDef } from "@/lib/enrichments";
+import type { Platform } from "@/types/sync";
+import { getPlatform, platformFolders, folderToPlatform } from "@/platforms/registry";
 
 interface MediaCacheEntry {
   ok: boolean;
@@ -66,7 +68,7 @@ export async function runMediaBackfill(plugin: IRoostPlugin): Promise<void> {
   interface QueueItem {
     rawPath: string;
     attachFolder: string;
-    platform: "twitter" | "tiktok";
+    platform: Platform;
     outerItemId: string;
     raw: Record<string, unknown>;
   }
@@ -75,16 +77,16 @@ export async function runMediaBackfill(plugin: IRoostPlugin): Promise<void> {
 
   const tiktokWcAvailable = !!plugin.getWebviewManager().getWebContents("tiktok");
 
-  for (const platform of ["X", "TikTok"] as const) {
-    const platformRoot = path.join(vaultRoot, plugin.settings.syncFolder, platform);
+  for (const folder of platformFolders()) {
+    const platformRoot = path.join(vaultRoot, plugin.settings.syncFolder, folder);
     if (!fs.existsSync(platformRoot)) continue;
+    const platformId = folderToPlatform(folder)!;
+    const prefix = `${getPlatform(platformId).vault!.attachPrefix}-`;
 
     walkDir(platformRoot, (filePath) => {
       if (!filePath.endsWith("raw.json")) return;
       const attachFolder = path.dirname(filePath);
       const outerDirName = path.basename(attachFolder);
-      const platformId: "twitter" | "tiktok" = platform === "X" ? "twitter" : "tiktok";
-      const prefix = platformId === "twitter" ? "twitter-" : "tiktok-";
       const outerItemId = outerDirName.replace(new RegExp("^" + prefix), "");
       const cacheKey = `${platformId}:${outerItemId}`;
       if (cache[cacheKey]?.ok) { cacheHits++; return; }
@@ -228,7 +230,7 @@ export const MEDIA_ENRICHMENT: EnrichmentDef = {
  *  scan) and return a short reason if it still trips the media predicate, or
  *  null if it now looks complete. Using fs avoids the lag in Obsidian's
  *  in-memory folder index right after a createBinary write. */
-export function fsIncompleteReason(attachFolder: string, platform: "twitter" | "tiktok"): string | null {
+export function fsIncompleteReason(attachFolder: string, platform: Platform): string | null {
   let names: Set<string>;
   try {
     names = new Set(

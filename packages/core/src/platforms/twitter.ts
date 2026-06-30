@@ -39,6 +39,7 @@ export const twitter: PlatformDescriptor = {
   profileUrl: "https://x.com/",
   authCookies: ["auth_token"],
   enabled: true,
+  vault: { folder: "X", attachPrefix: "twitter", icon: "message-square" },
   probeSource: twitterProbeSource,
   sync: (wc, webviewEl, opts, onProgress, onRecords, onLog) =>
     syncTwitter(wc, webviewEl, opts, onProgress, onRecords, onLog),

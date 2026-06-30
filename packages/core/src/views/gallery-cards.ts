@@ -3,6 +3,7 @@
  */
 import { setIcon, type BasesEntry } from "obsidian";
 import { CATEGORY_FIELD } from "@/config";
+import { PLATFORMS, getPlatform } from "@/platforms/registry";
 import type { MatchDetail } from "@/types/roost";
 import { safeGetValue } from "@/lib/bases-entry";
 import { cleanCaption } from "@/lib/caption";
@@ -211,7 +212,8 @@ export function hydrateGalleryCard(
       `;
     const iconEl = coverEl.createDiv();
     iconEl.style.cssText = "color: var(--text-muted); opacity: 0.3;";
-    setIcon(iconEl, platform === "tiktok" ? "music" : platform === "twitter" ? "message-square" : "bookmark");
+    const icon = (platform in PLATFORMS && getPlatform(platform as never).vault) ? getPlatform(platform as never).vault!.icon : "bookmark";
+    setIcon(iconEl, icon);
   }
 
   const pipelineType = handlers.pipelineTypeForEntry(entry);
@@ -261,7 +263,8 @@ export function hydrateGalleryCard(
       const tags = tagStr.split(",").map(t => t.trim()).filter(t => {
         if (!t) return false;
         const lower = t.toLowerCase();
-        return !t.startsWith("collection/") && lower !== "tiktok" && lower !== "twitter" && lower !== "original sound";
+        const platformIds = Object.keys(PLATFORMS);
+        return !t.startsWith("collection/") && !platformIds.includes(lower) && lower !== "original sound";
       });
       for (const tag of tags.slice(0, 4)) {
         const pill = tagsEl.createSpan({ cls: "roost-card-tag" });

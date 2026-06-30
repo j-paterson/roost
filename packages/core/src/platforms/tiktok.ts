@@ -31,6 +31,7 @@ export const tiktok: PlatformDescriptor = {
   profileUrl: "https://www.tiktok.com/profile",
   authCookies: ["sessionid", "sessionid_ss"],
   enabled: true,
+  vault: { folder: "TikTok", attachPrefix: "tiktok", icon: "music" },
   probeSource: tiktokProbeSource,
   sync: (wc, webviewEl, opts, onProgress, onRecords, onLog) =>
     syncTikTok(wc, webviewEl, opts, onProgress, onRecords, onLog),

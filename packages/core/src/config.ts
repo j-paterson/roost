@@ -53,7 +53,7 @@ export const OLLAMA_NUM_CTX = 2048;
 export const EMBED_URL = "http://localhost:11435";
 
 // ── Platform display names ──
-export const PLATFORM_DISPLAY: Record<string, string> = { tiktok: "TikTok", twitter: "X", other: "Other" };
+export const PLATFORM_DISPLAY: Record<string, string> = { tiktok: "TikTok", twitter: "X", instagram: "Instagram", other: "Other" };
 
 // ── Card rendering ──
 export const CARD_WIDTH = 600;

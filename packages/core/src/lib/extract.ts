@@ -144,6 +144,7 @@ export function parseWebVTT(vtt: string): string {
 export function detectPlatformFromUrl(url: string, tags?: string[]): string {
   if (url.includes("tiktok.com") || tags?.includes("tiktok")) return "tiktok";
   if (url.includes("x.com") || url.includes("twitter.com") || tags?.includes("twitter")) return "twitter";
+  if (url.includes("instagram.com") || tags?.includes("instagram")) return "instagram";
   return "other";
 }
 
