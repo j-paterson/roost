@@ -125,10 +125,11 @@ export async function fetchOgMetadata(url: string): Promise<OgMetadata> {
     if (resp.status < 200 || resp.status >= 300) return { title: null, description: null, image: null, siteName: null };
     const html = resp.text;
     const titleTag = html.match(/<title[^>]*>([^<]*)<\/title>/i)?.[1]?.trim() || null;
+    const rawImage = metaContent(html, "og:image");
     return {
       title: metaContent(html, "og:title") || titleTag,
       description: metaContent(html, "og:description"),
-      image: metaContent(html, "og:image"),
+      image: rawImage?.startsWith("//") ? "https:" + rawImage : (rawImage ?? null),
       siteName: metaContent(html, "og:site_name") || domainFromUrl(url),
     };
   } catch {

@@ -32,4 +32,14 @@ describe("fetchOgMetadata", () => {
     __setRequestUrlImpl(async () => { throw new Error("boom"); });
     expect(await fetchOgMetadata("https://dead.example")).toEqual({ title: null, description: null, image: null, siteName: null });
   });
+
+  it("normalizes a protocol-relative og:image to https", async () => {
+    __setRequestUrlImpl(async () => html(`<meta property="og:image" content="//cdn.example.com/i.jpg">`));
+    expect((await fetchOgMetadata("https://example.com/p")).image).toBe("https://cdn.example.com/i.jpg");
+  });
+
+  it("returns all-null on a non-200 status", async () => {
+    __setRequestUrlImpl(async () => ({ status: 404, headers: {}, json: null, text: "<html></html>", arrayBuffer: new ArrayBuffer(0) }));
+    expect(await fetchOgMetadata("https://example.com/missing")).toEqual({ title: null, description: null, image: null, siteName: null });
+  });
 });
