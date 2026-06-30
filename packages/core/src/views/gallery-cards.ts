@@ -8,11 +8,31 @@ import type { MatchDetail } from "@/types/roost";
 import { safeGetValue } from "@/lib/bases-entry";
 import { cleanCaption } from "@/lib/caption";
 import { ENRICHMENTS } from "@/lib/enrichments";
+import { stripWikilink } from "@/lib/vault-utils";
 import { renderPipelineOverlay } from "@/views/pipeline-details";
 import type { PipelineType } from "@/views/pipeline-details";
 import { renderChip } from "@/views/pipeline-views/shared/chip";
 import { setupGalleryVideoScrub } from "@/views/gallery-video-scrub";
 import type { GalleryExpandState } from "@/views/gallery-expanded";
+
+export interface GalleryCoverDecision { mode: "linktile" | "media"; domain?: string; badge: boolean; }
+
+/** Pure decision helper: given an entry's link/media signals, returns the
+ *  cover treatment for the gallery card.
+ *
+ *  Rule: a link-only post (cover IS the link preview) → link-tile chrome.
+ *        a post with own media that also has a link → media cover + 🔗 badge.
+ *        ordinary media (no link) → plain cover, no badge. */
+export function resolveGalleryCover(s: {
+  hasOwnMedia: boolean;
+  linkUrl: string | null;
+  linkSite: string | null;
+  coverImg: string | null;
+}): GalleryCoverDecision {
+  const isLink = !!s.linkUrl;
+  if (isLink && !s.hasOwnMedia) return { mode: "linktile", domain: s.linkSite ?? undefined, badge: false };
+  return { mode: "media", badge: isLink };
+}
 
 export interface GalleryCardConfig {
   imagePropId: string;
@@ -219,6 +239,29 @@ export function hydrateGalleryCard(
   const pipelineType = handlers.pipelineTypeForEntry(entry);
   if (pipelineType) {
     renderPipelineOverlay(coverEl, pipelineType);
+  }
+
+  // Coexistence: link-tile chrome vs media + badge.
+  // KEY HEURISTIC: a link-only post's cover IS the link preview (cover === link_image)
+  // → NOT own media → link tile. A post with own photo has cover ≠ link_image → own
+  // media → keep media cover + badge.
+  const linkUrl = safeGetValue(entry, "note.link_url")?.toString() ?? null;
+  if (linkUrl) {
+    const linkSite = safeGetValue(entry, "note.link_site")?.toString() ?? null;
+    const coverImg = safeGetValue(entry, "note.cover")?.toString() ?? null;
+    const linkImg = safeGetValue(entry, "note.link_image")?.toString() ?? null;
+    const hasOwnMedia = !!coverImg && (!linkImg || stripWikilink(coverImg) !== stripWikilink(linkImg));
+    const coverDecision = resolveGalleryCover({ hasOwnMedia, linkUrl, linkSite, coverImg });
+    coverEl.dataset.linkUrl = linkUrl;
+    if (coverDecision.mode === "linktile") {
+      coverEl.classList.add("roost-card-cover-linktile");
+      coverEl.dataset.domain = coverDecision.domain ?? "";
+    }
+    // Badge spans appear for both linktile (always) and media mode when badge===true.
+    if (coverDecision.mode === "linktile" || coverDecision.badge) {
+      const badge = coverEl.createSpan({ cls: "roost-card-link-badge" });
+      badge.textContent = "🔗";
+    }
   }
 
   const body = el.createDiv({ cls: "roost-card-body" });

@@ -21,6 +21,7 @@ import {
 } from "@/views/entry-to-expanded-card";
 import { resolveImageUrl, resolveVideoUrl, resolveAllImages } from "@/views/feed/card-helpers";
 import { readGuess } from "@/views/feed/training-mode";
+import { renderLinkCard } from "@/views/link-card-renderer";
 
 /** In-session mute preference shared across all TikTok feed items.
  *  Persisted only for the lifetime of the plugin process. */
@@ -157,6 +158,18 @@ function renderFeedExpandedItem(
     inner,
     entryToExpandedCardData(entry, feedResolvers(ctx), actions ? [actions] : []),
   );
+  // After the expanded card body, append a full-width link card when the entry has a
+  // scraped link preview. data-link-url is tagged here; Task 11 wires the click handler.
+  const feedLinkUrl = safeGetValue(entry, "note.link_url")?.toString();
+  if (feedLinkUrl) {
+    renderLinkCard(inner, {
+      url: feedLinkUrl,
+      title: safeGetValue(entry, "note.link_title")?.toString(),
+      description: safeGetValue(entry, "note.link_desc")?.toString(),
+      site: safeGetValue(entry, "note.link_site")?.toString(),
+      imageSrc: resolveImageUrl(ctx.app, entry, "note.link_image"),
+    }, { compact: false });
+  }
   // Mount on the slot `container` (not `inner`) so the bar overlays at the SAME
   // absolute position for every item type (tweet/image/video), independent of content.
   maybeAppendTrainingBar(container, entry, ctx, getRoostId(entry));

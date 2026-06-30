@@ -8,6 +8,7 @@ import { stripFrontmatter } from "@/lib/vault-utils";
 import { ContentType, detectContentType, extractDomain, hasValue } from "@/views/content-detector";
 import { EXPLORER_RICH_FIELDS, EXPLORER_SKIP_PROPS } from "@/views/explorer-view-options";
 import type { ExplorerCardConfig } from "@/views/explorer-hydrate-card";
+import { renderLinkCard } from "@/views/link-card-renderer";
 
 export interface ExplorerExpandedHost {
   app: App;
@@ -134,15 +135,28 @@ export function renderExplorerExpandedPanel(
     }
   }
 
-  const urlRaw = safeGetValue(entry, "note.url");
-  const urlStr = hasValue(urlRaw) ? String(urlRaw) : null;
-  if (urlStr) {
-    const link = info.createEl("a", { cls: "roost-expanded-link", text: urlStr, href: urlStr });
-    link.addEventListener("click", (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      window.open(urlStr, "_blank");
-    });
+  // When note.link_url is present, render the rich link card (compact) instead of a bare
+  // anchor. Keep the bare-<a> path only as fallback for a generic note.url field.
+  const linkUrlRaw = safeGetValue(entry, "note.link_url")?.toString();
+  if (linkUrlRaw) {
+    renderLinkCard(info, {
+      url: linkUrlRaw,
+      title: safeGetValue(entry, "note.link_title")?.toString(),
+      description: safeGetValue(entry, "note.link_desc")?.toString(),
+      site: safeGetValue(entry, "note.link_site")?.toString(),
+      imageSrc: host.resolveImageUrl(entry, "note.link_image"),
+    }, { compact: true });
+  } else {
+    const urlRaw = safeGetValue(entry, "note.url");
+    const urlStr = hasValue(urlRaw) ? String(urlRaw) : null;
+    if (urlStr) {
+      const link = info.createEl("a", { cls: "roost-expanded-link", text: urlStr, href: urlStr });
+      link.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        window.open(urlStr, "_blank");
+      });
+    }
   }
 
   const openNote = info.createDiv({ cls: "roost-expanded-open-note", text: "Open note →" });
