@@ -5,6 +5,7 @@ import { Button } from "@/ui/components/ui/button";
 import type { Platform } from "@/types/sync";
 import type { RoostFilter } from "@/types/roost";
 import type { PipelineRunResult } from "@/lib/enrichments";
+import { DEV_COMMANDS_ENABLED } from "@/config";
 
 export type PipelineRowState = {
   status: "idle" | "running" | "done" | "error";
@@ -200,6 +201,14 @@ function LibraryTreeImpl({
             >
               Log in to X / Twitter
             </Button>
+            {DEV_COMMANDS_ENABLED && (
+              <Button
+                size="sm" variant="secondary" style={{ width: "100%" }}
+                onClick={() => { onShowPlatform("instagram"); }}
+              >
+                Log in to Instagram
+              </Button>
+            )}
             <Button
               size="sm" variant="secondary" style={{ width: "100%" }}
               onClick={onImportEagle} loading={importing}
@@ -231,6 +240,19 @@ function LibraryTreeImpl({
               ><svg width="10" height="10" viewBox="0 0 12 12"><path d="M1.5 6a4.5 4.5 0 0 1 7.65-3.2L10.5 1.5v3h-3l1.15-1.15A3 3 0 0 0 3 6M10.5 6a4.5 4.5 0 0 1-7.65 3.2L1.5 10.5v-3h3L3.35 8.65A3 3 0 0 0 9 6" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/></svg></Button>
             </div>
           ))}
+          {DEV_COMMANDS_ENABLED && (
+            // Discovery-only login entry (no sync — Instagram has no sync fn yet).
+            // Dev-gated (ROOST_DEV_COMMANDS=1) until Phase 2 flips enabled:true.
+            <div className="roost-sync-strip-platform">
+              <span className="roost-sync-strip-name">Instagram</span>
+              <Button
+                variant="ghost" size="icon-xs"
+                className="roost-tree-action"
+                title="Log in to Instagram"
+                onClick={() => activePlatform === "instagram" ? onHidePlatform() : onShowPlatform("instagram")}
+              >{activePlatform === "instagram" ? <svg width="10" height="10" viewBox="0 0 12 12"><path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg> : <svg width="10" height="10" viewBox="0 0 12 12"><path d="M2 10L10 2M10 2H4M10 2v6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>}</Button>
+            </div>
+          )}
           <div className="roost-sync-strip-platform">
             <span className="roost-sync-strip-name">Eagle</span>
             <Button

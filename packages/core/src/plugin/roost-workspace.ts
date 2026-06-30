@@ -112,6 +112,11 @@ export class RoostWorkspace {
       await leaf.setViewState({ type: VIEW_TYPE_ROOST_WEBVIEW, active: true });
     }
     workspace.revealLeaf(leaf);
+    // create() is idempotent; ensures the webview exists for platforms that
+    // getWebviewManager() didn't pre-create (it only pre-creates enabled ones,
+    // so discovery-only platforms like instagram would otherwise have nothing
+    // to show()).
+    this.getWebviewManager().create(platform);
     this.getWebviewManager().show(platform);
   }
 
