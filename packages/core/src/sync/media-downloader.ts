@@ -116,6 +116,112 @@ export async function downloadTikTokVideo(wc: ElectronWebview, videoUrl: string)
   }
 }
 
+import * as fs from "fs";
+import * as path from "path";
+import { execFileSync } from "child_process";
+
+const REDDIT_UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36";
+
+export async function downloadRedditImage(url: string): Promise<ArrayBuffer | null> {
+  try {
+    return await withRetry(async () => {
+      const res = await requestUrl({ url, headers: { "User-Agent": REDDIT_UA, "Referer": "https://www.reddit.com/" } });
+      return res.arrayBuffer;
+    });
+  } catch (e) {
+    console.warn(`[media] reddit image failed: ${url}`, e instanceof Error ? e.message : String(e));
+    return null;
+  }
+}
+
+/** Audio BaseURL from a v.redd.it DASHPlaylist.mpd — covers every naming era
+ *  (CMAF_AUDIO_*, DASH_AUDIO_*, DASH_audio.mp4, bare audio). Returns null when
+ *  the manifest has no audio representation. */
+export function parseRedditAudioBaseUrl(mpdText: string): string | null {
+  const m = mpdText.match(/<BaseURL>((?:CMAF|DASH)_AUDIO_\d+(?:\.mp4)?|DASH_audio(?:\.mp4)?|audio(?:\.mp4)?)<\/BaseURL>/i);
+  return m ? m[1] : null;
+}
+
+export interface MuxRedditVideoOpts {
+  videoUrl: string;
+  dashUrl: string | null;
+  videoId: string;
+  hasAudio: boolean;
+  ffmpegPath: string | undefined;
+  outPath: string;
+  tmpDir: string;
+}
+
+/**
+ * Download a v.redd.it video (+ audio if available) and mux to outPath.
+ * Returns true when a properly muxed file was written, false when video-only
+ * fallback was used (no ffmpeg, no audio track, or any failure).
+ * Mirrors the execFileSync ffmpeg pattern from pipeline/describe-items.ts.
+ */
+export async function muxRedditVideo(opts: MuxRedditVideoOpts): Promise<boolean> {
+  const { videoUrl, dashUrl, videoId, hasAudio, ffmpegPath, outPath, tmpDir } = opts;
+
+  // Download video stream
+  let videoBytes: ArrayBuffer;
+  try {
+    const res = await requestUrl({
+      url: videoUrl,
+      headers: { "User-Agent": REDDIT_UA, "Referer": "https://www.reddit.com/" },
+    });
+    videoBytes = res.arrayBuffer;
+  } catch (e) {
+    console.warn(`[media] reddit video download failed: ${videoUrl}`, e instanceof Error ? e.message : String(e));
+    return false;
+  }
+
+  const videoTmp = path.join(tmpDir, `${videoId}-video.mp4`);
+  fs.writeFileSync(videoTmp, Buffer.from(videoBytes));
+
+  // Attempt mux when all conditions are met
+  if (ffmpegPath && hasAudio && dashUrl) {
+    try {
+      // Fetch the DASH manifest
+      const mpdRes = await requestUrl({
+        url: dashUrl,
+        headers: { "User-Agent": REDDIT_UA, "Referer": "https://www.reddit.com/" },
+      });
+      const audioBase = parseRedditAudioBaseUrl(mpdRes.text);
+
+      if (audioBase) {
+        // Audio URL is dashUrl's directory + audioBase
+        const audioUrl = dashUrl.replace(/\/[^/]+$/, `/${audioBase}`);
+        const audioRes = await requestUrl({
+          url: audioUrl,
+          headers: { "User-Agent": REDDIT_UA, "Referer": "https://www.reddit.com/" },
+        });
+        const audioTmp = path.join(tmpDir, `${videoId}-audio.mp4`);
+        fs.writeFileSync(audioTmp, Buffer.from(audioRes.arrayBuffer));
+
+        // Mux: mirror execFileSync pattern from pipeline/describe-items.ts extractKeyframes
+        execFileSync(ffmpegPath, [
+          "-y",
+          "-user_agent", REDDIT_UA,
+          "-headers", "Referer: https://www.reddit.com/",
+          "-i", videoTmp,
+          "-i", audioTmp,
+          "-c:v", "copy",
+          "-c:a", "copy",
+          "-loglevel", "error",
+          outPath,
+        ], { timeout: 120000 });
+
+        return true;
+      }
+    } catch (e) {
+      console.warn(`[media] reddit mux failed for ${videoId}, falling back to video-only`, e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  // Video-only fallback
+  fs.copyFileSync(videoTmp, outPath);
+  return false;
+}
+
 /**
  * Download Instagram media (image/video/carousel child) via the webview's
  * injected probe. IG CDN URLs are time-limited, so this MUST run during sync
