@@ -12,6 +12,7 @@ import type { BookmarkRecord, extractTwitterMedia } from "@/lib/twitter-helpers"
 import type { extractTikTokMedia } from "@/lib/tiktok-helpers";
 import type { extractInstagramMedia } from "@/lib/instagram-helpers";
 import type { extractRedditMedia } from "@/lib/reddit-helpers";
+import type { LinkCard } from "@/lib/link-card";
 
 /** Convenience aliases for the per-platform media shapes. */
 export type TikTokMedia = ReturnType<typeof extractTikTokMedia>;
@@ -41,6 +42,9 @@ export interface PlatformParser {
   media(record: BookmarkRecord): TikTokMedia | TwitterMedia | InstagramMedia | RedditMedia;
   /** Best subtitle track URL (TikTok only — undefined for Twitter). */
   subtitleUrl?(record: BookmarkRecord): string | null;
+  /** Optional external-link preview card (Reddit link posts, X embedded links).
+   *  Omitted by platforms that don't surface external links. */
+  link?(record: BookmarkRecord): LinkCard | null;
   /** Normalize a raw API item into a uniform storage record. */
   normalize(item: RawApiData, options: NormalizeOptions): NormalizedRecord | null;
 }
