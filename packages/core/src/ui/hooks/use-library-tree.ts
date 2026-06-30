@@ -37,9 +37,17 @@ export function useLibraryTree(app: App, plugin: IRoostPlugin) {
         void scanLibrary();
       }, 300);
     });
+    // While bulkWriteInProgress is set (sync / Smart Assign), "resolved" rescans
+    // are suppressed above — and the metadata cache is settled before the flag
+    // clears, so no "resolved" fires afterward to reconcile. Reconcile once when
+    // the flag flips back to false.
+    const bulkRef = plugin.onBulkWriteChange((active) => {
+      if (!active) void scanLibrary();
+    });
     return () => {
       if (timer) clearTimeout(timer);
       app.metadataCache.offref(ref);
+      bulkRef();
     };
   }, [app, plugin, scanLibrary]);
 

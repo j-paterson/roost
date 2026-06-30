@@ -19,6 +19,7 @@ import type { NormalizedRecord } from "@/lib/normalize";
 import { getPlatform } from "@/platforms/registry";
 import { VaultWriter } from "@/sync/vault-writer";
 import { ensureBasesFiles } from "@/sync/bases-setup";
+import { waitForMetadataQuiet } from "@/lib/metadata-cache-quiet";
 
 export interface RunPlatformSyncOpts {
   /** Plugin + app handles. */
@@ -140,6 +141,15 @@ export async function runPlatformSync(opts: RunPlatformSyncOpts): Promise<RunPla
     `window.__ROOST_KNOWN_IDS__=new Set(${JSON.stringify(platformIds)});window.__ROOST_PREV_SYNC_COMPLETE__=${JSON.stringify(prevComplete)};void 0;`,
   ).catch(() => {});
 
+  // Suppress per-write gallery + folder-tree rebuilds for the duration of the
+  // sync (the tree re-scans all notes off the metadata cache on every "resolved"
+  // — thrashing the UI when bulk-writing into a large vault). Mirrors
+  // runJobWithBulkWriteFlag: the finally settles + drops the flag once, so the
+  // tree/gallery reconcile a single time when the sync ends. Nesting-safe via
+  // bulkWasOn (an outer Smart Assign scope, if any, owns the settle).
+  const bulkWasOn = plugin.bulkWriteInProgress;
+  if (!bulkWasOn) plugin.bulkWriteInProgress = true;
+
   try {
     const onRecords = async (records: NormalizedRecord[]) => {
       if (signal.stopped) return;
@@ -186,6 +196,13 @@ export async function runPlatformSync(opts: RunPlatformSyncOpts): Promise<RunPla
     };
     await plugin.saveSettings();
     wm.unmount(platform);
+    if (!bulkWasOn) {
+      // Let the final batch of frontmatter writes settle, then drop the flag
+      // and trigger exactly one gallery rebuild + tree reconcile.
+      await waitForMetadataQuiet(app.metadataCache);
+      plugin.bulkWriteInProgress = false;
+      plugin.fireDataRefresh();
+    }
   }
 
   return {
