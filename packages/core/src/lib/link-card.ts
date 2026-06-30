@@ -20,3 +20,11 @@ export function domainFromUrl(url: string): string | null {
     return null;
   }
 }
+
+/** True when a note is a link bookmark (has link_url) but is still missing any
+ *  preview field the OG backfill fills. link_site is derivable, so it doesn't gate. */
+export function needsLinkMeta(fm: Record<string, unknown>): boolean {
+  if (typeof fm.link_url !== "string" || !fm.link_url) return false;
+  const missing = (k: string) => typeof fm[k] !== "string" || !(fm[k] as string);
+  return missing("link_title") || missing("link_desc") || missing("link_image");
+}

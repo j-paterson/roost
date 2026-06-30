@@ -6,6 +6,7 @@ import { MUSIC_SUBCATEGORIES } from "@/config";
 import { MEDIA_FIELDS } from "@/pipeline/media-pipeline";
 import { ENRICHMENTS, isVersionStale, enrichmentVersionField } from "@/lib/enrichments";
 import { needsArticleBodyBackfill } from "@/lib/article-utils";
+import { needsLinkMeta } from "@/lib/link-card";
 import { sanitizeFilename } from "@/lib/extract";
 import { threadAnchor } from "../thread-fetcher";
 
@@ -42,13 +43,7 @@ export interface IncompleteByCategory {
  * corpus on first rollout. Pure so the three-branch gate (esp. the non-obvious
  * `is_article` exclusion) is locked by a unit test independent of the scan harness.
  */
-/** A link bookmark (has link_url) still missing any preview field the OG
- *  backfill fills. link_site alone is derivable, so it doesn't gate. */
-export function needsLinkMeta(fm: Record<string, unknown>): boolean {
-  if (typeof fm.link_url !== "string" || !fm.link_url) return false;
-  const missing = (k: string) => typeof fm[k] !== "string" || !(fm[k] as string);
-  return missing("link_title") || missing("link_desc") || missing("link_image");
-}
+export { needsLinkMeta };
 
 export function needsTweetBodyRender(fm: Record<string, unknown>): boolean {
   return (

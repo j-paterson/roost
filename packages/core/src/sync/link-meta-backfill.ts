@@ -23,6 +23,7 @@ import type { Platform } from "@/types/sync";
 import { getPlatform, platformFolders } from "@/platforms/registry";
 import { fetchOgMetadata } from "@/sync/cover-fetcher";
 import type { OgMetadata } from "@/sync/cover-fetcher";
+import { needsLinkMeta } from "@/lib/link-card";
 
 interface LinkMetaCacheEntry {
   ok: boolean;
@@ -32,15 +33,6 @@ interface LinkMetaCacheEntry {
 type LinkMetaCache = Record<string, LinkMetaCacheEntry>;
 
 let backfillRunning = false;
-
-/** Mirror of vault-index.needsLinkMeta — inlined here to avoid the circular
- *  enrichments → link-meta-backfill → vault-index → enrichments import cycle.
- *  A link bookmark (has link_url) still missing any OG preview field. */
-function needsLinkMeta(fm: Record<string, unknown>): boolean {
-  if (typeof fm.link_url !== "string" || !fm.link_url) return false;
-  const missing = (k: string) => typeof fm[k] !== "string" || !(fm[k] as string);
-  return missing("link_title") || missing("link_desc") || missing("link_image");
-}
 
 /** Compute the frontmatter patch for one link from fetched OG metadata.
  *  Returns existing fm values for fields already set, and fills missing fields
@@ -214,6 +206,7 @@ export async function runLinkMetaBackfill(plugin: IRoostPlugin, _opts?: Backfill
           });
         }
 
+        // NOTE: marked ok even if the image download failed (text metadata was written); a re-run won't retry the image. Acceptable for v1.
         cache[roostId] = { ok: true, fetchedAt: now };
         succeeded++;
       } catch (e: unknown) {
