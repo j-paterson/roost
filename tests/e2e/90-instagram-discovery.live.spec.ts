@@ -61,6 +61,8 @@ const NAVIGATE_SETTLE_MS = 5_000;
 
 const COOKIES_PATH = path.join(__dirname, ".ig-cookies.json");
 const CAPTURE_PATH = path.join(__dirname, ".ig-discovery-capture.json");
+const REST_CAPTURE_PATH = path.join(__dirname, ".ig-rest-probe.json");
+const IG_APP_ID = "936619743392459"; // web app constant (confirmed live)
 const FIXTURE_VAULT = path.resolve(__dirname, "../fixtures/vault");
 const PROBE_PATH = path.resolve(
     __dirname,
@@ -426,5 +428,99 @@ describe("Instagram API discovery — live (real instagram.com, cookie injection
                 : "(none — check .ig-discovery-capture.json)"),
         );
         expect(jsonSamples.length).toBeGreaterThan(0);
+    });
+
+    /**
+     * ACTIVE probe (vs. the passive observer above): inject fetch() into the
+     * instagram.com page context to hit the canonical REST endpoints directly.
+     * Cookies + origin are automatic (same-origin), so this is exactly how the
+     * web app authenticates. This validates the Phase-2 sync endpoints + captures
+     * their real response shapes + the live x-ig-www-claim. Writes .ig-rest-probe.json.
+     */
+    it("active: fetch the canonical saved/collections REST endpoints (Phase-2 validation)", async function () {
+        // Run a fetch FROM the page context and return status + headers + body.
+        async function igFetch(label: string, pathUrl: string) {
+            const raw = await runInWebview<string>(`
+                (async function () {
+                    try {
+                        var m = document.cookie.match(/csrftoken=([^;]+)/);
+                        var csrf = m ? m[1] : "";
+                        var r = await fetch(${JSON.stringify(pathUrl)}, {
+                            method: "GET",
+                            credentials: "include",
+                            headers: {
+                                "X-IG-App-ID": ${JSON.stringify(IG_APP_ID)},
+                                "X-CSRFToken": csrf,
+                                "X-Requested-With": "XMLHttpRequest",
+                                "X-IG-WWW-Claim": (window.__ig_www_claim || "0"),
+                            },
+                        });
+                        var claim = r.headers.get("x-ig-set-www-claim") || r.headers.get("x-ig-www-claim") || null;
+                        if (claim) { try { window.__ig_www_claim = claim; } catch (e) {} }
+                        var body = await r.text();
+                        return JSON.stringify({ status: r.status, claim: claim, body: body.slice(0, 30000) });
+                    } catch (e) { return JSON.stringify({ status: -1, error: String(e) }); }
+                })()
+            `);
+            let parsed: { status: number; claim?: string | null; body?: string; error?: string } = { status: 0 };
+            try { parsed = JSON.parse(raw || "{}"); } catch { /* keep default */ }
+            // eslint-disable-next-line no-console
+            console.log(`[rest] ${label}: status=${parsed.status}${parsed.error ? ` error=${parsed.error}` : ""}`);
+            return { label, url: pathUrl, ...parsed };
+        }
+
+        function topKeys(body?: string): string[] {
+            if (!body) return [];
+            try { return Object.keys(JSON.parse(body)); } catch { return []; }
+        }
+        function firstCollectionId(body?: string): string | null {
+            if (!body) return null;
+            try {
+                const j = JSON.parse(body);
+                const items = j.items || j.collections || [];
+                for (const it of items) {
+                    const id = it.collection_id || it.collection_pk || it.id;
+                    if (id && String(id) !== "ALL_MEDIA_AUTO_COLLECTION") return String(id);
+                }
+            } catch { /* ignore */ }
+            return null;
+        }
+
+        const results: Array<Record<string, unknown>> = [];
+
+        const collections = await igFetch(
+            "collections/list",
+            '/api/v1/collections/list/?collection_types=["ALL_MEDIA_AUTO_COLLECTION","PRODUCT_AUTO_COLLECTION","MEDIA"]',
+        );
+        results.push(collections);
+
+        const saved = await igFetch("feed/saved/posts", "/api/v1/feed/saved/posts/?count=12");
+        results.push(saved);
+
+        // If we got a real collection id, validate the per-collection feed path
+        // (research flagged /posts/ suffix ambiguity — try both).
+        const cid = firstCollectionId(collections.body);
+        if (cid) {
+            results.push(await igFetch(`feed/collection/${cid}`, `/api/v1/feed/collection/${cid}/?count=12`));
+            results.push(await igFetch(`feed/collection/${cid}/posts`, `/api/v1/feed/collection/${cid}/posts/?count=12`));
+        }
+
+        fs.writeFileSync(
+            REST_CAPTURE_PATH,
+            JSON.stringify({ capturedAt: new Date().toISOString(), collectionIdProbed: cid, results }, null, 2),
+        );
+
+        // eslint-disable-next-line no-console
+        for (const r of results) {
+            console.log(`[rest] ${r.label} status=${r.status} keys=[${topKeys(r.body as string).join(", ")}]`);
+        }
+        // eslint-disable-next-line no-console
+        console.log(`[rest] capture written to ${REST_CAPTURE_PATH}`);
+
+        // At least one of the two primary endpoints must return 200 with an items
+        // array — that's the Phase-2 green light.
+        const primary = [collections, saved];
+        const ok = primary.some((r) => r.status === 200 && topKeys(r.body).includes("items"));
+        expect(ok).toBe(true);
     });
 });
