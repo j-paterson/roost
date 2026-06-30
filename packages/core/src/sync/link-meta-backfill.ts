@@ -148,6 +148,7 @@ export async function runLinkMetaBackfill(plugin: IRoostPlugin, _opts?: Backfill
 
       try {
         const og = await fetchOgMetadata(linkUrl);
+        log(`OG ${linkUrl} → title:${og.title ? "Y" : "n"} desc:${og.description ? "Y" : "n"} image:${og.image ? "Y" : "n"} site:${og.siteName ? "Y" : "n"}`);
         const patch = mergeLinkMeta(fm, og);
 
         // Handle image: try to download into the note's attach folder. If the

@@ -69,15 +69,18 @@ function parseLinkFields(text: string): {
     link_url?: string;
     link_site?: string;
     link_title?: string;
+    link_desc?: string;
     link_image?: string;
 } {
-    const result: { link_url?: string; link_site?: string; link_title?: string; link_image?: string } = {};
+    const result: { link_url?: string; link_site?: string; link_title?: string; link_desc?: string; link_image?: string } = {};
     const linkUrlMatch = text.match(/^link_url:\s*(.+)$/m);
     if (linkUrlMatch) result.link_url = linkUrlMatch[1].trim().replace(/^['"]|['"]$/g, "");
     const linkSiteMatch = text.match(/^link_site:\s*(.+)$/m);
     if (linkSiteMatch) result.link_site = linkSiteMatch[1].trim().replace(/^['"]|['"]$/g, "");
     const linkTitleMatch = text.match(/^link_title:\s*(.+)$/m);
     if (linkTitleMatch) result.link_title = linkTitleMatch[1].trim().replace(/^['"]|['"]$/g, "");
+    const linkDescMatch = text.match(/^link_desc:\s*(.+)$/m);
+    if (linkDescMatch) result.link_desc = linkDescMatch[1].trim().replace(/^['"]|['"]$/g, "");
     const linkImageMatch = text.match(/^link_image:\s*(.+)$/m);
     if (linkImageMatch) result.link_image = linkImageMatch[1].trim().replace(/^['"]|['"]$/g, "");
     return result;
@@ -367,21 +370,33 @@ describe("Link preview backfill — live", function () {
                     throw new Error(`Backfill command failed: ${done.error}`);
                 }
 
-                // Check disk: any link note now has link_title AND link_image?
-                const enriched = linkNotes.filter((n) => {
+                // Gate on link_DESC — the only link_* field that sync NEVER writes
+                // for a Reddit link post (extractRedditLink leaves description
+                // undefined; link_url/link_site/link_title/link_image can all be
+                // set at sync from the post + Reddit preview). So link_desc
+                // appearing is the honest proof the OG backfill fetched the
+                // destination page and wrote new metadata — title alone would be
+                // a false pass (it pre-exists from sync).
+                // NOTE: do NOT exit on done.done — executeCommandById resolves when
+                // the command DISPATCHES, not when the async backfill finishes
+                // (it flips true within ms while runBackfill is still fetching).
+                // Poll disk until real enrichment (desc) or timeout.
+                const desced = linkNotes.filter((n) => {
                     try {
-                        const text = fs.readFileSync(path.join(redditDir, n.file), "utf-8");
-                        const f = parseLinkFields(text);
-                        return !!(f.link_title && f.link_image);
+                        return !!parseLinkFields(fs.readFileSync(path.join(redditDir, n.file), "utf-8")).link_desc;
                     } catch { return false; }
                 });
-
-                if (enriched.length > 0) {
-                    log(`${enriched.length} link note(s) now have link_title + link_image`);
+                if (desced.length > 0) {
+                    const withImg = desced.filter((n) => {
+                        try {
+                            return !!parseLinkFields(fs.readFileSync(path.join(redditDir, n.file), "utf-8")).link_image;
+                        } catch { return false; }
+                    });
+                    log(`${desced.length} link note(s) gained link_desc from OG backfill (${withImg.length} also have link_image)`);
                     return true;
                 }
 
-                return done.done;
+                return false;
             },
             {
                 timeout: 180_000,
@@ -393,20 +408,28 @@ describe("Link preview backfill — live", function () {
         await drainLogs(); // flush trailing backfill log lines
 
         // ── Step 7: Re-scan and assert enrichment ──
-        const enrichedNotes = linkNotes.filter((n) => {
+        // Gate on link_DESC — sync never writes it for a Reddit link post, so its
+        // presence is unambiguous proof the OG backfill fetched the destination
+        // page and wrote new metadata. link_image is reported (best-effort: only
+        // pages exposing og:image yield one), not gated.
+        const descedNotes = linkNotes.filter((n) => {
             try {
-                const text = fs.readFileSync(path.join(redditDir, n.file), "utf-8");
-                const f = parseLinkFields(text);
-                return !!(f.link_title && f.link_image);
+                return !!parseLinkFields(fs.readFileSync(path.join(redditDir, n.file), "utf-8")).link_desc;
+            } catch { return false; }
+        });
+        const imagedNotes = descedNotes.filter((n) => {
+            try {
+                return !!parseLinkFields(fs.readFileSync(path.join(redditDir, n.file), "utf-8")).link_image;
             } catch { return false; }
         });
 
         log(
-            `Final: ${enrichedNotes.length}/${linkNotes.length} link note(s) have link_title + link_image ` +
-            `(full log: ${liveLog})`,
+            `Final: ${descedNotes.length}/${linkNotes.length} link note(s) gained link_desc from OG backfill; ` +
+            `${imagedNotes.length} also have link_image (full log: ${liveLog})`,
         );
 
-        // Primary gate: at least one link note must have been enriched with link_title AND link_image.
-        expect(enrichedNotes.length).toBeGreaterThan(0);
+        // Primary gate: the OG backfill enriched at least one thin link note with a
+        // destination-page description (a field sync provably never sets).
+        expect(descedNotes.length).toBeGreaterThan(0);
     });
 });
