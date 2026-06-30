@@ -13,6 +13,7 @@ import { ResyncRunner } from "./vault-writer/resync-runner";
 import { type NormalizedRecord } from "../lib/normalize";
 import { type EnrichmentId } from "@/lib/enrichments";
 import { getBookmarkPlatform } from "../lib/extract";
+import { WRITE_CONCURRENCY } from "@/config";
 
 
 interface VaultWriterOpts {
@@ -165,43 +166,54 @@ export class VaultWriter {
       this.index.existingIds = await this.index.scanExistingIds();
     }
 
-    let pushed = 0, skipped = 0, resynced = 0;
+    let pushed = 0, skipped = 0, resynced = 0, completed = 0;
     const batchT0 = Date.now();
     const cum = this.cumulative;
     this.mediaDownloader.setStopSignal(stopSignal || null);
+    const existingIds = this.index.existingIds;
 
-    for (let i = 0; i < records.length; i++) {
-      if (stopSignal?.stopped) break;
-      const record = records[i];
-
-      // Yield every 20 items so React can flush log updates to the UI
-      if (i > 0 && i % 20 === 0) {
-        this.log(`  ${cum.processed + i} processed (${cum.pushed + pushed} new, ${cum.resynced + resynced} resync, ${cum.skipped - cum.resynced + skipped - resynced} skip)`);
-        await new Promise(r => setTimeout(r, 0));
-      }
-
-      if (this.index.existingIds.has(record.id)) {
+    // Process one record: resync if already on disk, else write. Each item is
+    // network-/ffmpeg-bound, so several run concurrently (pool below) to overlap
+    // the waits. Counter mutations are safe — JS runs these to completion between
+    // awaits, never truly in parallel.
+    const processRecord = async (record: NormalizedRecord): Promise<void> => {
+      if (existingIds.has(record.id)) {
         const t0 = Date.now();
         try { await this.resyncRunner.resyncRecord(record); resynced++; } catch (e: unknown) { this.log(`[resync-err] ${record.id}: ${e instanceof Error ? e.message : String(e)}`); }
         const elapsed = Date.now() - t0;
         if (elapsed > 3000) this.log(`[slow] resync ${record.id} took ${(elapsed / 1000).toFixed(1)}s`);
         skipped++;
-        continue;
+      } else {
+        try {
+          const t0 = Date.now();
+          const platform = getBookmarkPlatform(record);
+          await (this.writeDispatch[platform as Platform] ?? ((r: NormalizedRecord) => this.noteWriter.writeGenericRecord(r)))(record);
+          existingIds.add(record.id);
+          pushed++;
+          const elapsed = Date.now() - t0;
+          if (elapsed > 3000) this.log(`[slow] write ${record.id} took ${(elapsed / 1000).toFixed(1)}s`);
+        } catch (e: unknown) {
+          this.log(`[error] ${record.id}: ${e instanceof Error ? e.message : String(e)}`);
+          skipped++;
+        }
       }
+      completed++;
+      // Periodic progress line; the awaited Promise.race below already yields to
+      // the event loop so React can flush these to the UI.
+      if (completed % 20 === 0) {
+        this.log(`  ${cum.processed + completed} processed (${cum.pushed + pushed} new, ${cum.resynced + resynced} resync, ${cum.skipped - cum.resynced + skipped - resynced} skip)`);
+      }
+    };
 
-      try {
-        const t0 = Date.now();
-        const platform = getBookmarkPlatform(record);
-        await (this.writeDispatch[platform as Platform] ?? ((r: NormalizedRecord) => this.noteWriter.writeGenericRecord(r)))(record);
-        this.index.existingIds.add(record.id);
-        pushed++;
-        const elapsed = Date.now() - t0;
-        if (elapsed > 3000) this.log(`[slow] write ${record.id} took ${(elapsed / 1000).toFixed(1)}s`);
-      } catch (e: unknown) {
-        this.log(`[error] ${record.id}: ${e instanceof Error ? e.message : String(e)}`);
-        skipped++;
-      }
+    // Bounded-concurrency pool: keep up to WRITE_CONCURRENCY records in flight.
+    const inflight = new Set<Promise<void>>();
+    for (const record of records) {
+      if (stopSignal?.stopped) break;
+      const p = processRecord(record).finally(() => inflight.delete(p));
+      inflight.add(p);
+      if (inflight.size >= WRITE_CONCURRENCY) await Promise.race(inflight);
     }
+    await Promise.all(inflight);
 
     cum.pushed += pushed;
     cum.resynced += resynced;

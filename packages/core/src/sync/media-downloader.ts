@@ -5,8 +5,13 @@
  */
 import * as fs from "fs";
 import * as path from "path";
-import { execFileSync } from "child_process";
+import { execFile } from "child_process";
+import { promisify } from "util";
 import { requestUrl } from "obsidian";
+
+/** Async ffmpeg invocation — does NOT block the main thread (unlike execFileSync,
+ *  which froze the UI for the whole mux). Rejects on non-zero exit or timeout. */
+const execFileAsync = promisify(execFile);
 import { TIKTOK_VIDEO_DOWNLOAD_TIMEOUT_MS, MEDIA_DOWNLOAD_MAX_RETRIES } from "@/config";
 import type { ElectronWebview } from "@/types/sync";
 
@@ -202,7 +207,7 @@ export async function muxRedditVideo(opts: MuxRedditVideoOpts): Promise<boolean>
           // file inputs ("Option user_agent not found"), which silently forced
           // every audio-bearing video into the video-only fallback. The streams
           // are already downloaded via requestUrl, so ffmpeg just remuxes them.
-          execFileSync(ffmpegPath, [
+          await execFileAsync(ffmpegPath, [
             "-y",
             "-i", videoTmp,
             "-i", audioTmp,

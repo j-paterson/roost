@@ -31,6 +31,10 @@ export const SYNC_BATCH_SIZE = 200;
 export const EARLY_OUT_THRESHOLD = 3;
 export const TIKTOK_VIDEO_DOWNLOAD_TIMEOUT_MS = 60_000;
 export const MEDIA_DOWNLOAD_MAX_RETRIES = 2;
+/** How many records writeBatch processes concurrently. Each item is network- and
+ *  (for video) ffmpeg-bound, so a small pool overlaps the waits for a big speedup;
+ *  kept low to avoid hammering platform CDNs/APIs into rate-limiting. */
+export const WRITE_CONCURRENCY = 4;
 
 // ── Ollama ──
 export const OLLAMA_URL = "http://localhost:11434";

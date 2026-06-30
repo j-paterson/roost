@@ -29,9 +29,14 @@ vi.mock("child_process", async (importOriginal) => {
   const real = await importOriginal<typeof import("child_process")>();
   return {
     ...real,
-    execFileSync: vi.fn((bin: string, args: string[]) => {
+    // muxRedditVideo now uses promisify(execFile), so the callback form is what
+    // gets invoked. The last argument is the node-style callback; resolve it.
+    execFile: vi.fn((bin: string, args: string[], optsOrCb?: unknown, maybeCb?: unknown) => {
       execCalls.push({ bin, args });
-      return Buffer.from("");
+      const cb = (typeof optsOrCb === "function" ? optsOrCb : maybeCb) as
+        | ((e: unknown, stdout: string, stderr: string) => void)
+        | undefined;
+      cb?.(null, "", "");
     }),
   };
 });
