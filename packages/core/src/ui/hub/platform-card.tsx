@@ -107,46 +107,67 @@ function isIndeterminate(p: SyncProgress | null): boolean {
   return p.phase === "clustering" || p.phase === "scanning" || p.phase === "setup";
 }
 
+/**
+ * Active-sync row: two columns — the sync line (status + progress) on the left,
+ * and a small live webview preview on the right that shows the platform site
+ * driving the sync. The webview element is re-parented into `mountRef` by
+ * run-platform-sync for the duration of the sync, then returned to the manager's
+ * hidden container on completion (so the slot only renders while syncing).
+ */
 function LiveSyncRow({
   platform,
   live,
+  mountRef,
   onCancel,
 }: {
   platform: PlatformId;
   live: LiveSync;
+  mountRef: RefObject<HTMLDivElement | null>;
   onCancel: () => void;
 }) {
   const p = live.progress;
   return (
-    <div className="border-b border-border last:border-b-0">
-      <div className="grid grid-cols-[1.25rem_8rem_1fr_auto] items-center gap-3 px-4 py-2">
-        <span className="text-sm font-semibold text-muted-foreground animate-pulse" aria-hidden>⟳</span>
-        <span className="text-sm font-medium">{cardTitle(platform)}</span>
-        <span className="text-sm text-muted-foreground truncate">
-          {p ? (
-            <>
-              <span className="capitalize">{p.phase}</span>
-              {" · "}
-              {progressDetail(p)}
-            </>
-          ) : (
-            "starting…"
-          )}
-        </span>
-        <div className="justify-self-end">
-          <Button variant="outline" size="sm" onClick={onCancel}>Cancel</Button>
+    <div className="border-b border-border last:border-b-0 px-4 py-2">
+      <div className="grid grid-cols-[1fr_9rem] gap-3 items-stretch">
+        {/* Left column: the sync line + progress bar. */}
+        <div className="flex flex-col gap-1.5 min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-semibold text-muted-foreground animate-pulse" aria-hidden>⟳</span>
+            <span className="text-sm font-medium truncate">{cardTitle(platform)}</span>
+            <span className="ml-auto shrink-0">
+              <Button variant="outline" size="xs" onClick={onCancel}>Cancel</Button>
+            </span>
+          </div>
+          <span className="text-sm text-muted-foreground truncate">
+            {p ? (
+              <>
+                <span className="capitalize">{p.phase}</span>
+                {" · "}
+                {progressDetail(p)}
+              </>
+            ) : (
+              "starting…"
+            )}
+          </span>
+          <div className="h-1.5 rounded-full bg-border overflow-hidden">
+            {isIndeterminate(p) ? (
+              <div className="h-full bg-primary rounded-full w-full animate-pulse" />
+            ) : (
+              <div
+                className="h-full bg-primary rounded-full transition-all duration-300"
+                style={{ width: `${progressBarPct(p!)}%` }}
+              />
+            )}
+          </div>
         </div>
-      </div>
-      <div className="px-4 pb-2">
-        <div className="h-1.5 rounded-full bg-border overflow-hidden">
-          {isIndeterminate(p) ? (
-            <div className="h-full bg-primary rounded-full w-full animate-pulse" />
-          ) : (
-            <div
-              className="h-full bg-primary rounded-full transition-all duration-300"
-              style={{ width: `${progressBarPct(p!)}%` }}
-            />
-          )}
+        {/* Right column: small live webview preview (~9rem wide, 4:3). */}
+        <div
+          data-testid="sync-webview-slot"
+          className="self-center border border-border rounded-md overflow-hidden bg-background"
+          style={{ aspectRatio: "4 / 3" }}
+          title={`${cardTitle(platform)} sync — live`}
+        >
+          <div ref={mountRef} className="w-full h-full" />
         </div>
       </div>
     </div>
@@ -196,15 +217,16 @@ export function PlatformCard({
 }) {
   const title = cardTitle(platform);
 
-  // While a sync is live for this platform, render the syncing row +
-  // progress bar + the embedded webview pane regardless of the
-  // persisted PlatformState.
+  // While a sync is live for this platform, render the two-column sync row:
+  // status + progress on the left, a small live webview preview on the right.
   if (live && webviewMountRef) {
     return (
-      <>
-        <LiveSyncRow platform={platform} live={live} onCancel={onCancel ?? (() => {})} />
-        <LiveSyncPane mountRef={webviewMountRef} />
-      </>
+      <LiveSyncRow
+        platform={platform}
+        live={live}
+        mountRef={webviewMountRef}
+        onCancel={onCancel ?? (() => {})}
+      />
     );
   }
 

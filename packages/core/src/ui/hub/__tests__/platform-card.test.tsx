@@ -103,6 +103,49 @@ describe("PlatformCard — syncing", () => {
   });
 });
 
+describe("PlatformCard — live sync (two-column row)", () => {
+  const liveSync = {
+    signal: { stopped: false, stop() {} },
+    progress: { phase: "fetch", count: 800, total: 0, written: 800, resynced: 0, skipped: 0 },
+  };
+
+  it("renders the small webview slot beside the sync line when live", () => {
+    const mountRef = { current: null };
+    const onCancel = vi.fn();
+    const { container } = render(
+      <PlatformCard
+        platform="instagram"
+        state={{ kind: "connected-idle", itemCount: 0, lastSync: 0, backlogs: { mediaFiles: 0, thread: 0, articleBody: 0, playback: 0 } }}
+        live={liveSync as never}
+        webviewMountRef={mountRef}
+        onConnect={() => {}}
+        onSync={() => {}}
+        onReconnect={() => {}}
+        onCancel={onCancel}
+      />
+    );
+    // The webview slot renders only during a live sync.
+    expect(container.querySelector('[data-testid="sync-webview-slot"]')).toBeTruthy();
+    // Progress is shown on the left line, and Cancel is wired.
+    expect(screen.getByText(/800/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /cancel/i }));
+    expect(onCancel).toHaveBeenCalledOnce();
+  });
+
+  it("does NOT render the webview slot when idle (not live)", () => {
+    const { container } = render(
+      <PlatformCard
+        platform="tiktok"
+        state={{ kind: "connected-idle", itemCount: 5, lastSync: Date.now(), backlogs: { mediaFiles: 0, thread: 0, articleBody: 0, playback: 0 } }}
+        onConnect={() => {}}
+        onSync={() => {}}
+        onReconnect={() => {}}
+      />
+    );
+    expect(container.querySelector('[data-testid="sync-webview-slot"]')).toBeNull();
+  });
+});
+
 describe("PlatformCard — error", () => {
   it("shows reason and Retry button", () => {
     const onSync = vi.fn();
