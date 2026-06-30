@@ -66,6 +66,9 @@ export type SyncFn = (
  * webview-manager.ts, config.ts, and platform-card.tsx.  sync and parse
  * delegate to the existing leaf functions; later tasks migrate consumers
  * to read these fields and move the source of truth inside the descriptor.
+ *
+ * A discovery-only / not-yet-synced platform (e.g. Instagram Phase 1) may
+ * omit `sync` and `parse`; consumers must guard their presence before calling.
  */
 export interface PlatformDescriptor {
   /** Canonical platform key used in vault IDs and settings (matches Platform). */
@@ -89,8 +92,8 @@ export interface PlatformDescriptor {
   enabled: boolean;
   /** Raw probe script source (injected into the platform webview). */
   probeSource: string;
-  /** Sync function — drives the webview scroll + record stream. */
-  sync: SyncFn;
-  /** Field-level parsers over raw API data. */
-  parse: PlatformParser;
+  /** Sync function — drives the webview scroll + record stream. Omitted for discovery-only platforms. */
+  sync?: SyncFn;
+  /** Field-level parsers over raw API data. Omitted for discovery-only platforms. */
+  parse?: PlatformParser;
 }

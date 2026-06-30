@@ -6,7 +6,7 @@
  * to keep the import graph cycle-free (descriptors must not import back into this file).
  */
 import type { RawApiData } from "./normalize";
-import { getPlatform } from "@/platforms/registry";
+import { getPlatform, PLATFORMS } from "@/platforms/registry";
 import type { Platform } from "@/types/sync";
 
 // Re-export types and helpers that live in the helper modules so existing
@@ -36,8 +36,9 @@ export function getBookmarkPlatform(record: BookmarkRecord): string {
 
 export function getBookmarkItemId(record: BookmarkRecord): string | null {
   const platform = getBookmarkPlatform(record);
-  if (platform === "tiktok" || platform === "twitter") {
-    return getPlatform(platform as Platform).parse.id(record);
+  if (platform in PLATFORMS) {
+    const desc = getPlatform(platform as Platform);
+    if (desc.parse) return desc.parse.id(record);
   }
   const raw = getBookmarkRawData(record);
   return record?.itemId || record?.castHash || raw?.hash || null;
@@ -70,8 +71,9 @@ export function isSelfThreadTail(tweet: RawApiData | null | undefined): boolean 
 
 export function extractBookmarkText(record: BookmarkRecord): string {
   const platform = getBookmarkPlatform(record);
-  if (platform === "tiktok" || platform === "twitter") {
-    return getPlatform(platform as Platform).parse.caption(record);
+  if (platform in PLATFORMS) {
+    const desc = getPlatform(platform as Platform);
+    if (desc.parse) return desc.parse.caption(record);
   }
   const raw = getBookmarkRawData(record);
   if (!raw) return "";
@@ -80,16 +82,18 @@ export function extractBookmarkText(record: BookmarkRecord): string {
 
 export function extractBookmarkAuthor(record: BookmarkRecord): string {
   const platform = getBookmarkPlatform(record);
-  if (platform === "tiktok" || platform === "twitter") {
-    return getPlatform(platform as Platform).parse.authorName(record);
+  if (platform in PLATFORMS) {
+    const desc = getPlatform(platform as Platform);
+    if (desc.parse) return desc.parse.authorName(record);
   }
   return "Unknown";
 }
 
 export function extractBookmarkAuthorUsername(record: BookmarkRecord): string | null {
   const platform = getBookmarkPlatform(record);
-  if (platform === "tiktok" || platform === "twitter") {
-    return getPlatform(platform as Platform).parse.authorHandle(record);
+  if (platform in PLATFORMS) {
+    const desc = getPlatform(platform as Platform);
+    if (desc.parse) return desc.parse.authorHandle(record);
   }
   return null;
 }
@@ -101,8 +105,9 @@ export function buildTikTokVideoUrl(handle: string, itemId: string): string {
 
 export function extractBookmarkUrl(record: BookmarkRecord): string | null {
   const platform = getBookmarkPlatform(record);
-  if (platform === "tiktok" || platform === "twitter") {
-    return getPlatform(platform as Platform).parse.url(record);
+  if (platform in PLATFORMS) {
+    const desc = getPlatform(platform as Platform);
+    if (desc.parse) return desc.parse.url(record);
   }
   return null;
 }

@@ -17,7 +17,8 @@ export function roostNormalize(platform: string, item: RawApiData, options: Norm
   if (!item) return null;
 
   if (platform in PLATFORMS) {
-    return getPlatform(platform as Platform).parse.normalize(item, options);
+    const desc = getPlatform(platform as Platform);
+    if (desc.parse) return desc.parse.normalize(item, options);
   }
 
   // Farcaster (default)

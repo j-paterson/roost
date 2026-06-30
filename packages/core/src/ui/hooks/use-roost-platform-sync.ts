@@ -151,27 +151,32 @@ export function useRoostPlatformSync({ app, plugin, log, scanLibrary }: UseRoost
         }
       };
 
-      await getPlatform(platform).sync(
-        wc,
-        el,
-        {
-          stopSignal: signal,
-          hydrateCachedThread: (r) => writer.hydrateThreadFromCache(r),
-          fastSyncMode: plugin.settings.fastSyncMode,
-        },
-        onProgress,
-        onRecords,
-        log,
-      );
+      const desc = getPlatform(platform);
+      if (!desc.sync) {
+        log(`[${platform}] no sync function — skipping`);
+      } else {
+        await desc.sync(
+          wc,
+          el,
+          {
+            stopSignal: signal,
+            hydrateCachedThread: (r) => writer.hydrateThreadFromCache(r),
+            fastSyncMode: plugin.settings.fastSyncMode,
+          },
+          onProgress,
+          onRecords,
+          log,
+        );
 
-      syncCompleted = !signal.stopped;
-      log(`Sync complete: ${totalPushed} new, ${totalSkipped} skipped`);
-      new Notice(`Sync complete: ${totalPushed} new bookmarks`);
-      scanLibrary();
-      await ensureBasesFiles(app.vault, plugin.settings.syncFolder);
-      // Refresh pending-pipeline counts post-sync and auto-enqueue any work.
-      plugin.refreshPendingPipelines();
-      void plugin.autoEnqueuePendingPipelines();
+        syncCompleted = !signal.stopped;
+        log(`Sync complete: ${totalPushed} new, ${totalSkipped} skipped`);
+        new Notice(`Sync complete: ${totalPushed} new bookmarks`);
+        scanLibrary();
+        await ensureBasesFiles(app.vault, plugin.settings.syncFolder);
+        // Refresh pending-pipeline counts post-sync and auto-enqueue any work.
+        plugin.refreshPendingPipelines();
+        void plugin.autoEnqueuePendingPipelines();
+      }
     } catch (e: unknown) {
       log(`[ERROR] ${e instanceof Error ? e.message : String(e)}`);
     } finally {

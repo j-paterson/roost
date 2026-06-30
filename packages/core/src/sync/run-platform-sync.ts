@@ -151,23 +151,28 @@ export async function runPlatformSync(opts: RunPlatformSyncOpts): Promise<RunPla
       else if (skipped > 0) log(`Batch: ${skipped} already synced`);
     };
 
-    await getPlatform(platform).sync(
-      wc,
-      el,
-      {
-        stopSignal: signal,
-        hydrateCachedThread: (r) => writer.hydrateThreadFromCache(r),
-        fastSyncMode: effectiveFastMode,
-      },
-      onProgress,
-      onRecords,
-      log,
-    );
+    const desc = getPlatform(platform);
+    if (!desc.sync) {
+      log(`[${platform}] no sync function — skipping`);
+    } else {
+      await desc.sync(
+        wc,
+        el,
+        {
+          stopSignal: signal,
+          hydrateCachedThread: (r) => writer.hydrateThreadFromCache(r),
+          fastSyncMode: effectiveFastMode,
+        },
+        onProgress,
+        onRecords,
+        log,
+      );
 
-    syncCompleted = !signal.stopped;
-    log(`Sync complete: ${totalPushed} new, ${totalSkipped} skipped`);
-    if (!suppressNotice) {
-      new Notice(`${platform} sync complete: ${totalPushed} new bookmarks`);
+      syncCompleted = !signal.stopped;
+      log(`Sync complete: ${totalPushed} new, ${totalSkipped} skipped`);
+      if (!suppressNotice) {
+        new Notice(`${platform} sync complete: ${totalPushed} new bookmarks`);
+      }
     }
   } catch (e: unknown) {
     log(`[ERROR] ${e instanceof Error ? e.message : String(e)}`);
