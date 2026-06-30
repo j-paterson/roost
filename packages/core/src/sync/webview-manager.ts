@@ -6,6 +6,15 @@ import { getPlatform } from "@/platforms/registry";
 
 const CHROME_UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
 
+// "Mini" preview geometry. The webview lays out at a desktop logical size so the
+// site renders its full desktop layout, then we CSS-scale the whole element down
+// to fit the small hub slot (transform-origin top-left, clipped by the slot's
+// overflow:hidden). This produces a true zoomed-out miniature of the page rather
+// than the site's narrow/condensed responsive layout at a tiny width. 4:3 to
+// match the sync-preview slot's aspect ratio.
+const MINI_LOGICAL_WIDTH = 1280;
+const MINI_LOGICAL_HEIGHT = 960;
+
 /** Result of an auth-cookie probe. "unknown" means we couldn't determine it
  *  (webview not ready, or Electron session APIs unavailable e.g. in tests) —
  *  callers should treat it as "don't change what we already believe". */
@@ -32,6 +41,9 @@ function loadRemote(): {
 interface ManagedWebview {
   element: ElectronWebview;
   webContentsId: number | null;
+  /** Active observer that keeps the mini-preview scale fitted to its slot.
+   *  Null unless the webview is currently mounted in `mini` mode. */
+  miniObserver?: ResizeObserver | null;
 }
 
 export class WebviewManager {
@@ -112,6 +124,7 @@ export class WebviewManager {
    */
   show(platform: Platform): void {
     for (const [p, m] of this.webviews) {
+      this.clearMiniScale(m);
       if (p === platform) {
         m.element.style.cssText = "flex: 1; width: 100%; height: 100%; border: none;";
       } else {
@@ -122,6 +135,7 @@ export class WebviewManager {
 
   hideAll(): void {
     for (const m of this.webviews.values()) {
+      this.clearMiniScale(m);
       m.element.style.cssText = "flex: 1; width: 100%; height: 100%; border: none; position: absolute; visibility: hidden;";
     }
   }
@@ -132,11 +146,16 @@ export class WebviewManager {
    * is called, at which point it returns to the manager's hidden container.
    * Supports multiple webviews mounted in different targets simultaneously.
    */
-  mount(platform: Platform, target: HTMLElement): void {
+  mount(platform: Platform, target: HTMLElement, opts: { mini?: boolean } = {}): void {
     const managed = this.webviews.get(platform);
     if (!managed) return;
+    this.clearMiniScale(managed);
     target.appendChild(managed.element);
-    managed.element.style.cssText = "flex: 1; width: 100%; height: 100%; border: none;";
+    if (opts.mini) {
+      this.applyMiniScale(managed, target);
+    } else {
+      managed.element.style.cssText = "flex: 1; width: 100%; height: 100%; border: none;";
+    }
   }
 
   /**
@@ -147,8 +166,41 @@ export class WebviewManager {
   unmount(platform: Platform): void {
     const managed = this.webviews.get(platform);
     if (!managed) return;
+    this.clearMiniScale(managed);
     this.container.appendChild(managed.element);
     managed.element.style.cssText = "flex: 1; width: 100%; height: 100%; border: none; position: absolute; visibility: hidden;";
+  }
+
+  /**
+   * Lay the webview out at a desktop logical width and CSS-scale it to fit
+   * `target`, so the mounted preview reads as a true miniature of the desktop
+   * site rather than its condensed narrow-viewport layout. Re-fits on slot
+   * resize. Pointer events are disabled — this is a passive preview. The
+   * webview's first paint is deferred slightly (no measured width yet); the
+   * ResizeObserver re-fits once the slot has a real size.
+   */
+  private applyMiniScale(managed: ManagedWebview, target: HTMLElement): void {
+    const el = managed.element;
+    const fit = (): void => {
+      const w = target.getBoundingClientRect().width;
+      if (w <= 0) return;
+      const scale = w / MINI_LOGICAL_WIDTH;
+      el.style.cssText =
+        `width: ${MINI_LOGICAL_WIDTH}px; height: ${MINI_LOGICAL_HEIGHT}px; border: none; ` +
+        `transform: scale(${scale}); transform-origin: top left; pointer-events: none;`;
+    };
+    fit();
+    if (typeof ResizeObserver !== "undefined") {
+      const ro = new ResizeObserver(fit);
+      ro.observe(target);
+      managed.miniObserver = ro;
+    }
+  }
+
+  /** Tear down a mini-preview ResizeObserver if one is active. */
+  private clearMiniScale(managed: ManagedWebview): void {
+    managed.miniObserver?.disconnect();
+    managed.miniObserver = null;
   }
 
   /**
@@ -217,6 +269,7 @@ export class WebviewManager {
    */
   destroy(): void {
     for (const m of this.webviews.values()) {
+      this.clearMiniScale(m);
       m.element.remove();
     }
     this.webviews.clear();

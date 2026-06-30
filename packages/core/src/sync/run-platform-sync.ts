@@ -74,8 +74,10 @@ export async function runPlatformSync(opts: RunPlatformSyncOpts): Promise<RunPla
 
   const wm = plugin.getWebviewManager();
   // Mount before the dom-ready wait so the webview's first render happens
-  // in the visible target rather than the hidden manager container.
-  wm.mount(platform, mountTarget);
+  // in the visible target rather than the hidden manager container. `mini`:
+  // the sync preview is a passive thumbnail, so render the site at desktop
+  // width scaled down (a true miniature) rather than its condensed layout.
+  wm.mount(platform, mountTarget, { mini: true });
   const el = wm.getElement(platform);
   if (!el) {
     log(`[FAIL] No webview element for ${platform}`);
