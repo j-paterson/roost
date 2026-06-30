@@ -12,6 +12,7 @@ function mkState(over: Partial<HubState> = {}): HubState {
     platforms: {
       tiktok: { kind: "connected-idle", itemCount: 100, lastSync: Date.now(), backlogs: { mediaFiles: 0, thread: 0, articleBody: 0, playback: 0 } },
       x: { kind: "connected-idle", itemCount: 50, lastSync: Date.now(), backlogs: { mediaFiles: 0, thread: 0, articleBody: 0, playback: 0 } },
+      instagram: { kind: "unconfigured" },
       eagle: { kind: "unconfigured" },
     },
     global: { lastFullUpdate: Date.now(), anythingToUpdate: true, anythingNeedsAttention: false, runningJob: null, pipelinesPending: { total: 0, byPipeline: [] } },
@@ -41,6 +42,7 @@ describe("StatusStrip", () => {
       platforms: {
         tiktok: { kind: "unconfigured" },
         x: { kind: "unconfigured" },
+        instagram: { kind: "unconfigured" },
         eagle: { kind: "unconfigured" },
       },
       global: { lastFullUpdate: null, anythingToUpdate: false, anythingNeedsAttention: true, runningJob: null, pipelinesPending: { total: 0, byPipeline: [] } },

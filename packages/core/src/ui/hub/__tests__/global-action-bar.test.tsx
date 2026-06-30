@@ -12,6 +12,7 @@ function mkState(over: Partial<HubState> = {}): HubState {
     platforms: {
       tiktok: { kind: "unconfigured" },
       x: { kind: "unconfigured" },
+      instagram: { kind: "unconfigured" },
       eagle: { kind: "unconfigured" },
     },
     global: { lastFullUpdate: null, anythingToUpdate: false, anythingNeedsAttention: false, runningJob: null, pipelinesPending: { total: 0, byPipeline: [] } },
@@ -28,6 +29,7 @@ function connectedState(): HubState {
     platforms: {
       tiktok: { kind: "connected-idle", itemCount: 100, lastSync: 0, backlogs: { mediaFiles: 0, thread: 0, articleBody: 0, playback: 0 } },
       x: { kind: "unconfigured" },
+      instagram: { kind: "unconfigured" },
       eagle: { kind: "unconfigured" },
     },
     global: { lastFullUpdate: null, anythingToUpdate: true, anythingNeedsAttention: false, runningJob: null, pipelinesPending: { total: 0, byPipeline: [] } },
@@ -55,6 +57,7 @@ describe("GlobalActionBar", () => {
       platforms: {
         tiktok: { kind: "connected-idle", itemCount: 100, lastSync: 0, backlogs: { mediaFiles: 12, thread: 0, articleBody: 0, playback: 0 } },
         x: { kind: "unconfigured" },
+        instagram: { kind: "unconfigured" },
         eagle: { kind: "unconfigured" },
       },
       global: { lastFullUpdate: null, anythingToUpdate: true, anythingNeedsAttention: false, runningJob: null, pipelinesPending: { total: 0, byPipeline: [] } },

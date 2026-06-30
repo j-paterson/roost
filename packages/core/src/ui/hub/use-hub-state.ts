@@ -39,6 +39,7 @@ function gatherInputs(
     authByPlatform: {
       tiktok: plugin.authStatus.tiktok,
       twitter: plugin.authStatus.twitter,
+      instagram: plugin.authStatus.instagram,
     },
     eagleConfigured:
       (settings.eagleToken ?? "").length > 0 &&
