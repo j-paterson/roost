@@ -152,3 +152,71 @@ After `npm run build && npm run install:vault` and Obsidian restart:
 ## Concerns
 
 None. Implementation is minimal and follows existing patterns exactly. The `feedMode` stays private; the `onItemClick` event channel is the established seam. `syncHumanAssignedToPlugin` is the only new coupling point — it assigns the same Set instance with no copying overhead.
+
+---
+
+## Fix pass (2026-07-01)
+
+Applied three review findings against commit `6eb2598`.
+
+### Finding 1 — Cross-run stale Set: reset `humanAssignedRoostIds` in `setMatchState`
+
+**File:** `packages/core/src/views/bookmarks-bases-view.ts:225–232`
+
+Added two lines to `setMatchState`:
+```ts
+this.humanAssignedRoostIds = null;    // reset per run
+this.syncHumanAssignedToPlugin();     // keep plugin ref in lockstep
+```
+
+**Caller trace confirming `setMatchState` fires at run start:**
+- SA Run N finishes clustering → `runClusteringStep5Finalize` → `host.applyFilter({folders: proposals})` → `applyGalleryFilter` → `galleryFilterMatchState({folders:…})` returns `{null, null}` (no `matchedItemIds`) → `host.setMatchState(null, null)` — fires at Step 5, before the user can click "Start review pass"
+- Also: `resetSmartAssignStaging` (on confirm/cancel) → `applyFilter(null)` → same path → same reset
+
+Both paths clear `humanAssignedRoostIds` (view field) and `plugin.humanAssignedRoostIds` (ref). `setMatchState` IS the right reset point.
+
+**Test added:** `packages/core/src/views/__tests__/gallery-filter-apply.test.ts` — new describe block "setMatchState resets humanAssignedRoostIds per run (fix #1 seam test)":
+- Test 1: minimal plain-object mock that mirrors the fixed `setMatchState` body; asserts field + plugin ref are both null after the call
+- Test 2: `galleryFilterMatchState({folders:…})` returns `{null, null}` — proves the SA step-5 path sends `setMatchState(null, null)`
+- Note: `BookmarksBasesView` cannot be instantiated in vitest (Obsidian runtime class); tests exercise the nearest testable seam
+
+### Finding 2 — Disable "Start review pass" when proposals empty
+
+**File:** `packages/core/src/ui/components/RoostView.tsx:363`
+
+Changed:
+```tsx
+disabled={smartAssign.confirming}
+```
+to:
+```tsx
+disabled={smartAssign.confirming || !(smartAssign.proposedFolders?.length)}
+```
+
+Mirrors the Confirm button's existing `confirming` guard; the additional `proposedFolders?.length` guard prevents firing `seedReviewIds([])` → `startReviewPass([])` when staging lands with no proposals.
+
+### Finding 3 — Rejects loop coverage in the integration test
+
+**File:** `packages/core/src/ui/lib/smart-assign/__tests__/confirm.test.ts`
+
+Added sibling integration describe block "confirmSmartAssign integration — humanAssigned exclusion covers rejects loop":
+- `judgedRejectId`: in both `humanAssigned` AND `rejects` → `rejectedClasses` size = 0, no eval record
+- `bareRejectId`: in `rejects` only (not judged) → rejection-negative IS recorded, eval record IS emitted
+- Proves the `if (humanAssigned.has(id)) continue` guard in `captureLoopUpdates`'s REJECTS loop is live
+
+### Tests run
+
+```
+npx vitest run packages/core/src/ui/lib/smart-assign packages/core/src/views/__tests__/gallery-filter-apply.test.ts
+  → Test Files  11 passed (11)
+  → Tests  57 passed (57)
+
+npx tsc --noEmit  → 0 errors
+
+npx vitest run packages/core/src
+  → Test Files  234 passed | 2 skipped (236)
+  → Tests  1983 passed | 9 skipped (1992)
+  → Duration  13.6s
+```
+
+3 new tests (net +3 vs 1980 pre-fix-pass). All 3 findings fixed. No residual concerns.

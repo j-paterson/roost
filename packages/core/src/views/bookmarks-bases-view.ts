@@ -228,6 +228,8 @@ export class BookmarksBasesView extends BasesView
   ): void {
     this.matchedRoostIds = matched;
     this.matchDetailMap = detail;
+    this.humanAssignedRoostIds = null;    // reset per run — clears stale green rings + confirm exclusion set
+    this.syncHumanAssignedToPlugin();     // keep plugin.humanAssignedRoostIds in lockstep
   }
 
   applyFolderResult(result: GalleryFolderFilterApplied): void {

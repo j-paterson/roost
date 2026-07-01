@@ -360,7 +360,7 @@ export function RoostView({ app, plugin }: RoostViewProps) {
             <Button
               size="sm"
               variant="secondary"
-              disabled={smartAssign.confirming}
+              disabled={smartAssign.confirming || !(smartAssign.proposedFolders?.length)}
               onClick={() => {
                 const folders = smartAssign.proposedFolders ?? [];
                 const ids = seedReviewIds(folders, (id) => smartAssign.matchDetailMap?.get(id)?.score);

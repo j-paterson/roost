@@ -62,6 +62,55 @@ describe("confirmSmartAssign integration — humanAssigned exclusion end-to-end"
   });
 });
 
+describe("confirmSmartAssign integration — humanAssigned exclusion covers rejects loop", () => {
+  it("judged-rejected id yields no rejection-negative; un-judged rejected id still gets its negative", () => {
+    const judgedRejectId = "judged-reject-001";  // in humanAssigned AND rejects
+    const bareRejectId   = "bare-reject-001";    // in rejects only (not judged)
+    const humanAssigned  = new Set([judgedRejectId]);
+
+    // Step 1: buildItemCategory — both rejects are absent from the category map
+    // (rejects are never written as a positive assignment)
+    const itemCategory = buildItemCategory({
+      proposedFolders: [{ name: "Tech", itemIds: [judgedRejectId, bareRejectId] }],
+      unsortedIds: new Set([judgedRejectId, bareRejectId]),
+      uncertainIds: new Set<string>(),
+      reassigned: new Map<string, string>(),
+      rejects: new Set([judgedRejectId, bareRejectId]),
+      isSubcat: false,
+      assignedSubcategories: new Map<string, string | null>(),
+      humanAssigned,
+    });
+
+    // Neither reject appears in itemCategory (rejects are excluded by buildItemCategory's own guard)
+    expect(itemCategory.has(judgedRejectId)).toBe(false);
+    expect(itemCategory.has(bareRejectId)).toBe(false);
+
+    // Step 2: captureLoopUpdates — exercises the REJECTS loop humanAssigned guard
+    const { trainingSet: ts, evalRecords } = captureLoopUpdates({
+      ts: emptyTrainingSet(),
+      itemCategory,
+      reassigned: new Map<string, string>(),
+      rejects: new Set([judgedRejectId, bareRejectId]),
+      guesses: new Map([
+        [judgedRejectId, { guess: "Tech", tier: "stacked" as const }],
+        [bareRejectId,   { guess: "Tech", tier: "centroid" as const }],
+      ]),
+      now: 2000,
+      humanAssigned,
+    });
+
+    // judged-rejected id: no rejection-negative (already captured in review pass)
+    expect(rejectedClasses(ts, judgedRejectId).size).toBe(0);
+    // judged-rejected id: no eval record either
+    expect(evalRecords.find((r) => r.roostId === judgedRejectId)).toBeUndefined();
+
+    // un-judged rejected id: rejection-negative IS recorded
+    expect(rejectedClasses(ts, bareRejectId).size).toBeGreaterThan(0);
+    // un-judged rejected id: eval record IS emitted
+    expect(evalRecords.find((r) => r.roostId === bareRejectId)).toBeDefined();
+  });
+});
+
 describe("buildItemCategory excludes judged ids", () => {
   it("omits any id in humanAssigned", () => {
     const out = buildItemCategory({
