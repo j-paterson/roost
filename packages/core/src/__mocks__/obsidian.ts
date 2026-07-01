@@ -25,6 +25,9 @@ export class Setting {}
 export class Menu {}
 export class QueryController {}
 
+/** No-op stub — DOM icon rendering is not testable in happy-dom. */
+export function setIcon(_el: HTMLElement, _iconId: string): void {}
+
 export type RequestUrlParam = { url: string; method?: string; headers?: Record<string, string>; body?: string };
 export type RequestUrlResponse = { status: number; headers: Record<string, string>; json: unknown; text: string; arrayBuffer: ArrayBuffer };
 
