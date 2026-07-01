@@ -145,3 +145,22 @@ export function sortIndicesWithPins(
     return aPinned - bPinned;
   });
 }
+
+/** Reorder indices so human-assigned (green) items render after all others,
+ *  preserving input order within each group. Mirrors the semantics of
+ *  `greenLast` from review-pass.ts, adapted for index arrays. */
+export function sinkGreenIndices(
+  indices: number[],
+  entries: BasesEntry[],
+  humanIds: Set<string>,
+): number[] {
+  if (humanIds.size === 0) return indices;
+  const blue: number[] = [];
+  const green: number[] = [];
+  for (const idx of indices) {
+    const id = safeGetValue(entries[idx], "note.roost_id")?.toString();
+    if (id && humanIds.has(id)) green.push(idx);
+    else blue.push(idx);
+  }
+  return [...blue, ...green];
+}

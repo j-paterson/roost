@@ -48,7 +48,7 @@ import {
   type GalleryApplyFilterViewBind,
 } from "@/views/gallery-apply-filter-host";
 import type { GalleryFolderFilterApplied } from "@/views/gallery-filter-apply";
-import type { GalleryFilterIndicesResult } from "@/views/gallery-filter-indices";
+import { sinkGreenIndices, type GalleryFilterIndicesResult } from "@/views/gallery-filter-indices";
 import {
   galleryMediaResolvers,
   galleryHasMultipleImages,
@@ -99,6 +99,7 @@ export class BookmarksBasesView extends BasesView
   uncertainRoostIds: Set<string> | null = null;
   matchedRoostIds: Set<string> | null = null;
   matchDetailMap: Map<string, MatchDetail> | null = null;
+  humanAssignedRoostIds: Set<string> | null = null;
   splitMode = false;
   certainIndicesSplit: number[] | null = null;
   uncertainIndicesSplit: number[] | null = null;
@@ -225,11 +226,25 @@ export class BookmarksBasesView extends BasesView
   }
 
   applyLayoutState(layout: GalleryFilterIndicesResult): void {
+    const human = this.humanAssignedRoostIds ?? new Set<string>();
+    const entries = this.getAllEntries();
     this.splitMode = layout.splitMode;
-    this.certainIndicesSplit = layout.certainIndicesSplit;
-    this.uncertainIndicesSplit = layout.uncertainIndicesSplit;
     this.uncertainRoostIds = layout.uncertainRoostIds;
-    this.filteredIndices = layout.filteredIndices;
+    // In split mode, apply green-last within each pane separately so human
+    // items sink to the bottom of Certain and Uncertain independently.
+    if (layout.splitMode && layout.certainIndicesSplit && layout.uncertainIndicesSplit) {
+      const certain = sinkGreenIndices(layout.certainIndicesSplit, entries, human);
+      const uncertain = sinkGreenIndices(layout.uncertainIndicesSplit, entries, human);
+      this.certainIndicesSplit = certain;
+      this.uncertainIndicesSplit = uncertain;
+      this.filteredIndices = [...certain, ...uncertain];
+    } else {
+      this.certainIndicesSplit = layout.certainIndicesSplit;
+      this.uncertainIndicesSplit = layout.uncertainIndicesSplit;
+      this.filteredIndices = layout.filteredIndices
+        ? sinkGreenIndices(layout.filteredIndices, entries, human)
+        : null;
+    }
   }
 
   clearPinnedRoostIds(): void {
@@ -554,7 +569,7 @@ export class BookmarksBasesView extends BasesView
       uncertainRoostIds: this.uncertainRoostIds,
       matchedRoostIds: this.matchedRoostIds,
       matchDetailMap: this.matchDetailMap,
-      humanAssignedRoostIds: null,
+      humanAssignedRoostIds: this.humanAssignedRoostIds,
       isSelectionActive: () => this.gallerySelection.isActive(),
       isSelected: (id: string) => this.gallerySelection.isSelected(id),
       onSelectionToggle: (id: string, cardEl: HTMLElement) => this.gallerySelection.toggle(id, cardEl),
