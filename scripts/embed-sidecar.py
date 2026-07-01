@@ -33,6 +33,7 @@ import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from threading import Lock
+import numpy as np
 
 os.environ.setdefault("PYTORCH_MPS_HIGH_WATERMARK_RATIO", "0.0")
 
@@ -269,6 +270,42 @@ def transcribe_file(path):
         "language": getattr(info, "language", "") or "",
         "duration": duration,
     }
+
+
+VEC_DIM = 768
+_VEC_CACHE = {}  # path -> (mtime, keys, matrix)
+
+def load_vec_bin(path):
+    """Read a roost vectors .bin: first line = JSON keys, then raw <f4, 768/key.
+    Applies the same truncation-salvage prefix as the TS loader."""
+    with open(path, "rb") as f:
+        raw = f.read()
+    nl = raw.index(b"\n")
+    keys = json.loads(raw[:nl].decode("utf-8"))
+    data = raw[nl + 1:]
+    complete = len(data) // (VEC_DIM * 4)
+    n = min(len(keys), complete)
+    mat = np.frombuffer(data[: n * VEC_DIM * 4], dtype="<f4").reshape(n, VEC_DIM)
+    return keys[:n], mat
+
+def _cached_bin(path):
+    try:
+        mt = os.path.getmtime(path)
+    except OSError:
+        return {}
+    hit = _VEC_CACHE.get(path)
+    if hit and hit[0] == mt:
+        return hit[3]
+    keys, mat = load_vec_bin(path)
+    by_id = {k: mat[i] for i, k in enumerate(keys)}
+    _VEC_CACHE[path] = (mt, keys, mat, by_id)
+    return by_id
+
+def vec_maps(vault_root):
+    cache = os.path.join(vault_root, ".roost", "cache")
+    vision = _cached_bin(os.path.join(cache, "embedding-vectors.bin"))
+    text = _cached_bin(os.path.join(cache, "embedding-vectors-text.bin"))
+    return vision, text
 
 
 def load_model(model_path: Path, max_seq: int):
