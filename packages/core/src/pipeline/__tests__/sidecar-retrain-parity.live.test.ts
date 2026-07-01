@@ -25,7 +25,7 @@ import type { ClassifierHead } from "@/pipeline/classifier-head";
 // ── Constants ────────────────────────────────────────────────────────────────
 
 const DEV_VAULT_CACHE =
-  "/Users/josystem/SynologyDrive/SynologyDrive/ObsidianBookmarks/.roost/cache";
+  (process.env.ROOST_DEV_VAULT ?? "/Users/josystem/SynologyDrive/SynologyDrive/ObsidianBookmarks") + "/.roost/cache";
 const SIDECAR_URL = "http://127.0.0.1:11435/api/train-heads";
 const DIM = 768;
 /** Items per category sent to the trainer (80 % train, 20 % holdout of 50). */
