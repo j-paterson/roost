@@ -194,6 +194,76 @@ describe("GalleryFeedModeController review-pass dispatch", () => {
     expect(host.rejectAuto).not.toHaveBeenCalled();
   });
 
+  // F1: confirm uses proposalMap category, not stale frontmatter
+  it("confirm uses proposed category from proposalMap when entry has NO roost_category", async () => {
+    // Entry has NO roost_category (uncategorized Smart Assign item)
+    const entries = [makeEntry("id1"), makeEntry("id2")]; // no category
+    const host = makeTestHost(entries);
+    const ctrl = new GalleryFeedModeController(host);
+    ctrl.trainingMode = true;
+    ctrl.startReviewPass(["id1", "id2"], { id1: "Tech", id2: "Food" });
+
+    (ctrl as unknown as { handleTrainingAction: (a: string, id: string) => void })
+      .handleTrainingAction("confirm", "id1");
+
+    await vi.waitFor(() => expect(host.reviewConfirm).toHaveBeenCalledWith("id1", "Tech"));
+  });
+
+  it("confirm uses proposed category even when entry has a DIFFERENT stale frontmatter category", async () => {
+    // Entry's frontmatter says "Music" but SA proposed "Tech"
+    const entries = [makeEntry("id1", "Music")];
+    const host = makeTestHost(entries);
+    const ctrl = new GalleryFeedModeController(host);
+    ctrl.trainingMode = true;
+    ctrl.startReviewPass(["id1"], { id1: "Tech" });
+
+    (ctrl as unknown as { handleTrainingAction: (a: string, id: string) => void })
+      .handleTrainingAction("confirm", "id1");
+
+    await vi.waitFor(() => expect(host.reviewConfirm).toHaveBeenCalledWith("id1", "Tech"));
+  });
+
+  it("confirm with no proposal AND no frontmatter logs a warning and advances (no stuck feed)", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const entries = [makeEntry("id1"), makeEntry("id2")]; // no category, no proposal
+    const host = makeTestHost(entries);
+    const ctrl = new GalleryFeedModeController(host);
+    ctrl.trainingMode = true;
+    // No proposalMap supplied
+    ctrl.startReviewPass(["id1", "id2"]);
+
+    const setEntries = vi.fn();
+    (ctrl as unknown as { feedHandle: { setEntries: typeof setEntries } | null }).feedHandle = { setEntries };
+
+    (ctrl as unknown as { handleTrainingAction: (a: string, id: string) => void })
+      .handleTrainingAction("confirm", "id1");
+
+    // Should NOT call reviewConfirm
+    expect(host.reviewConfirm).not.toHaveBeenCalled();
+    // Should warn
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("[roost]"), "id1", expect.any(String));
+    // Should advance (setEntries called to move to next item)
+    await vi.waitFor(() => expect(setEntries).toHaveBeenCalled());
+    warnSpy.mockRestore();
+  });
+
+  // F2: setTrainingMode(false) clears reviewPassIds
+  it("setTrainingMode(false) clears reviewPassIds so a later setTrainingMode(true) yields filterTrainingEntries", () => {
+    // Entry has auto provenance + a category (passes autoWithGuess)
+    const entries = [makeEntry("id1", "Tech")]; // auto provenance
+    const host = makeTestHost(entries);
+    const ctrl = new GalleryFeedModeController(host);
+    ctrl.trainingMode = true;
+    ctrl.reviewPassIds = ["id1", "id2"]; // simulate a prior review pass
+    (ctrl as unknown as { reviewProposals: Record<string, string> | null }).reviewProposals = { id1: "Tech" };
+
+    // Turn off training mode
+    ctrl.setTrainingMode(false);
+
+    expect(ctrl.reviewPassIds).toBeNull();
+    expect((ctrl as unknown as { reviewProposals: Record<string, string> | null }).reviewProposals).toBeNull();
+  });
+
   // Fix 2: startReviewPass must reset skipped
   it("startReviewPass clears skipped set so items skipped in training still appear in the pass", () => {
     const entries = [makeEntry("id1", "Tech"), makeEntry("id2", "Food")];

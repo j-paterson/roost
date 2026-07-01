@@ -43,10 +43,35 @@ describe("planReviewConfirm", () => {
 describe("planCorrection", () => {
   it("writes the new category + human provenance and records a correction positive (not confirm-source)", () => {
     const ts = emptyTs();
-    const { patch, snapshotValue } = planCorrection(ts, "id2", "Design", 100);
+    const { patch, snapshotValue } = planCorrection(ts, "id2", "Design", "Tech", 100);
     expect(patch).toMatchObject({ roost_category: "Design", roost_assigned_by: "human" });
     expect(snapshotValue).toBe("Design");
     expect(ts.positives["id2"].category).toBe("Design");
     expect(ts.positives["id2"].source).not.toBe("confirm"); // a correction, capped path differs
+  });
+
+  it("eval record uses originalGuess as guess; correct=false when original differs from new category", () => {
+    const ts = emptyTs();
+    const { evalRecord } = planCorrection(ts, "id3", "Design", "Tech", 200);
+    expect(evalRecord.guess).toBe("Tech");
+    expect(evalRecord.finalLabel).toBe("Design");
+    expect(evalRecord.correct).toBe(false);
+    expect(evalRecord.mode).toBe("review");
+  });
+
+  it("eval record correct=true when originalGuess matches the new category", () => {
+    const ts = emptyTs();
+    const { evalRecord } = planCorrection(ts, "id4", "Tech", "Tech", 300);
+    expect(evalRecord.guess).toBe("Tech");
+    expect(evalRecord.finalLabel).toBe("Tech");
+    expect(evalRecord.correct).toBe(true);
+  });
+
+  it("eval record correct=false when originalGuess is null", () => {
+    const ts = emptyTs();
+    const { evalRecord } = planCorrection(ts, "id5", "Design", null, 400);
+    expect(evalRecord.guess).toBeNull();
+    expect(evalRecord.finalLabel).toBe("Design");
+    expect(evalRecord.correct).toBe(false);
   });
 });

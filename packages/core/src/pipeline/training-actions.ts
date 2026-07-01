@@ -77,13 +77,15 @@ export function planReviewConfirm(
 }
 
 /** Pure: move a review proposal to a DIFFERENT category (a correction). Writes the new
- *  category + human provenance; positive recorded with the correction source (uncapped). */
+ *  category + human provenance; positive recorded with the correction source (uncapped).
+ *  `originalGuess` is the system's proposed category the user is correcting; if null
+ *  (no proposal and no frontmatter) the guess field is recorded as null and correct=false. */
 export function planCorrection(
-  ts: TrainingSet, id: string, category: string, now: number,
+  ts: TrainingSet, id: string, category: string, originalGuess: string | null, now: number,
 ): { evalRecord: EvalRecord; patch: Record<string, unknown>; snapshotValue: string } {
   addPositive(ts, id, category, now, "correction");
   return {
-    evalRecord: { ts: now, roostId: id, guess: category, tier: "none", finalLabel: category, correct: true, mode: "review" },
+    evalRecord: { ts: now, roostId: id, guess: originalGuess, tier: "none", finalLabel: category, correct: originalGuess === category, mode: "review" },
     patch: { [CATEGORY_FIELD]: category, [ASSIGNED_BY_FIELD]: "human" },
     snapshotValue: category,
   };

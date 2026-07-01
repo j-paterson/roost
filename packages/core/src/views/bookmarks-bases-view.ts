@@ -230,6 +230,7 @@ export class BookmarksBasesView extends BasesView
     this.matchDetailMap = detail;
     this.humanAssignedRoostIds = null;    // reset per run — clears stale green rings + confirm exclusion set
     this.syncHumanAssignedToPlugin();     // keep plugin.humanAssignedRoostIds in lockstep
+    this.feedMode.resetReviewPass();      // clear stale review-pass ids/proposals from prior run
   }
 
   applyFolderResult(result: GalleryFolderFilterApplied): void {
@@ -359,7 +360,7 @@ export class BookmarksBasesView extends BasesView
     }
   }
 
-  async reviewMove(roostId: string, category: string): Promise<void> {
+  async reviewMove(roostId: string, category: string, originalGuess: string | null = null): Promise<void> {
     const entry = this.findEntryByRoostId(roostId);
     const file = entry ? this.app.vault.getFileByPath(entry.file.path) : null;
     if (!entry || !file) return;
@@ -367,7 +368,7 @@ export class BookmarksBasesView extends BasesView
       const now = Date.now();
       const deps: TrainingActionDeps = { vault: this.app.vault, fileManager: this.app.fileManager, file, id: roostId, now };
       const ts = loadTrainingSet(deps.vault);
-      const { evalRecord, patch, snapshotValue } = planCorrection(ts, roostId, category, now);
+      const { evalRecord, patch, snapshotValue } = planCorrection(ts, roostId, category, originalGuess, now);
       const snap = loadSnapshot(deps.vault);
       snap[roostId] = snapshotValue;
       saveSnapshot(deps.vault, snap);
@@ -549,7 +550,7 @@ export class BookmarksBasesView extends BasesView
         if (data?.action === "startReviewPass") {
           // Set review-pass ids FIRST so enterFeedMode (triggered by setTrainingMode)
           // calls trainingEntries() with the correct reviewPassIds already set.
-          this.feedMode.startReviewPass(data.itemIds);
+          this.feedMode.startReviewPass(data.itemIds, data.proposalMap);
           this.feedMode.setTrainingMode(true);
         }
       });

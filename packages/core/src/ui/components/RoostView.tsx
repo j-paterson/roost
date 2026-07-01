@@ -364,7 +364,13 @@ export function RoostView({ app, plugin }: RoostViewProps) {
               onClick={() => {
                 const folders = smartAssign.proposedFolders ?? [];
                 const ids = seedReviewIds(folders, (id) => smartAssign.matchDetailMap?.get(id)?.score);
-                plugin.fireItemClick({ action: "startReviewPass", itemIds: ids });
+                // Build roostId → proposed category name so the controller can confirm
+                // the PROPOSED category rather than the stale frontmatter value.
+                const proposalMap: Record<string, string> = {};
+                for (const f of folders) {
+                  for (const id of f.itemIds) proposalMap[id] = f.name;
+                }
+                plugin.fireItemClick({ action: "startReviewPass", itemIds: ids, proposalMap });
               }}
             >
               Review Pass

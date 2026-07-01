@@ -238,8 +238,9 @@ export type ItemClickData =
   | { action: "moveItems"; itemIds: string[]; to: string }
   | { action: "deleteItems"; roostIds: string[] }
   /** Fired by the "Start review pass" button in RoostView; handled by the gallery
-   *  view's onItemClick subscriber which calls feedMode.startReviewPass + setTrainingMode. */
-  | { action: "startReviewPass"; itemIds: string[] };
+   *  view's onItemClick subscriber which calls feedMode.startReviewPass + setTrainingMode.
+   *  proposalMap is roostId → proposed folder.name (the category the user sees in the UI). */
+  | { action: "startReviewPass"; itemIds: string[]; proposalMap: Record<string, string> };
 
 /**
  * Input for a Smart Assign run. The hook operates purely as a function

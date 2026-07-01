@@ -64,7 +64,8 @@ export interface GalleryFeedModeHost {
   rejectAuto(roostId: string): Promise<void>;
   // Review-pass actions (Task 6): commit-as-you-go writes + humanAssignedRoostIds tracking.
   reviewConfirm(roostId: string, category: string): Promise<void>;
-  reviewMove(roostId: string, category: string): Promise<void>;
+  /** originalGuess is the system's proposed category being corrected; null when unknown. */
+  reviewMove(roostId: string, category: string, originalGuess: string | null): Promise<void>;
   reviewReject(roostId: string): Promise<void>;
   openReviewMoveModal(entry: BasesEntry, onCategory: (category: string) => Promise<void>): void;
 }
@@ -76,6 +77,9 @@ export class GalleryFeedModeController {
   /** When non-null the controller is in review-pass mode: feed entries are seeded from
    *  these ids (pre-ordered by seedReviewIds) instead of filterTrainingEntries. */
   reviewPassIds: string[] | null = null;
+  /** roostId → proposed folder.name; set by startReviewPass, used in confirm to avoid
+   *  reading stale frontmatter. Null when not in a review pass. */
+  reviewProposals: Record<string, string> | null = null;
 
   private feedSplitMount: FeedSplitMount | null = null;
   private feedHandle: FeedPanelHandle | null = null;
@@ -141,6 +145,10 @@ export class GalleryFeedModeController {
       this.registerKeyboard();
     } else {
       this.deregisterKeyboard();
+      // Clear review-pass state so a subsequent setTrainingMode(true) without
+      // startReviewPass yields filterTrainingEntries, not the stale review queue.
+      this.reviewPassIds = null;
+      this.reviewProposals = null;
       if (this.feedHandle) {
         this.feedHandle.setEntries(this.host.getScopedEntries(), this.feedSync.get());
       }
@@ -170,15 +178,26 @@ export class GalleryFeedModeController {
 
   /** Enter review-pass mode: seed the feed from pre-ordered proposal ids (produced
    *  by seedReviewIds at the call site). Must be called while trainingMode is on
-   *  (or before entering training mode). */
-  startReviewPass(ids: string[]): void {
+   *  (or before entering training mode).
+   *  proposalMap is roostId → proposed folder.name so confirm can use the proposed
+   *  category rather than (potentially absent or stale) frontmatter. */
+  startReviewPass(ids: string[], proposalMap?: Record<string, string>): void {
     this.reviewPassIds = ids;
+    this.reviewProposals = proposalMap ?? null;
     this.skipped = new Set();
     if (this.trainingMode) {
       const entries = this.trainingEntries();
       this.lastTrainingEntries = entries;
       this.feedHandle?.setEntries(entries, this.feedSync.get());
     }
+  }
+
+  /** Belt-and-suspenders reset called from the host (setMatchState) when a new Smart
+   *  Assign run begins, so stale reviewPassIds from a prior pass never leak into the
+   *  next regular Train session. */
+  resetReviewPass(): void {
+    this.reviewPassIds = null;
+    this.reviewProposals = null;
   }
 
   private trainingEntries(): BasesEntry[] {
@@ -250,7 +269,10 @@ export class GalleryFeedModeController {
       // leaves the item un-judged and still in the review queue.
       this.host.openReviewMoveModal(entry, async (category) => {
         this.skipped.add(roostId);
-        await this.host.reviewMove(roostId, category);
+        // Pass the system's original guess so planCorrection can compute correct=false
+        // when the user picks a different category.
+        const originalGuess = this.reviewProposals?.[roostId] ?? (entry ? readGuess(entry).category : null);
+        await this.host.reviewMove(roostId, category, originalGuess);
         this.advanceAfterAction(roostId);
       });
       return;
@@ -261,10 +283,14 @@ export class GalleryFeedModeController {
     let p: Promise<void>;
     if (action === "confirm") {
       const entry = this.host.findEntryByRoostId(roostId);
-      const cat = entry ? readGuess(entry).category : null;
+      // Prefer the proposal map (the category shown to the user) over frontmatter (which
+      // may be stale or absent for uncategorized Smart-Assign items).
+      const cat = (this.reviewProposals?.[roostId] ?? null) || (entry ? readGuess(entry).category : null);
       if (!cat) {
+        // No proposal and no frontmatter category — cannot confirm; log and advance.
+        console.warn("[roost] review-pass confirm: no category for", roostId, "— skipping");
         this.inFlight.delete(roostId);
-        this.skipped.delete(roostId);
+        this.advanceAfterAction(roostId);
         return;
       }
       p = this.host.reviewConfirm(roostId, cat);
