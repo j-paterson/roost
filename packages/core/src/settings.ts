@@ -77,10 +77,11 @@ export interface RoostSettings {
    *  embeddings — re-run Smart Assign (describe + dual-embed) so the runtime
    *  cache matches before relying on this path. */
   smartAssignStacking: boolean;
-  /** When true, confirming Smart Assign retrains the per-vault classifier head
-   *  from accumulated human corrections (in-process; only swapped in when the
-   *  acceptance gate passes — fail-closed). Default false — opt in once you
-   *  have enough labelled data (RETRAIN_SIGNAL_FLOOR human actions per confirm).
+  /** When true, confirming Smart Assign triggers a retrain of the per-vault
+   *  classifier head via the Python sidecar (off-thread, seconds). The new head
+   *  is swapped in only when the acceptance gate passes — fail-closed. Default
+   *  true — retrain now runs off-thread in the sidecar so it no longer blocks
+   *  the UI. Set false to disable auto-retrain entirely.
    *  See docs/superpowers/specs/2026-06-26-self-improving-loop-design.md. */
   smartAssignAutoRetrain: boolean;
   /** Names of the user's OWN categories that handle uncensored/explicit content

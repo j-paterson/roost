@@ -118,15 +118,7 @@ export const CORRECTION_RATE_WINDOW_BATCHES = 8;
 export const DRIFT_FLAG_DELTA = 0.15;
 
 // ── Retrain engine (Spec 2 Plan 2) ────────────────────────────────────────────
-export const LOGREG_C = 1.0;            // sklearn C; data-term scale, no intercept penalty
-export const LOGREG_TOL = 1e-6;         // gradient-norm convergence tolerance
-/** Conjugate-gradient iteration cap per logistic-regression fit. fmin stops early
- *  at ‖grad‖≤1e-5, but on high-dim heads (K·D+K params) that's rarely reached, so
- *  this cap dominates. 2000 made a single retrain take 20+ min (13 fits × ~7 trains
- *  on a large label set) and froze Smart Assign; 200 fits the model well past the
- *  point of diminishing returns and the acceptance gate rejects any regression. */
-export const LOGREG_MAX_ITERATIONS = 200;
-export const OOF_FOLDS = 5;             // StratifiedKFold splits for the meta head
+export const OOF_FOLDS = 5;             // StratifiedKFold splits for the sidecar meta head
 export const RETRAIN_SIGNAL_FLOOR = 10; // min new human labels since last train before retrain
 
 // ── Retrain gate (Spec 2 amendment) ───────────────────────────────────────────

@@ -1,115 +1,65 @@
-# Task 7 Report — per-platform parsers live in descriptors
+# Task 7 Report: Remove dead JS trainer
 
 ## Status: DONE
 
-## Commit
-`617808c` on `feat/platform-descriptor-abstraction`
+## Step 1 — Grep result (proof of no runtime consumers)
 
-## Gate Results
-- **Golden (30 assertions):** 30/30
-- **extract.test.ts (article handling + schema variants):** 13/13
-- **Full suite:** 1809/1809 passed (0 failed)
-- **tsc --noEmit:** clean
+```
+packages/core/src/config.ts:128:export const LOGREG_MAX_ITERATIONS = 200;
+packages/core/src/pipeline/train-head.ts:2:import { fitLogReg } from "@/pipeline/logreg-fit";
+packages/core/src/pipeline/train-head.ts:59:export function stratifiedKFold(...)
+packages/core/src/pipeline/train-head.ts:78:export function trainStackedHeadsFromRows(...)
+packages/core/src/pipeline/train-head.ts:90:  const text = fitLogReg(...)
+packages/core/src/pipeline/train-head.ts:91:  const vision = fitLogReg(...)
+packages/core/src/pipeline/train-head.ts:94:  const folds = stratifiedKFold(...)
+packages/core/src/pipeline/train-head.ts:95:  const Pt = oofProba(...)
+packages/core/src/pipeline/train-head.ts:96:  const Pv = oofProba(...)
+packages/core/src/pipeline/train-head.ts:98:  const metaFit = fitLogReg(...)
+packages/core/src/pipeline/train-head.ts:114:function oofProba(...)
+packages/core/src/pipeline/train-head.ts:125:    const fit = fitLogReg(...)
+packages/core/src/pipeline/train-head.ts:135:export function trainStackedHeads(vault: Vault) ...
+packages/core/src/pipeline/train-head.ts:136:  return trainStackedHeadsFromRows(...)
+packages/core/src/pipeline/logreg-fit.ts:4:import { LOGREG_C, LOGREG_TOL, LOGREG_MAX_ITERATIONS } from "@/config";
+packages/core/src/pipeline/logreg-fit.ts:32:export function fitLogReg(...)
+packages/core/src/pipeline/logreg-fit.ts:96:  const sol = conjugateGradient(f, theta0, { maxIterations: LOGREG_MAX_ITERATIONS });
+```
 
----
+**All hits are definitions only** — no non-test runtime consumer outside the files being deleted. Cleared to proceed.
 
-## Approach: ESM live-binding circular import (safe)
+Note: `train-head-parity.test.ts` (a test file, excluded by `grep -v __tests__`) also imported `trainStackedHeadsFromRows`; it was deleted alongside the TS trainer.
 
-The "flip" creates: `extract.ts → registry.ts → tiktok.ts → extract.ts` (and similarly for twitter).
+## Files deleted
 
-This is safe in Vite/vitest native ESM because:
-1. All extract.ts symbols that descriptors import (extractTikTokMedia, extractTikTokSubtitleUrl, extractTwitterMedia, expandTweetUrls, getTwitterUserName, getTwitterUserScreenName) are `export function` — hoisted at module link phase.
-2. Descriptors only reference those imports inside function body closures, never at module-init time.
-3. PLATFORMS = { tiktok, twitter } in registry.ts is evaluated after both descriptor modules complete (no TDZ).
-4. No new files created.
+| File | Reason |
+|------|--------|
+| `packages/core/src/pipeline/logreg-fit.ts` | The JS logistic-regression implementation — now dead, training runs in the Python sidecar |
+| `packages/core/src/pipeline/__tests__/logreg-fit.test.ts` | Tests for the deleted implementation |
+| `packages/core/src/pipeline/__tests__/train-head-parity.test.ts` | TS-trainer vs sklearn parity test — moot now that the TS trainer is gone |
 
----
+## Files modified
 
-## Changes
+| File | Change |
+|------|--------|
+| `packages/core/src/pipeline/train-head.ts` | Removed `trainStackedHeadsFromRows`, `trainStackedHeads`, `stratifiedKFold`, `oofProba`, `minClassCount`, `headData`; removed imports: `fitLogReg`, `softmaxProba`, `ClassifierHeadData`, `MetaHeadData`, `OOF_FOLDS`. Kept: `TrainingRow`, `selectTrainingPositives`, `buildTrainingRows`. |
+| `packages/core/src/config.ts` | Deleted `LOGREG_C`, `LOGREG_TOL`, `LOGREG_MAX_ITERATIONS`. Kept `OOF_FOLDS` (still used by retrain.ts + retrain.test.ts). |
+| `packages/core/src/pipeline/__tests__/retrain-perf-guard.test.ts` | Removed `LOGREG_MAX_ITERATIONS` assertion and its import; kept `GATE_OOF < OOF_FOLDS` test; updated comment to reflect sidecar ownership. |
+| `packages/core/src/pipeline/__tests__/train-head.test.ts` | Removed `stratifiedKFold` and `trainStackedHeadsFromRows` describe blocks; kept all `selectTrainingPositives` cases. |
+| `packages/core/src/settings.ts` | Updated `smartAssignAutoRetrain` interface JSDoc: "Default false — opt in…" → "Default true — retrain runs off-thread in the sidecar". |
 
-### tiktok.ts
-- Removed 5 Task-1 wrapper imports. Kept: extractTikTokMedia, extractTikTokSubtitleUrl.
-- parse.id: `record?.itemId || raw?.id || raw?.video?.id || null`
-- parse.caption: `raw?.desc || ""`
-- parse.authorName: `raw.author?.nickname || raw.author?.uniqueId || "Unknown"`
-- parse.authorHandle: `raw.author?.uniqueId || null`
-- parse.url: inline username + itemId → `https://www.tiktok.com/@${u}/video/${id}`
-- parse.media / subtitleUrl: unchanged wrappers.
-- getBookmarkRawData inlined as `record?.rawData || record?.castData || null`.
+## Gate output
 
-### twitter.ts
-- Removed 5 Task-1 wrapper imports.
-- Added: getTwitterUserName, getTwitterUserScreenName, expandTweetUrls, extractTwitterMedia (from extract.ts); roostUnwrapTweet (from normalize); article functions (from article-extract).
-- parse.id: `record?.itemId || raw?.rest_id || raw?.legacy?.id_str || null` — legacy.id_str fallback preserved verbatim.
-- parse.caption: full article-result extraction (article.article_results.result + quoted_status_result path) BEFORE tweet-text path, then expandTweetUrls(roostUnwrapTweet(raw)).
-- parse.authorName: getTwitterUserName(raw) || getTwitterUserScreenName(raw) || "Unknown"
-- parse.authorHandle: getTwitterUserScreenName(raw)
-- parse.url: inline username (getTwitterUserScreenName) + itemId → https://x.com/…/status/…
-- parse.media: extractTwitterMedia(record) (unchanged).
+**tsc:** clean (exit 0, no output)
 
-### extract.ts
-- Added: import getPlatform from registry; import type Platform from types/sync.
-- Removed: article-extract imports (now unused).
-- Exported: getTwitterUserName, getTwitterUserScreenName, expandTweetUrls (now needed by twitter.ts).
-- 5 public functions replaced with thin delegators: `return getPlatform(platform as Platform).parse.X(record)` for tiktok/twitter; farcaster fallback logic kept inline.
+**Full test suite:**
+```
+Test Files  232 passed | 2 skipped (234)
+Tests  1951 passed | 9 skipped (1960)
+```
 
----
+## Commit hash
 
-## Article pre-branch logic preserved
-Entire twitter branch of extractBookmarkText (both article paths + quoted_status_result path) moved verbatim into twitter.ts parse.caption. extract.test.ts article tests: 13/13.
-
-## legacy.id_str fallback preserved
-twitter.ts parse.id: third position in `record?.itemId || raw?.rest_id || raw?.legacy?.id_str || null`.
-
-## No recursion
-parse.url inlines username/itemId directly rather than calling extractBookmarkAuthorUsername/getBookmarkItemId back through extract.ts. parse.* methods call no extract.ts functions that delegate to themselves.
+(see git log HEAD)
 
 ## Concerns
-None.
 
----
-
-## Fix wave (cycle break)
-
-### Functions moved
-
-**To `packages/core/src/lib/twitter-helpers.ts`** (new file):
-- `BookmarkRecord` type
-- `getBookmarkRawData` (private helper, now exported)
-- `getTwitterUser`, `getTwitterUserLegacy`, `getTwitterUserCore` (private helpers)
-- `getTwitterUserName`, `getTwitterUserScreenName` (exported)
-- `stripMediaUrls`, `getTweetMediaUrls`, `expandTweetUrls` (exported)
-- `extractTwitterMedia` (exported) — quoted-tweet article path reimplemented inline using `extractArticleContent`/`renderArticleNoteBody`/`renderArticleStubBody` from `./article-extract` (no platform deps) to avoid routing through the registry
-
-**To `packages/core/src/lib/tiktok-helpers.ts`** (new file):
-- `extractTikTokMedia`, `extractTikTokSubtitleUrl` (exported)
-- Private copy of `getBookmarkRawData` one-liner
-
-### extract.ts changes
-- Removed all moved function bodies
-- Added re-exports from `./twitter-helpers` and `./tiktok-helpers` for backward compat (existing callers unchanged)
-- Updated header comment — removed "pure functions, no platform deps" claim; now describes delegation pattern and the helper module split
-- `BookmarkRecord` re-exported from `./twitter-helpers`
-
-### Importers updated
-- `platforms/twitter.ts`: imports `getTwitterUserName`, `getTwitterUserScreenName`, `expandTweetUrls`, `extractTwitterMedia` from `@/lib/twitter-helpers`
-- `platforms/tiktok.ts`: imports `extractTikTokMedia`, `extractTikTokSubtitleUrl` from `@/lib/tiktok-helpers`
-- `platforms/descriptor.ts`: `import type { BookmarkRecord, extractTwitterMedia } from "@/lib/twitter-helpers"` + `import type { extractTikTokMedia } from "@/lib/tiktok-helpers"` (no longer imports from `@/lib/extract`)
-- `pipeline/shared.ts`: imports `stripMediaUrls`, `getTweetMediaUrls` from `@/lib/twitter-helpers`
-- `lib/__tests__/strip-media-urls.test.ts`: imports from `../twitter-helpers`
-
-### Cycle-verification grep results (both must be empty)
-```
-grep -rn "@/lib/extract" packages/core/src/platforms/  → (empty) ✓
-grep -rn "@/platforms" packages/core/src/lib/twitter-helpers.ts  → (empty) ✓
-```
-
-### Gate results
-- **Golden (30 assertions):** 30/30 ✓
-- **extract.test.ts:** 13/13 ✓
-- **Full suite:** 1809/1809 passed (0 failed) ✓
-- **tsc --noEmit:** clean ✓
-
-### Notes
-- First attempt broke the `quote-of-article` regression test (`tweet-render.test.ts`) because the original `extractTwitterMedia` routed through `extractBookmarkText → getPlatform("twitter").parse.caption` which applies the article path. Fixed by importing `article-extract` directly in `twitter-helpers.ts` (no platform cycle since `article-extract.ts` has zero imports) and reimplementing the same article check inline.
-- All other callers of `extractTikTokMedia`, `extractTikTokSubtitleUrl`, `extractTwitterMedia` (resync-runner, tiktok-record-writer, views/tweet-view-model, golden tests) continue to import from `@/lib/extract` — the re-exports keep them working without path changes.
+None. `train-head-parity.test.ts` was not in the original brief's file list because it was an indirect hit (excluded by `grep -v __tests__`), but it imported `trainStackedHeadsFromRows` directly and would have failed the type-check — deleted it as part of removing the JS trainer.
