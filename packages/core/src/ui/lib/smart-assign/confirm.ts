@@ -31,11 +31,13 @@ export function buildItemCategory(args: {
   rejects: Set<string>;
   isSubcat: boolean;
   assignedSubcategories: Map<string, string | null>;
+  humanAssigned?: Set<string>;
 }): Map<string, string> {
-  const { proposedFolders, unsortedIds, uncertainIds, reassigned, rejects, isSubcat, assignedSubcategories } = args;
+  const { proposedFolders, unsortedIds, uncertainIds, reassigned, rejects, isSubcat, assignedSubcategories, humanAssigned = new Set() } = args;
   const itemCategory = new Map<string, string>();
   for (const folder of proposedFolders) {
     for (const id of folder.itemIds) {
+      if (humanAssigned.has(id)) continue;
       if (!unsortedIds.has(id)) continue;
       if (uncertainIds.has(id) && !reassigned.has(id)) continue;
       if (rejects.has(id)) continue; // rejected: wrong, no replacement → leave unsorted
@@ -97,12 +99,14 @@ export function captureLoopUpdates(args: {
   rejects: Set<string>;
   guesses: Map<string, { guess: string | null; tier: EvalTier }>; // pre-correction head guess
   now: number;
+  humanAssigned?: Set<string>;
 }): { trainingSet: TrainingSet; evalRecords: EvalRecord[] } {
-  const { ts, itemCategory, reassigned, rejects, guesses, now } = args;
+  const { ts, itemCategory, reassigned, rejects, guesses, now, humanAssigned = new Set() } = args;
   const evalRecords: EvalRecord[] = [];
 
   // Positives: human-provenance written items only (never auto-accepted).
   for (const [id, encoded] of itemCategory) {
+    if (humanAssigned.has(id)) continue; // already captured in review pass
     if (!reassigned.has(id)) continue; // auto → not trained
     const category = encoded.indexOf("\x00") >= 0 ? encoded.slice(0, encoded.indexOf("\x00")) : encoded;
     addPositive(ts, id, category, now);
@@ -110,12 +114,14 @@ export function captureLoopUpdates(args: {
 
   // Negatives: rejected items (id ✗ the class the head guessed).
   for (const id of rejects) {
+    if (humanAssigned.has(id)) continue; // already captured in review pass
     const g = guesses.get(id)?.guess;
     if (g) addRejection(ts, id, g);
   }
 
   // Prequential eval: for every reviewed item with a guess, compare guess vs final label.
   for (const [id, g] of guesses) {
+    if (humanAssigned.has(id)) continue; // already captured in review pass
     if (!itemCategory.has(id) && !rejects.has(id)) continue; // user didn't resolve this item → not part of the organic holdout
     let finalLabel: string | null = null;
     if (rejects.has(id)) finalLabel = null; // rejected, no replacement
