@@ -173,6 +173,7 @@ export class GalleryFeedModeController {
    *  (or before entering training mode). */
   startReviewPass(ids: string[]): void {
     this.reviewPassIds = ids;
+    this.skipped = new Set();
     if (this.trainingMode) {
       const entries = this.trainingEntries();
       this.lastTrainingEntries = entries;
@@ -245,9 +246,10 @@ export class GalleryFeedModeController {
     if (action === "recategorize") {
       const entry = this.host.findEntryByRoostId(roostId);
       if (!entry) return;
-      // Drop item from queue immediately; advance fires in the modal callback after the write.
-      this.skipped.add(roostId);
+      // skipped.add + advance happen inside the callback so a cancel (no callback)
+      // leaves the item un-judged and still in the review queue.
       this.host.openReviewMoveModal(entry, async (category) => {
+        this.skipped.add(roostId);
         await this.host.reviewMove(roostId, category);
         this.advanceAfterAction(roostId);
       });

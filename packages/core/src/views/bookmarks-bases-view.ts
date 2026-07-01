@@ -375,15 +375,16 @@ export class BookmarksBasesView extends BasesView
     const entry = this.findEntryByRoostId(roostId);
     const file = entry ? this.app.vault.getFileByPath(entry.file.path) : null;
     const guess = entry ? readGuess(entry).category : null;
+    // Always mark judged so confirmSmartAssign excludes this id even when no guess exists.
+    if (!this.humanAssignedRoostIds) this.humanAssignedRoostIds = new Set();
+    this.humanAssignedRoostIds.add(roostId);
+    this.onDataUpdated();
     if (!entry || !file || !guess) return;
     try {
       await rejectAutoItem(
         { vault: this.app.vault, fileManager: this.app.fileManager, file, id: roostId, now: Date.now() },
         guess,
       );
-      if (!this.humanAssignedRoostIds) this.humanAssignedRoostIds = new Set();
-      this.humanAssignedRoostIds.add(roostId);
-      this.onDataUpdated();
     } catch (e) {
       console.warn("[roost] reviewReject failed:", e);
     }
@@ -396,17 +397,17 @@ export class BookmarksBasesView extends BasesView
     void entry; // entry available for future preview enhancement; unused here
     const plugin = this.getRoostPlugin();
     const proposed: { id: string; name: string }[] = plugin?.proposedFolderNames ?? [];
-    const proposedIds = new Set(proposed.map(f => f.id));
+    const proposedNames = new Set(proposed.map(f => f.name));
     const vault = this.getVaultCategories();
     const all: { id: string; name: string }[] = [
       ...proposed,
-      ...vault.filter(c => !proposedIds.has(c.id)),
+      ...vault.filter(c => !proposedNames.has(c.name)),
     ];
     const app = this.app;
     class ReviewMoveModal extends FuzzySuggestModal<{ id: string; name: string }> {
       getItems() { return all; }
       getItemText(item: { id: string; name: string }) { return item.name; }
-      onChooseItem(item: { id: string; name: string }) { void onCategory(item.id); }
+      onChooseItem(item: { id: string; name: string }) { void onCategory(item.name); }
     }
     const modal = new ReviewMoveModal(app);
     modal.setPlaceholder("Move to category…");

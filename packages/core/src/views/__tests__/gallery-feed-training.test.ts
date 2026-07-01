@@ -193,4 +193,43 @@ describe("GalleryFeedModeController review-pass dispatch", () => {
     expect(host.confirmAuto).not.toHaveBeenCalled();
     expect(host.rejectAuto).not.toHaveBeenCalled();
   });
+
+  // Fix 2: startReviewPass must reset skipped
+  it("startReviewPass clears skipped set so items skipped in training still appear in the pass", () => {
+    const entries = [makeEntry("id1", "Tech"), makeEntry("id2", "Food")];
+    const host = makeTestHost(entries);
+    const ctrl = new GalleryFeedModeController(host);
+    ctrl.trainingMode = true;
+    // Simulate an item that was skipped during a prior training session.
+    (ctrl as unknown as { skipped: Set<string> }).skipped.add("id1");
+
+    ctrl.startReviewPass(["id1", "id2"]);
+
+    const skipped = (ctrl as unknown as { skipped: Set<string> }).skipped;
+    expect(skipped.size).toBe(0);
+    // trainingEntries() via computeReviewPassEntries now includes id1.
+    const reviewEntries = (ctrl as unknown as { trainingEntries: () => BasesEntry[] }).trainingEntries();
+    expect(reviewEntries.map(e => getRoostId(e))).toEqual(["id1", "id2"]);
+  });
+
+  // Fix 4: recategorize cancel must not strand the item
+  it("recategorize-cancel (callback never invoked) leaves item NOT in skipped and still in the queue", () => {
+    const entries = [makeEntry("id1", "Tech"), makeEntry("id2", "Food")];
+    const host = makeTestHost(entries);
+    const ctrl = new GalleryFeedModeController(host);
+    ctrl.trainingMode = true;
+    ctrl.startReviewPass(["id1", "id2"]);
+
+    // Trigger recategorize — openReviewMoveModal is a stub; callback is captured but never called.
+    (ctrl as unknown as { handleTrainingAction: (a: string, id: string) => void })
+      .handleTrainingAction("recategorize", "id1");
+
+    expect(host.openReviewMoveModal).toHaveBeenCalledOnce();
+    // id1 must NOT be in skipped — cancel leaves it un-judged.
+    const skipped = (ctrl as unknown as { skipped: Set<string> }).skipped;
+    expect(skipped.has("id1")).toBe(false);
+    // id1 still appears in the review queue.
+    const remaining = (ctrl as unknown as { trainingEntries: () => BasesEntry[] }).trainingEntries();
+    expect(remaining.map(e => getRoostId(e))).toContain("id1");
+  });
 });
