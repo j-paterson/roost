@@ -62,6 +62,10 @@ export interface GalleryCardHandlers {
   /** True when the cover is a generated text card (card.png / threaded text
    *  page). These render as a text tile from note.title instead of an <img>. */
   isTextTileCover: (entry: BasesEntry) => boolean;
+  /** Async note-body excerpt for no-media/no-link posts (e.g. Reddit self/text
+   *  posts) so their card shows the post text instead of a bare platform icon.
+   *  Resolves to "" when the note has no body. Absent → keep the icon. */
+  resolveExcerpt?: (entry: BasesEntry) => Promise<string>;
   /** Pipeline type for the compact-card overlay icon, resolved from frontmatter. */
   pipelineTypeForEntry: (entry: BasesEntry) => PipelineType | null;
   /** Called when the user clicks the 🔗 badge on a link card. */
@@ -83,6 +87,29 @@ function renderTextTileCover(coverEl: HTMLElement, entry: BasesEntry): void {
     const bodyEl = coverEl.createDiv({ cls: "roost-card-cover-text-body" });
     bodyEl.textContent = text;
   }
+}
+
+/** Render a text tile for a no-media/no-link post (e.g. a Reddit self/text post)
+ *  from the note BODY. Shows the title immediately, then upgrades to the body
+ *  excerpt once read (async), so the card never flashes empty. Author line mirrors
+ *  renderTextTileCover. */
+function renderExcerptCover(
+  coverEl: HTMLElement,
+  entry: BasesEntry,
+  resolveExcerpt: (entry: BasesEntry) => Promise<string>,
+): void {
+  coverEl.addClass("roost-card-cover-text");
+  const authorValue = safeGetValue(entry, "note.author");
+  if (authorValue) {
+    const authorEl = coverEl.createDiv({ cls: "roost-card-cover-text-author" });
+    authorEl.textContent = authorValue.toString().replace(/\[\[People\/|\]\]/g, "");
+  }
+  const bodyEl = coverEl.createDiv({ cls: "roost-card-cover-text-body" });
+  const rawTitle = safeGetValue(entry, "note.title")?.toString() ?? "";
+  bodyEl.textContent = cleanCaption(rawTitle) || rawTitle;
+  void resolveExcerpt(entry).then((excerpt) => {
+    if (excerpt) bodyEl.textContent = excerpt;
+  });
 }
 
 /** Estimated card height from Bases view config sliders. */
@@ -226,6 +253,11 @@ export function hydrateGalleryCard(
       const badge = coverEl.createDiv({ cls: "roost-card-badge" });
       badge.textContent = "📷+";
     }
+  } else if (handlers.resolveExcerpt && !safeGetString(entry, "note.link_url")) {
+    // No media and not a link post → a self/text post (e.g. Reddit). Show its
+    // body text instead of a bare platform icon. Link posts keep the icon here;
+    // their cover is a link preview handled by the link-tile chrome below.
+    renderExcerptCover(coverEl, entry, handlers.resolveExcerpt);
   } else {
     const platform = safeGetValue(entry, "note.platform")?.toString() ?? "";
     coverEl.style.cssText += `

@@ -57,6 +57,7 @@ import {
   galleryResolveVideoUrl,
   galleryIsTextTileCover,
 } from "@/views/gallery-media-bridge";
+import { getExplorerExcerpt } from "@/views/explorer-excerpt";
 import { createBookmarksPipelineHost } from "@/views/gallery-pipeline-setup";
 import { pipelineTypeFromFrontmatter } from "@/pipeline/extraction-from-frontmatter";
 import type { PipelineGalleryHost } from "@/views/gallery-pipeline-host";
@@ -562,6 +563,7 @@ export class BookmarksBasesView extends BasesView
       resolveVideoUrl: (entry: BasesEntry) => galleryResolveVideoUrl(this.app, entry),
       hasMultipleImages: (entry: BasesEntry) => galleryHasMultipleImages(this.app, entry),
       isTextTileCover: (entry: BasesEntry) => galleryIsTextTileCover(this.app, entry),
+      resolveExcerpt: (entry: BasesEntry) => getExplorerExcerpt(entry.file, this.app),
       pipelineTypeForEntry: (entry: BasesEntry) => pipelineTypeFromFrontmatter(this.app.metadataCache.getFileCache(entry.file)?.frontmatter ?? {}),
       onOpenLink: (url: string) => { void openLinkInView(this.app, url); },
       onSelect: (roostId: string, e: MouseEvent) => {
