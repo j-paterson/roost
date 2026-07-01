@@ -71,9 +71,13 @@ function headData(W: number[][], b: number[], classes: string[], dim: number, n:
   return { classes, W, b, dim, norm: "l2", trainedOn: n, version: 1 };
 }
 
-/** Core trainer over in-memory rows (vault-free, for tests + the vault wrapper). */
+/** Core trainer over in-memory rows (vault-free, for tests + the vault wrapper).
+ *  `oofFolds` sets the meta-head's out-of-fold split count; the acceptance-gate's
+ *  throwaway models pass the cheaper GATE_OOF (fewer inner fits) since they're
+ *  never deployed. Defaults to OOF_FOLDS for the deployed head. */
 export function trainStackedHeadsFromRows(
   rows: TrainingRow[],
+  opts: { oofFolds?: number } = {},
 ): { text: ClassifierHeadData; vision: ClassifierHeadData; meta: MetaHeadData } | null {
   if (rows.length === 0) return null;
   const classes = [...new Set(rows.map((r) => r.category))].sort();
@@ -87,7 +91,7 @@ export function trainStackedHeadsFromRows(
   const vision = fitLogReg(Xv, y, classes, { balanced: true });
 
   // OOF meta features: for each fold, train on the rest, predict_proba on the fold.
-  const folds = stratifiedKFold(y, Math.min(OOF_FOLDS, minClassCount(y)), y.map((_, i) => i));
+  const folds = stratifiedKFold(y, Math.min(opts.oofFolds ?? OOF_FOLDS, minClassCount(y)), y.map((_, i) => i));
   const Pt = oofProba(Xt, y, classes, folds);
   const Pv = oofProba(Xv, y, classes, folds);
   const feat = rows.map((_, i) => [...Pt[i], ...Pv[i]]); // text first, length 2C

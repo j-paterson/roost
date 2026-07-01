@@ -173,7 +173,9 @@ export const DEFAULT_SETTINGS: RoostSettings = {
   smartAssignClassifierHead: true,
   smartAssignTags: false,
   smartAssignStacking: true,
-  smartAssignAutoRetrain: true,
+  // Default OFF: the run-start retrain blocks the main thread. Even after the
+  // perf fix (LOGREG_MAX_ITERATIONS + GATE_OOF) it's opt-in — enable in settings.
+  smartAssignAutoRetrain: false,
   uncensoredCategories: [],
   facetCategories: [],
   anthropicApiKey: "",

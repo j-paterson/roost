@@ -3,7 +3,7 @@ import { buildTrainingRows, trainStackedHeadsFromRows, type TrainingRow } from "
 import { evaluateGate, type GateResult, type GateSample } from "@/pipeline/acceptance-gate";
 import { writeStackedHeads, restorePreviousHeads, loadRetrainMeta, saveRetrainMeta } from "@/pipeline/head-store";
 import { loadStackedHeads, type StackedHeads, type ClassifierHeadData, type MetaHeadData } from "@/pipeline/classifier-head";
-import { RETRAIN_SIGNAL_FLOOR, GATE_KFOLDS, GATE_EPS } from "@/config";
+import { RETRAIN_SIGNAL_FLOOR, GATE_KFOLDS, GATE_EPS, GATE_OOF } from "@/config";
 import type { TrainingSet } from "@/pipeline/training-set";
 import { appendRetrainLog } from "@/pipeline/retrain-log";
 
@@ -151,8 +151,9 @@ export function runRetrain(vault: Vault, log: (m: string) => void): RetrainOutco
       if (holdout.length === 0) continue;
       const baselineRows = train.filter((r) => r.ts <= effectiveWatermark);
       if (baselineRows.length === 0) continue; // nothing "before" → can't form a fair baseline this fold
-      const baseData = trainStackedHeadsFromRows(baselineRows);
-      const candData = trainStackedHeadsFromRows(train);
+      // Gate models are throwaway (never deployed) → cheaper GATE_OOF inner folds.
+      const baseData = trainStackedHeadsFromRows(baselineRows, { oofFolds: GATE_OOF });
+      const candData = trainStackedHeadsFromRows(train, { oofFolds: GATE_OOF });
       if (!baseData || !candData) continue;
       folds.push(evaluateGate(toStacked(baseData), toStacked(candData), holdout));
     }
@@ -170,6 +171,11 @@ export function runRetrain(vault: Vault, log: (m: string) => void): RetrainOutco
     log(
       `[retrain] candidate rejected (fail-closed): macroΔ ${(foldDecision!.avgMacroDelta * 100).toFixed(1)}pp overallΔ ${(foldDecision!.avgOverallDelta * 100).toFixed(1)}pp catastrophic=${foldDecision!.catastrophicClasses.join(",") || "none"}`,
     );
+    // Advance the watermark even on rejection: the gate DID evaluate these labels
+    // and found no improvement, so we must not re-run the (expensive) retrain from
+    // scratch every subsequent Smart Assign. It re-fires only once ≥RETRAIN_SIGNAL_FLOOR
+    // NEW labels accumulate past this point.
+    saveRetrainMeta(vault, { lastRetrainTs: Date.now() });
     const outcome: RetrainOutcome = {
       ran: true,
       swapped: false,

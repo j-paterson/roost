@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { Vault } from "obsidian";
 import { shouldRetrain, decideSwap, decideFromFolds, runRetrain, newLabelsSince, medianTs } from "@/pipeline/retrain";
+import { GATE_OOF } from "@/config";
 import type { StackedHeads } from "@/pipeline/classifier-head";
 import type { GateResult } from "@/pipeline/acceptance-gate";
 import type { ClassifierHeadData, MetaHeadData } from "@/pipeline/classifier-head";
@@ -168,7 +169,26 @@ describe("runRetrain", () => {
     expect(vi.mocked(restorePreviousHeads)).not.toHaveBeenCalled();
   });
 
-  it("gate fails → writeStackedHeads NOT called; result {ran:true, swapped:false, reason:'gate failed'}; restorePreviousHeads NOT called", () => {
+  it("gate models train with the cheaper GATE_OOF; the deployed head uses default OOF", () => {
+    vi.mocked(buildTrainingRows).mockReturnValue(fakeRows);
+    vi.mocked(trainStackedHeadsFromRows).mockReturnValue(fakeCandidateData);
+    vi.mocked(loadStackedHeads).mockReturnValue(fakeCurrentHeads);
+    vi.mocked(loadRetrainMeta).mockReturnValue({ lastRetrainTs: FAKE_LAST_RETRAIN_TS });
+    vi.mocked(evaluateGate).mockReturnValue(gatePass);
+
+    runRetrain(mockVault, () => {});
+
+    const calls = vi.mocked(trainStackedHeadsFromRows).mock.calls;
+    // Every gate-model train (all but the final deploy) passes { oofFolds: GATE_OOF }.
+    const gateCalls = calls.slice(0, -1);
+    expect(gateCalls.length).toBeGreaterThan(0);
+    for (const c of gateCalls) expect(c[1]).toEqual({ oofFolds: GATE_OOF });
+    // The final deploy train uses the default (no oofFolds override).
+    const deployCall = calls[calls.length - 1];
+    expect(deployCall[1]).toBeUndefined();
+  });
+
+  it("gate fails → writeStackedHeads NOT called; advances watermark (no re-fire every run); restorePreviousHeads NOT called", () => {
     vi.mocked(buildTrainingRows).mockReturnValue(fakeRows);
     vi.mocked(trainStackedHeadsFromRows).mockReturnValue(fakeCandidateData);
     vi.mocked(loadStackedHeads).mockReturnValue(fakeCurrentHeads);
@@ -179,7 +199,9 @@ describe("runRetrain", () => {
 
     expect(result).toMatchObject({ ran: true, swapped: false, reason: "gate failed" });
     expect(vi.mocked(writeStackedHeads)).not.toHaveBeenCalled();
-    expect(vi.mocked(saveRetrainMeta)).not.toHaveBeenCalled();
+    // The gate evaluated these labels and found no gain — advance the watermark so
+    // the expensive retrain doesn't re-run from scratch on every Smart Assign.
+    expect(vi.mocked(saveRetrainMeta)).toHaveBeenCalledOnce();
     expect(vi.mocked(restorePreviousHeads)).not.toHaveBeenCalled();
   });
 

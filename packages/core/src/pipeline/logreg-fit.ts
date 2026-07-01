@@ -1,7 +1,7 @@
 // @ts-expect-error — fmin ships no type declarations; import via index.js (proper ESM entry)
 // because fmin@0.0.4's "main" points to a UMD build that doesn't export as ESM.
 import { conjugateGradient } from "fmin/index.js";
-import { LOGREG_C, LOGREG_TOL } from "@/config";
+import { LOGREG_C, LOGREG_TOL, LOGREG_MAX_ITERATIONS } from "@/config";
 
 export interface LogRegResult {
   W: number[][]; // classes × dim
@@ -93,7 +93,7 @@ export function fitLogReg(
 
   // fmin@0.0.4: no gradientTolerance param; maxIterations controls iterations.
   // Convergence hardcoded to norm(grad) <= 1e-5 in fmin's source.
-  const sol = conjugateGradient(f, theta0, { maxIterations: 2000 });
+  const sol = conjugateGradient(f, theta0, { maxIterations: LOGREG_MAX_ITERATIONS });
   const theta = sol.x as number[];
 
   const W: number[][] = [];
