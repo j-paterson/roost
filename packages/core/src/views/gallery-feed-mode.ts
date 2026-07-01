@@ -9,7 +9,7 @@ import { mountFeedPanel, type FeedPanelHandle } from "@/views/feed/feed-panel";
 import { createFeedSync, type FeedSync } from "@/views/feed/feed-sync";
 import type { FeedRenderContext } from "@/views/feed/feed-renderers";
 import { mountFeedSplit, type FeedSplitMount } from "@/views/feed/feed-split-host";
-import { filterTrainingEntries } from "@/views/feed/training-mode";
+import { filterTrainingEntries, readGuess } from "@/views/feed/training-mode";
 
 const FEED_MIN_PANE_PX = 280;
 const FEED_DEFAULT_GRID_RATIO = 0.35;
@@ -34,6 +34,21 @@ export function computeAdvance(remainingIds: string[], judgedIndex: number): str
   return remainingIds[i];
 }
 
+/** Pure: filter and order allEntries by reviewPassIds, excluding skipped.
+ *  Entries not present in allEntries are silently dropped. */
+export function computeReviewPassEntries(
+  reviewPassIds: string[],
+  allEntries: BasesEntry[],
+  skipped: Set<string>,
+): BasesEntry[] {
+  const byId = new Map<string, BasesEntry>();
+  for (const e of allEntries) byId.set(getRoostId(e), e);
+  return reviewPassIds
+    .filter(id => !skipped.has(id))
+    .map(id => byId.get(id))
+    .filter((e): e is BasesEntry => e !== undefined);
+}
+
 export interface GalleryFeedModeHost {
   app: App;
   scrollEl: HTMLElement;
@@ -47,12 +62,20 @@ export interface GalleryFeedModeHost {
   onViewModeChanged(): void;
   confirmAuto(roostId: string): Promise<void>;
   rejectAuto(roostId: string): Promise<void>;
+  // Review-pass actions (Task 6): commit-as-you-go writes + humanAssignedRoostIds tracking.
+  reviewConfirm(roostId: string, category: string): Promise<void>;
+  reviewMove(roostId: string, category: string): Promise<void>;
+  reviewReject(roostId: string): Promise<void>;
+  openReviewMoveModal(entry: BasesEntry, onCategory: (category: string) => Promise<void>): void;
 }
 
 export class GalleryFeedModeController {
   viewMode: "grid" | "feed" = "grid";
   feedAutoOpenedForMedia = false;
   trainingMode = false;
+  /** When non-null the controller is in review-pass mode: feed entries are seeded from
+   *  these ids (pre-ordered by seedReviewIds) instead of filterTrainingEntries. */
+  reviewPassIds: string[] | null = null;
 
   private feedSplitMount: FeedSplitMount | null = null;
   private feedHandle: FeedPanelHandle | null = null;
@@ -145,7 +168,22 @@ export class GalleryFeedModeController {
     if (this.viewMode === "feed") this.exitFeedMode();
   }
 
+  /** Enter review-pass mode: seed the feed from pre-ordered proposal ids (produced
+   *  by seedReviewIds at the call site). Must be called while trainingMode is on
+   *  (or before entering training mode). */
+  startReviewPass(ids: string[]): void {
+    this.reviewPassIds = ids;
+    if (this.trainingMode) {
+      const entries = this.trainingEntries();
+      this.lastTrainingEntries = entries;
+      this.feedHandle?.setEntries(entries, this.feedSync.get());
+    }
+  }
+
   private trainingEntries(): BasesEntry[] {
+    if (this.reviewPassIds !== null) {
+      return computeReviewPassEntries(this.reviewPassIds, this.host.getAllEntries(), this.skipped);
+    }
     return filterTrainingEntries(this.host.getScopedEntries(), this.skipped);
   }
 
@@ -165,6 +203,12 @@ export class GalleryFeedModeController {
     roostId: string,
   ): void {
     if (!this.trainingMode) return;
+    // Review-pass mode: different action semantics (planReviewConfirm / planCorrection /
+    // planReject with humanAssignedRoostIds tracking). Route to dedicated handler.
+    if (this.reviewPassIds !== null) {
+      this.handleReviewPassAction(action, roostId);
+      return;
+    }
     if (action === "skip") {
       this.skipped.add(roostId);
       this.advanceAfterAction(roostId);
@@ -183,6 +227,49 @@ export class GalleryFeedModeController {
     // rely on it disappearing from getScopedEntries() in time for a deterministic advance.
     this.skipped.add(roostId);
     const p = action === "confirm" ? this.host.confirmAuto(roostId) : this.host.rejectAuto(roostId);
+    void p.finally(() => { this.inFlight.delete(roostId); this.advanceAfterAction(roostId); });
+  }
+
+  /** Review-pass action handler: confirm → planReviewConfirm, move → planCorrection,
+   *  reject → planReject. Each action writes frontmatter immediately (commit-as-you-go),
+   *  adds to humanAssignedRoostIds, and advances the feed. */
+  private handleReviewPassAction(
+    action: "confirm" | "reject" | "recategorize" | "skip",
+    roostId: string,
+  ): void {
+    if (action === "skip") {
+      this.skipped.add(roostId);
+      this.advanceAfterAction(roostId);
+      return;
+    }
+    if (action === "recategorize") {
+      const entry = this.host.findEntryByRoostId(roostId);
+      if (!entry) return;
+      // Drop item from queue immediately; advance fires in the modal callback after the write.
+      this.skipped.add(roostId);
+      this.host.openReviewMoveModal(entry, async (category) => {
+        await this.host.reviewMove(roostId, category);
+        this.advanceAfterAction(roostId);
+      });
+      return;
+    }
+    if (this.inFlight.has(roostId)) return;
+    this.inFlight.add(roostId);
+    this.skipped.add(roostId);
+    let p: Promise<void>;
+    if (action === "confirm") {
+      const entry = this.host.findEntryByRoostId(roostId);
+      const cat = entry ? readGuess(entry).category : null;
+      if (!cat) {
+        this.inFlight.delete(roostId);
+        this.skipped.delete(roostId);
+        return;
+      }
+      p = this.host.reviewConfirm(roostId, cat);
+    } else {
+      // reject
+      p = this.host.reviewReject(roostId);
+    }
     void p.finally(() => { this.inFlight.delete(roostId); this.advanceAfterAction(roostId); });
   }
 

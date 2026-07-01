@@ -2,7 +2,7 @@
  * Custom Bases view — renders bookmark notes as a visual card grid.
  * Registers as "Bookmarks" in the Bases view dropdown.
  */
-import { BasesView, BasesEntry, Menu } from "obsidian";
+import { BasesView, BasesEntry, Menu, FuzzySuggestModal } from "obsidian";
 import type { QueryController } from "obsidian";
 import type { RoostFilter, MatchDetail } from "@/types/roost";
 import { getRoostPlugin } from "@/lib/roost-plugin";
@@ -66,7 +66,16 @@ import { openLinkInView } from "@/views/roost-link-view";
 import { isCategoryPipelineActive } from "@/lib/pipeline-gate-plugin";
 import { CATEGORY_FIELD } from "@/config";
 import { safeGetValue } from "@/lib/bases-entry";
-import { confirmAutoItem, rejectAutoItem } from "@/pipeline/training-actions";
+import {
+  confirmAutoItem,
+  rejectAutoItem,
+  planReviewConfirm,
+  planCorrection,
+  type TrainingActionDeps,
+} from "@/pipeline/training-actions";
+import { loadSnapshot, saveSnapshot } from "@/pipeline/category-snapshot";
+import { loadTrainingSet, saveTrainingSet } from "@/pipeline/training-set";
+import { appendEvalRecords } from "@/pipeline/eval-log";
 import { readGuess } from "@/views/feed/training-mode";
 
 export const BASES_VIEW_ID = "roost-bookmarks";
@@ -309,6 +318,99 @@ export class BookmarksBasesView extends BasesView
     } catch (e) {
       console.warn("[roost] rejectAuto failed:", e);
     }
+  }
+
+  // ── Review-pass host methods (Task 6) ──────────────────────────────────────
+  // Each write follows the confirmAutoItem/rejectAutoItem pattern: preseed snapshot →
+  // persist training-set + eval → write frontmatter.  After the write, the id is
+  // added to humanAssignedRoostIds so the grid card greens + sinks on the next repaint.
+
+  async reviewConfirm(roostId: string, category: string): Promise<void> {
+    const entry = this.findEntryByRoostId(roostId);
+    const file = entry ? this.app.vault.getFileByPath(entry.file.path) : null;
+    if (!entry || !file) return;
+    try {
+      const now = Date.now();
+      const deps: TrainingActionDeps = { vault: this.app.vault, fileManager: this.app.fileManager, file, id: roostId, now };
+      const ts = loadTrainingSet(deps.vault);
+      const { evalRecord, patch, snapshotValue } = planReviewConfirm(ts, roostId, category, now);
+      const snap = loadSnapshot(deps.vault);
+      snap[roostId] = snapshotValue;
+      saveSnapshot(deps.vault, snap);
+      saveTrainingSet(deps.vault, ts);
+      appendEvalRecords(deps.vault, [evalRecord]);
+      await deps.fileManager.processFrontMatter(file, (fm) => { Object.assign(fm, patch); });
+      if (!this.humanAssignedRoostIds) this.humanAssignedRoostIds = new Set();
+      this.humanAssignedRoostIds.add(roostId);
+      this.onDataUpdated();
+    } catch (e) {
+      console.warn("[roost] reviewConfirm failed:", e);
+    }
+  }
+
+  async reviewMove(roostId: string, category: string): Promise<void> {
+    const entry = this.findEntryByRoostId(roostId);
+    const file = entry ? this.app.vault.getFileByPath(entry.file.path) : null;
+    if (!entry || !file) return;
+    try {
+      const now = Date.now();
+      const deps: TrainingActionDeps = { vault: this.app.vault, fileManager: this.app.fileManager, file, id: roostId, now };
+      const ts = loadTrainingSet(deps.vault);
+      const { evalRecord, patch, snapshotValue } = planCorrection(ts, roostId, category, now);
+      const snap = loadSnapshot(deps.vault);
+      snap[roostId] = snapshotValue;
+      saveSnapshot(deps.vault, snap);
+      saveTrainingSet(deps.vault, ts);
+      appendEvalRecords(deps.vault, [evalRecord]);
+      await deps.fileManager.processFrontMatter(file, (fm) => { Object.assign(fm, patch); });
+      if (!this.humanAssignedRoostIds) this.humanAssignedRoostIds = new Set();
+      this.humanAssignedRoostIds.add(roostId);
+      this.onDataUpdated();
+    } catch (e) {
+      console.warn("[roost] reviewMove failed:", e);
+    }
+  }
+
+  async reviewReject(roostId: string): Promise<void> {
+    const entry = this.findEntryByRoostId(roostId);
+    const file = entry ? this.app.vault.getFileByPath(entry.file.path) : null;
+    const guess = entry ? readGuess(entry).category : null;
+    if (!entry || !file || !guess) return;
+    try {
+      await rejectAutoItem(
+        { vault: this.app.vault, fileManager: this.app.fileManager, file, id: roostId, now: Date.now() },
+        guess,
+      );
+      if (!this.humanAssignedRoostIds) this.humanAssignedRoostIds = new Set();
+      this.humanAssignedRoostIds.add(roostId);
+      this.onDataUpdated();
+    } catch (e) {
+      console.warn("[roost] reviewReject failed:", e);
+    }
+  }
+
+  /** Open a fuzzy category picker for the review-pass move action.
+   *  Shows Smart Assign proposed folders first, then any additional vault categories.
+   *  Calls onCategory with the picked id; the caller (controller) then runs reviewMove. */
+  openReviewMoveModal(entry: BasesEntry, onCategory: (category: string) => Promise<void>): void {
+    void entry; // entry available for future preview enhancement; unused here
+    const plugin = this.getRoostPlugin();
+    const proposed: { id: string; name: string }[] = plugin?.proposedFolderNames ?? [];
+    const proposedIds = new Set(proposed.map(f => f.id));
+    const vault = this.getVaultCategories();
+    const all: { id: string; name: string }[] = [
+      ...proposed,
+      ...vault.filter(c => !proposedIds.has(c.id)),
+    ];
+    const app = this.app;
+    class ReviewMoveModal extends FuzzySuggestModal<{ id: string; name: string }> {
+      getItems() { return all; }
+      getItemText(item: { id: string; name: string }) { return item.name; }
+      onChooseItem(item: { id: string; name: string }) { void onCategory(item.id); }
+    }
+    const modal = new ReviewMoveModal(app);
+    modal.setPlaceholder("Move to category…");
+    modal.open();
   }
 
   openMoveModal(entry: BasesEntry): void {
