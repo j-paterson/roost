@@ -180,6 +180,46 @@ describe("Stage 2: dual-embedding (text-only + vision-on)", () => {
     expect(entry.vecText![0]).toBeCloseTo(2.0);
   });
 
+  it("content-less item (no title/vision/summary) still gets a vec via identity fallback — never stuck", async () => {
+    // A deleted post: media never downloaded, no caption, empty title. Without the
+    // identity fallback its visionText is empty, no vector is written, and it is
+    // re-counted as "needs embedding" forever.
+    savedCache["instagram:dead"] = {
+      vision: null, summary: null, category: null, vec: null, vecText: null,
+    };
+
+    const vault = makeFakeVault();
+    const fakeFile = new TFile() as TFile & { path: string };
+    fakeFile.path = "Bookmarks/Instagram/dead.md";
+    (vault as any).__fakeFiles = [fakeFile];
+    const app = makeApp(fakeFile, {
+      roost_id: "instagram:dead",
+      title: "",
+      author: "[[People/@allmodern]]",
+      platform: "instagram",
+      tags: ["instagram"],
+    });
+
+    const embedder = makeEmbedder();
+    await describeItems({
+      vault,
+      app: app as any,
+      syncFolder: "Bookmarks",
+      ollamaUrl: "http://localhost:11434",
+      embedder: embedder as any,
+    });
+
+    const entry = savedCache["instagram:dead"];
+    expect(entry).toBeDefined();
+    expect(entry.vec).not.toBeNull();      // got a vector → drops out of "needs embedding"
+    expect(entry.vecText).not.toBeNull();
+    // The fallback embed used the item identity (author handle + platform), stripped of wikilink.
+    const embedded = embedder.calls[0].join(" ");
+    expect(embedded).toContain("@allmodern");
+    expect(embedded).toContain("instagram");
+    expect(embedded).not.toContain("[[People");
+  });
+
   it("preserves existing entry.vec when backfilling vecText (vec must not be overwritten)", async () => {
     // Sentinel vector — a recognisable value that must survive the backfill path.
     const SENTINEL_VEC = new Array(768).fill(0.42);

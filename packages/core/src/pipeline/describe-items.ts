@@ -83,13 +83,15 @@ export async function describeItems(opts: DescribeOpts): Promise<{ processed: nu
 
   // Build items from the files that need work
   const vaultPath = vaultBasePath(vault);
-  const items: { id: string; text: string; tags: string[]; file: TFile; coverPath: string | null; subtitle: string; mp4Path: string | null }[] = [];
+  const items: { id: string; text: string; tags: string[]; file: TFile; coverPath: string | null; subtitle: string; mp4Path: string | null; author: string; platform: string }[] = [];
   for (const file of needsEmbedding) {
     try {
       const fm = app?.metadataCache?.getFileCache(file)?.frontmatter;
       if (!fm?.roost_id) continue;
       const id = fm.roost_id;
       const text = fm.title || "";
+      const author = String(fm.author || "").replace(/\[\[People\/|\]\]/g, "");
+      const platform = String(fm.platform || "");
       const tags: string[] = Array.isArray(fm.tags) ? (fm.tags as unknown[]).filter((t): t is string => typeof t === "string") : [];
       // Resolve cover image path for vision analysis
       const coverRaw: string = fm.cover || "";
@@ -105,7 +107,7 @@ export async function describeItems(opts: DescribeOpts): Promise<{ processed: nu
           if (mp4) mp4Path = path.join(attachDir, mp4);
         } catch { /* attach folder may not exist yet — mp4Path stays null */ }
       }
-      items.push({ id, text, tags, file, coverPath, subtitle, mp4Path });
+      items.push({ id, text, tags, file, coverPath, subtitle, mp4Path, author, platform });
     } catch { /* skip */ }
   }
 
@@ -155,7 +157,7 @@ export async function describeItems(opts: DescribeOpts): Promise<{ processed: nu
 }
 
 async function embedItem(
-  item: { id: string; text: string; tags: string[]; file: TFile; coverPath: string | null; subtitle: string; mp4Path: string | null },
+  item: { id: string; text: string; tags: string[]; file: TFile; coverPath: string | null; subtitle: string; mp4Path: string | null; author: string; platform: string },
   cache: Record<string, EmbeddingCacheEntry>,
   ollama: string,
   vault: Vault,
@@ -244,15 +246,26 @@ async function embedItem(
     // Full compute path: compute both vision-on and text-only in one batched call.
     const visionText = [entry.vision, entry.summary, entry.category, item.text, item.subtitle].filter(Boolean).join(" ");
     const plainText = [entry.summary, entry.category, item.text, item.subtitle].filter(Boolean).join(" ");
-    if (visionText.length > 10) {
-      try {
+    try {
+      if (visionText.length > 10) {
         const [vVision, vText] = await embedder!.embed([visionText, plainText]);
         entry.vec = vVision ?? null;
         entry.vecText = plainText.length > 10 ? (vText ?? null) : (vVision ? [...vVision] : null);
-      } catch (e: unknown) {
-        log(`Embedding failed for ${item.id}: ${e instanceof Error ? e.message : String(e)}`);
-        return false;
+      } else {
+        // Identity fallback: some items have no embeddable content at all — e.g. a
+        // deleted post whose media never downloaded and which has no caption. Their
+        // visionText is empty, so without this the embed is skipped, no vector is
+        // written, and they are re-counted as "needs embedding" on EVERY run forever
+        // (the pipeline appears stuck at N). A minimal identity string gives them a
+        // vector so the count converges. Only fires when real content is absent.
+        const identity = [item.text, item.author, item.platform, ...item.tags].filter(Boolean).join(" ").trim() || item.id;
+        const [v] = await embedder!.embed([identity]);
+        entry.vec = v ?? null;
+        entry.vecText = v ? [...v] : null;
       }
+    } catch (e: unknown) {
+      log(`Embedding failed for ${item.id}: ${e instanceof Error ? e.message : String(e)}`);
+      return false;
     }
   }
 
