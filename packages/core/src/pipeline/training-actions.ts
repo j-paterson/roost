@@ -62,3 +62,29 @@ export async function rejectAutoItem(deps: TrainingActionDeps, guessedClass: str
     for (const [k, v] of Object.entries(patch)) { if (v === null) delete fm[k]; else fm[k] = v; }
   });
 }
+
+/** Pure: confirm a review PROPOSAL (category not yet in frontmatter). Writes the
+ *  category AND human provenance, records a confirm-source positive (capped). */
+export function planReviewConfirm(
+  ts: TrainingSet, id: string, category: string, now: number,
+): { evalRecord: EvalRecord; patch: Record<string, unknown>; snapshotValue: string } {
+  addPositive(ts, id, category, now, "confirm");
+  return {
+    evalRecord: { ts: now, roostId: id, guess: category, tier: "none", finalLabel: category, correct: true, mode: "review" },
+    patch: { [CATEGORY_FIELD]: category, [ASSIGNED_BY_FIELD]: "human" },
+    snapshotValue: category,
+  };
+}
+
+/** Pure: move a review proposal to a DIFFERENT category (a correction). Writes the new
+ *  category + human provenance; positive recorded with the correction source (uncapped). */
+export function planCorrection(
+  ts: TrainingSet, id: string, category: string, now: number,
+): { evalRecord: EvalRecord; patch: Record<string, unknown>; snapshotValue: string } {
+  addPositive(ts, id, category, now, "correction");
+  return {
+    evalRecord: { ts: now, roostId: id, guess: category, tier: "none", finalLabel: category, correct: true, mode: "review" },
+    patch: { [CATEGORY_FIELD]: category, [ASSIGNED_BY_FIELD]: "human" },
+    snapshotValue: category,
+  };
+}
