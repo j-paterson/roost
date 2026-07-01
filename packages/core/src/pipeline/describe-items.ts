@@ -100,14 +100,18 @@ export async function describeItems(opts: DescribeOpts): Promise<{ processed: nu
       const fm = app?.metadataCache?.getFileCache(file)?.frontmatter;
       if (!fm?.roost_id) continue;
       const id = fm.roost_id;
-      const text = fm.title || "";
+      // Coerce to string: a purely-numeric frontmatter title (e.g. a
+      // counting-subreddit post "16367") is parsed by Obsidian's metadata
+      // cache as a JS number, and number.slice() later throws — outside the
+      // topic-stage try — permanently wedging the item as "needs embedding".
+      const text = fm.title != null ? String(fm.title) : "";
       const author = String(fm.author || "").replace(/\[\[People\/|\]\]/g, "");
       const platform = String(fm.platform || "");
       const tags: string[] = Array.isArray(fm.tags) ? (fm.tags as unknown[]).filter((t): t is string => typeof t === "string") : [];
       // Resolve cover image path for vision analysis
       const coverRaw: string = fm.cover || "";
       const coverPath = coverRaw.replace(/^\[\[/, "").replace(/\]\]$/, "").replace(/^"/, "").replace(/"$/, "") || null;
-      const subtitle = fm.subtitle || "";
+      const subtitle = fm.subtitle != null ? String(fm.subtitle) : "";
       // Check for MP4 in attachment folder
       let mp4Path: string | null = null;
       if (coverPath) {

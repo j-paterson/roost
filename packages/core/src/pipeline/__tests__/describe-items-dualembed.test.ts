@@ -220,6 +220,48 @@ describe("Stage 2: dual-embedding (text-only + vision-on)", () => {
     expect(embedded).not.toContain("[[People");
   });
 
+  it("a numeric frontmatter title (parsed as a JS number) still embeds — never stuck", async () => {
+    // Regression: a counting-subreddit post whose title is "16367" is parsed by
+    // Obsidian's metadata cache as the NUMBER 16367. The topic stage builds
+    // `Post text: "${item.text.slice(0,500)}"` OUTSIDE its try/catch — so a
+    // number title threw TypeError, rejected embedItem, and the item was
+    // recounted as "needs embedding" on every run forever. Coercing title to a
+    // string at the source fixes it.
+    savedCache["reddit:1nm4h1d"] = {
+      vision: null, summary: null, category: null, vec: null, vecText: null,
+    };
+
+    const vault = makeFakeVault();
+    const fakeFile = new TFile() as TFile & { path: string };
+    fakeFile.path = "Bookmarks/Reddit/numeric.md";
+    (vault as any).__fakeFiles = [fakeFile];
+    // title is a NUMBER, not a string — the exact shape the metadata cache produces.
+    const app = makeApp(fakeFile, {
+      roost_id: "reddit:1nm4h1d",
+      title: 16367,
+      author: "[[People/@Cheezba11]]",
+      platform: "reddit",
+      tags: ["reddit", "subreddit/countwithchickenlady"],
+    });
+
+    const embedder = makeEmbedder();
+    const result = await describeItems({
+      vault,
+      app: app as any,
+      syncFolder: "Bookmarks",
+      ollamaUrl: "http://localhost:11434",
+      embedder: embedder as any,
+    });
+
+    const entry = savedCache["reddit:1nm4h1d"];
+    expect(entry).toBeDefined();
+    expect(entry.vec).not.toBeNull();       // got a vector → drops out of "needs embedding"
+    expect(entry.vecText).not.toBeNull();
+    expect(result.errors).toBe(0);          // did not fail on the numeric title
+    // The numeric title reached the embed input as a string, not a crash.
+    expect(embedder.calls[0].join(" ")).toContain("16367");
+  });
+
   it("a hung embed call times out instead of hanging the whole run", async () => {
     vi.useFakeTimers();
     try {
