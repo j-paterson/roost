@@ -88,6 +88,18 @@ export class InstagramRecordWriter {
       this.log(`[instagram] no webview handle — skipping media for ${record.id}`);
     }
 
+    // Content-less guard: a webview was available but no media downloaded (e.g.
+    // an expired IG CDN URL → HTTP 410) and there's no caption. Writing this
+    // would create a note + raw.json-only folder with nothing to show or embed.
+    // Skip it — the item stays un-written, so a later sync retries with fresh
+    // URLs if the post is still downloadable. Only applies when `wc` was present
+    // (a missing webview is transient — keep the note and retry). See the
+    // embedding identity-fallback for why content-less items were problematic.
+    if (wc && coverFile === null && mediaEmbeds.length === 0 && !text.trim()) {
+      this.log(`[instagram] no media + no caption for ${record.id} — skipping content-less note`);
+      return;
+    }
+
     await ensureFolder(this.vault, attachFolder, this.ensuredFolders);
     await this.noteWriter.writeSidecar(`${attachFolder}/raw.json`, JSON.stringify(record.rawData, null, 2));
 

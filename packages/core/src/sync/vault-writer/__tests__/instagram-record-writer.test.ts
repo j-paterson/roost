@@ -52,4 +52,54 @@ describe("InstagramRecordWriter", () => {
     expect(fm).toContain("collection/Recipes");
     expect(fm).toContain("platform: instagram");
   });
+
+  it("skips a content-less note when media download fails (expired URL) and there's no caption", async () => {
+    const writeNote = vi.fn(async () => {});
+    const writeSidecar = vi.fn(async () => {});
+    const downloadAndSave = vi.fn(async () => null); // 410 / expired → nothing saved
+    const deps = {
+      vault: {} as never,
+      syncFolder: "Roost",
+      log: () => {},
+      index: {} as never,
+      noteWriter: {
+        extractCommon: () => ({ text: "", url: "https://www.instagram.com/p/X/", published: "2021-02-11T00:00:00.000Z", itemId: "X", handle: "u" }),
+        createAuthorNote: async () => "[[u]]",
+        writeSidecar, writeNote,
+      } as never,
+      mediaDownloader: { downloadAndSave } as never,
+      ensuredFolders: new Set<string>(),
+      instagramWc: { executeJavaScript: async () => null } as never,
+    };
+    const w = new InstagramRecordWriter(deps);
+    await w.writeInstagramRecord(REC);
+
+    expect(downloadAndSave).toHaveBeenCalled();     // download was attempted
+    expect(writeNote).not.toHaveBeenCalled();       // but no content-less note written
+    expect(writeSidecar).not.toHaveBeenCalled();    // and no raw.json-only folder left behind
+  });
+
+  it("still writes when a webview is absent (transient) so the item is retried later", async () => {
+    const writeNote = vi.fn(async () => {});
+    const writeSidecar = vi.fn(async () => {});
+    const downloadAndSave = vi.fn(async () => null);
+    const deps = {
+      vault: {} as never,
+      syncFolder: "Roost",
+      log: () => {},
+      index: {} as never,
+      noteWriter: {
+        extractCommon: () => ({ text: "", url: "https://www.instagram.com/p/X/", published: "2021-02-11T00:00:00.000Z", itemId: "X", handle: "u" }),
+        createAuthorNote: async () => "[[u]]",
+        writeSidecar, writeNote,
+      } as never,
+      mediaDownloader: { downloadAndSave } as never,
+      ensuredFolders: new Set<string>(),
+      instagramWc: undefined,
+    };
+    const w = new InstagramRecordWriter(deps);
+    await w.writeInstagramRecord(REC);
+
+    expect(writeNote).toHaveBeenCalled(); // no wc → keep the note, retry media later
+  });
 });
