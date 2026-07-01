@@ -204,6 +204,11 @@ export function useSmartAssign(deps: SmartAssignDeps) {
         // Self-Improving Loop: provide the phase-1 match-detail map so captureLoopUpdates
         // can extract each item's pre-confirm guess and tier.
         getMatchDetails: () => matchDetailMap,
+        // Review-pass exclusion (Task 3 guard, now live): pass the human-judged set so
+        // buildItemCategory and captureLoopUpdates skip already-judged ids. The gallery
+        // view's class field is the canonical store; the plugin holds the same Set
+        // instance (written by reviewConfirm/reviewMove/reviewReject via syncToPlugin).
+        humanAssignedRoostIds: plugin.humanAssignedRoostIds ?? undefined,
         runUnderGuard: async () => {
           resetSmartAssignStaging(buildResetHost());
           // bulkWriteInProgress stays true here, so the optimistic counts hold while

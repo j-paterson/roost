@@ -77,6 +77,14 @@ export interface SmartAssignConfirmHost {
    * Optional — present in the live UI hook; absent in tests that don't need it.
    */
   getMatchDetails?: () => Map<string, { collection?: string; reason?: string }>;
+  /**
+   * Human-judged ids from an in-progress review pass (the view's class-field Set,
+   * passed by the hook from plugin.humanAssignedRoostIds).
+   * When provided, buildItemCategory and captureLoopUpdates exclude these ids so
+   * the final Confirm does not double-capture training data for already-judged items.
+   * This activates the DORMANT guard added in Task 3.
+   */
+  humanAssignedRoostIds?: Set<string>;
 }
 
 export interface SmartAssignConfirmResult {
@@ -175,6 +183,7 @@ export async function confirmSmartAssign(
     rejects,
     isSubcat,
     assignedSubcategories: host.assignedSubcategories,
+    humanAssigned: host.humanAssignedRoostIds,
   });
 
   const totalProposed = proposedFolders.reduce((n, f) => n + f.itemIds.length, 0);
@@ -231,6 +240,7 @@ export async function confirmSmartAssign(
     const { trainingSet, evalRecords } = captureLoopUpdates({
       ts: tsStore, itemCategory, reassigned, rejects,
       guesses, now: Date.now(),
+      humanAssigned: host.humanAssignedRoostIds,
     });
     saveTrainingSet(vault, trainingSet);
     // ── Update snapshot so bulkWriteAssignments' changed events are own-writes ──

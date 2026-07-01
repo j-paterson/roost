@@ -41,6 +41,12 @@ export interface IRoostPlugin {
   /** Proposed folders — shared with bases view for modal. */
   proposedFolderNames: { id: string; name: string }[];
 
+  /** Human-judged roost ids from an in-progress review pass.
+   *  Written by BookmarksBasesView.reviewConfirm/reviewMove/reviewReject (the gallery's
+   *  class field is the canonical store; these are the same Set instance).
+   *  Read by confirmSmartAssign to exclude already-judged ids from the final write. */
+  humanAssignedRoostIds: Set<string> | null;
+
   /** Last suggestion result — set by hook after reassignment, read by modal. */
   lastSuggestionResult: { count: number; targetName: string; itemIds: string[] } | null;
 

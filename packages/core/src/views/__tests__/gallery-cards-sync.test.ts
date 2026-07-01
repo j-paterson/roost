@@ -101,6 +101,36 @@ describe("syncGalleryCardFromEntry", () => {
     expect(el.dataset.matched).toBeUndefined();
     expect(cover.querySelector(".roost-card-match-badge")).toBeNull();
   });
+
+  it("clears data-assigned on a recycled card element when the entry's id is NOT in humanAssignedRoostIds", () => {
+    // Simulate a pooled card element previously hydrated for a judged item.
+    const el = document.createElement("div");
+    el.dataset.assigned = "human"; // stale from previous occupant
+
+    // Reused for entry bm_stale — which is NOT in the human set.
+    syncGalleryCardFromEntry(el, mockEntry("bm_stale", "Music"), {
+      humanAssignedRoostIds: new Set(["bm_other"]),
+    });
+
+    expect(el.dataset.assigned).toBeUndefined();
+  });
+
+  it("keeps data-assigned=human when the entry's id IS in humanAssignedRoostIds", () => {
+    const el = document.createElement("div");
+    // No prior assigned state — should be SET by sync.
+    syncGalleryCardFromEntry(el, mockEntry("bm_judged", "Music"), {
+      humanAssignedRoostIds: new Set(["bm_judged"]),
+    });
+    expect(el.dataset.assigned).toBe("human");
+  });
+
+  it("leaves data-assigned untouched when humanAssignedRoostIds is not provided", () => {
+    const el = document.createElement("div");
+    el.dataset.assigned = "human"; // pre-existing
+    syncGalleryCardFromEntry(el, mockEntry("bm_1", "Music"), { matchedRoostIds: new Set() });
+    // No humanAssignedRoostIds in opts → no mutation.
+    expect(el.dataset.assigned).toBe("human");
+  });
 });
 
 describe("hydrateGalleryCard — human-assigned state", () => {

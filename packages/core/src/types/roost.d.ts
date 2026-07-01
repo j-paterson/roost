@@ -236,7 +236,10 @@ export type ItemClickData =
   | { action: "delete"; roostId: string }
   | { action: "rejectItems"; itemIds: string[] }
   | { action: "moveItems"; itemIds: string[]; to: string }
-  | { action: "deleteItems"; roostIds: string[] };
+  | { action: "deleteItems"; roostIds: string[] }
+  /** Fired by the "Start review pass" button in RoostView; handled by the gallery
+   *  view's onItemClick subscriber which calls feedMode.startReviewPass + setTrainingMode. */
+  | { action: "startReviewPass"; itemIds: string[] };
 
 /**
  * Input for a Smart Assign run. The hook operates purely as a function

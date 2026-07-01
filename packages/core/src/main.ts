@@ -76,6 +76,10 @@ export default class RoostPlugin extends Plugin {
   /** Proposed folders — shared with bases view for modal */
   proposedFolderNames: { id: string; name: string }[] = [];
 
+  /** Human-judged roost ids from an in-progress review pass (same Set instance
+   *  as BookmarksBasesView.humanAssignedRoostIds — gallery writes, confirm reads). */
+  humanAssignedRoostIds: Set<string> | null = null;
+
   /** Last suggestion result — set by hook after reassignment, read by modal */
   lastSuggestionResult: { count: number; targetName: string; itemIds: string[] } | null = null;
 

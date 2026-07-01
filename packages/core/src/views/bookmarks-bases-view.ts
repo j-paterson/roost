@@ -98,6 +98,7 @@ export class BookmarksBasesView extends BasesView
   renderedKey = "";
   private unsubFilter: (() => void) | null = null;
   private unsubDataRefresh: (() => void) | null = null;
+  private unsubItemClick: (() => void) | null = null;
   private pipelineHost: PipelineGalleryHost;
   private pendingFocusId: string | null = null;
   // Public: GalleryGridViewBind binds to it.
@@ -325,6 +326,13 @@ export class BookmarksBasesView extends BasesView
   // persist training-set + eval → write frontmatter.  After the write, the id is
   // added to humanAssignedRoostIds so the grid card greens + sinks on the next repaint.
 
+  /** Sync the view's class-field Set to the plugin so confirmSmartAssign can read it
+   *  (same Set instance — no copying, just wiring). Must be called after every mutation. */
+  private syncHumanAssignedToPlugin(): void {
+    const p = this.getRoostPlugin();
+    if (p) p.humanAssignedRoostIds = this.humanAssignedRoostIds;
+  }
+
   async reviewConfirm(roostId: string, category: string): Promise<void> {
     const entry = this.findEntryByRoostId(roostId);
     const file = entry ? this.app.vault.getFileByPath(entry.file.path) : null;
@@ -342,6 +350,7 @@ export class BookmarksBasesView extends BasesView
       await deps.fileManager.processFrontMatter(file, (fm) => { Object.assign(fm, patch); });
       if (!this.humanAssignedRoostIds) this.humanAssignedRoostIds = new Set();
       this.humanAssignedRoostIds.add(roostId);
+      this.syncHumanAssignedToPlugin();
       this.onDataUpdated();
     } catch (e) {
       console.warn("[roost] reviewConfirm failed:", e);
@@ -365,6 +374,7 @@ export class BookmarksBasesView extends BasesView
       await deps.fileManager.processFrontMatter(file, (fm) => { Object.assign(fm, patch); });
       if (!this.humanAssignedRoostIds) this.humanAssignedRoostIds = new Set();
       this.humanAssignedRoostIds.add(roostId);
+      this.syncHumanAssignedToPlugin();
       this.onDataUpdated();
     } catch (e) {
       console.warn("[roost] reviewMove failed:", e);
@@ -378,6 +388,7 @@ export class BookmarksBasesView extends BasesView
     // Always mark judged so confirmSmartAssign excludes this id even when no guess exists.
     if (!this.humanAssignedRoostIds) this.humanAssignedRoostIds = new Set();
     this.humanAssignedRoostIds.add(roostId);
+    this.syncHumanAssignedToPlugin();
     this.onDataUpdated();
     if (!entry || !file || !guess) return;
     try {
@@ -526,6 +537,22 @@ export class BookmarksBasesView extends BasesView
     });
     this.unsubFilter = subs.unsubFilter;
     this.unsubDataRefresh = subs.unsubDataRefresh;
+
+    // Subscribe to startReviewPass events fired from the React header button.
+    // This is the gallery→React channel direction: React fires, gallery handles.
+    // The view's feedMode is private, so this subscription is the seam.
+    const plugin = this.getRoostPlugin();
+    if (plugin?.onItemClick) {
+      this.unsubItemClick = plugin.onItemClick((data) => {
+        if (data?.action === "startReviewPass") {
+          // Set review-pass ids FIRST so enterFeedMode (triggered by setTrainingMode)
+          // calls trainingEntries() with the correct reviewPassIds already set.
+          this.feedMode.startReviewPass(data.itemIds);
+          this.feedMode.setTrainingMode(true);
+        }
+      });
+    }
+
     this.hydrationObserver = createGalleryHydrationObserver((el, index) =>
       this.hydrateCard(el, index),
     );
@@ -575,6 +602,8 @@ export class BookmarksBasesView extends BasesView
     this.unsubFilter = null;
     this.unsubDataRefresh?.();
     this.unsubDataRefresh = null;
+    this.unsubItemClick?.();
+    this.unsubItemClick = null;
     this.bulkWrite.dispose();
     this.pipelineHost.dispose();
   }
@@ -735,6 +764,7 @@ export class BookmarksBasesView extends BasesView
       uncertainRoostIds: this.uncertainRoostIds,
       matchedRoostIds: this.matchedRoostIds,
       matchDetailMap: this.matchDetailMap,
+      humanAssignedRoostIds: this.humanAssignedRoostIds,
     });
   }
 

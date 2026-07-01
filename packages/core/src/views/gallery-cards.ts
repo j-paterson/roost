@@ -391,6 +391,10 @@ export interface SyncGalleryCardOpts {
   uncertainRoostIds?: Set<string> | null;
   matchedRoostIds?: Set<string> | null;
   matchDetailMap?: Map<string, MatchDetail> | null;
+  /** When provided, clears data-assigned on recycled card elements whose id is NOT
+   *  in the set, mirroring exactly how data-matched is cleared (prevents stale green
+   *  rings when a pooled DOM element is reused for a different entry). */
+  humanAssignedRoostIds?: Set<string> | null;
 }
 
 /** Refresh metadata-dependent fields on a kept hydrated card after reconcile. */
@@ -416,6 +420,16 @@ export function syncGalleryCardFromEntry(
   const matched = opts?.matchedRoostIds?.has(roostId) ?? false;
   if (matched) el.dataset.matched = "1";
   else delete el.dataset.matched;
+
+  // Clear stale data-assigned on recycled card elements. hydrateGalleryCard SETS
+  // data-assigned="human" when the id is in humanAssignedRoostIds; here we mirror
+  // the data-matched clearing pattern to prevent a pooled element reused for a
+  // different (un-judged) entry from keeping a stale green ring.
+  if (opts?.humanAssignedRoostIds !== undefined) {
+    const isHuman = opts.humanAssignedRoostIds?.has(roostId) ?? false;
+    if (isHuman) el.dataset.assigned = "human";
+    else delete el.dataset.assigned;
+  }
 
   const coverEl = el.querySelector(".roost-card-cover");
   if (!coverEl) return;
