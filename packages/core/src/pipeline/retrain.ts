@@ -1,9 +1,10 @@
 import type { Vault } from "obsidian";
-import { buildTrainingRows, trainStackedHeadsFromRows, type TrainingRow } from "@/pipeline/train-head";
+import { buildTrainingRows, type TrainingRow } from "@/pipeline/train-head";
+import { trainStackedHeadsViaSidecar } from "@/pipeline/train-head-sidecar";
 import { evaluateGate, type GateResult, type GateSample } from "@/pipeline/acceptance-gate";
 import { writeStackedHeads, restorePreviousHeads, loadRetrainMeta, saveRetrainMeta } from "@/pipeline/head-store";
 import { loadStackedHeads, type StackedHeads, type ClassifierHeadData, type MetaHeadData } from "@/pipeline/classifier-head";
-import { RETRAIN_SIGNAL_FLOOR, GATE_KFOLDS, GATE_EPS, GATE_OOF } from "@/config";
+import { RETRAIN_SIGNAL_FLOOR, GATE_KFOLDS, GATE_EPS, GATE_OOF, OOF_FOLDS } from "@/config";
 import type { TrainingSet } from "@/pipeline/training-set";
 import { appendRetrainLog } from "@/pipeline/retrain-log";
 
@@ -127,7 +128,7 @@ function kfoldSplit(
  *      Partial-write recovery: if write throws, restorePreviousHeads
  *   6. First-train (no current head): swap unconditionally
  */
-export function runRetrain(vault: Vault, log: (m: string) => void): RetrainOutcome {
+export async function runRetrain(vault: Vault, log: (m: string) => void): Promise<RetrainOutcome> {
   const rows = buildTrainingRows(vault);
   if (rows.length === 0) {
     const outcome: RetrainOutcome = { ran: false, swapped: false, reason: "no eligible training data" };
@@ -152,9 +153,13 @@ export function runRetrain(vault: Vault, log: (m: string) => void): RetrainOutco
       const baselineRows = train.filter((r) => r.ts <= effectiveWatermark);
       if (baselineRows.length === 0) continue; // nothing "before" → can't form a fair baseline this fold
       // Gate models are throwaway (never deployed) → cheaper GATE_OOF inner folds.
-      const baseData = trainStackedHeadsFromRows(baselineRows, { oofFolds: GATE_OOF });
-      const candData = trainStackedHeadsFromRows(train, { oofFolds: GATE_OOF });
-      if (!baseData || !candData) continue;
+      const baseData = await trainStackedHeadsViaSidecar(baselineRows, GATE_OOF);
+      const candData = await trainStackedHeadsViaSidecar(train, GATE_OOF);
+      if (!baseData || !candData) {
+        const outcome: RetrainOutcome = { ran: false, swapped: false, reason: "sidecar unavailable" };
+        appendRetrainLog(vault, { ts: Date.now(), ...outcome });
+        return outcome;
+      }
       folds.push(evaluateGate(toStacked(baseData), toStacked(candData), holdout));
     }
     if (folds.length === 0) {
@@ -189,9 +194,9 @@ export function runRetrain(vault: Vault, log: (m: string) => void): RetrainOutco
   }
 
   // Deploy: train on ALL rows (holdout included); fail-closed partial-write recovery.
-  const deployData = trainStackedHeadsFromRows(rows);
+  const deployData = await trainStackedHeadsViaSidecar(rows, OOF_FOLDS);
   if (!deployData) {
-    const outcome: RetrainOutcome = { ran: false, swapped: false, reason: "trainer returned null" };
+    const outcome: RetrainOutcome = { ran: false, swapped: false, reason: "sidecar unavailable" };
     appendRetrainLog(vault, { ts: Date.now(), ...outcome });
     return outcome;
   }

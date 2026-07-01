@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { Vault } from "obsidian";
 import { shouldRetrain, decideSwap, decideFromFolds, runRetrain, newLabelsSince, medianTs } from "@/pipeline/retrain";
-import { GATE_OOF } from "@/config";
+import { GATE_OOF, OOF_FOLDS } from "@/config";
 import type { StackedHeads } from "@/pipeline/classifier-head";
 import type { GateResult } from "@/pipeline/acceptance-gate";
 import type { ClassifierHeadData, MetaHeadData } from "@/pipeline/classifier-head";
@@ -10,8 +10,9 @@ import type { ClassifierHeadData, MetaHeadData } from "@/pipeline/classifier-hea
 
 vi.mock("@/pipeline/train-head", () => ({
   buildTrainingRows: vi.fn(),
-  trainStackedHeadsFromRows: vi.fn(),
 }));
+
+vi.mock("@/pipeline/train-head-sidecar", () => ({ trainStackedHeadsViaSidecar: vi.fn() }));
 
 vi.mock("@/pipeline/classifier-head", () => ({
   loadStackedHeads: vi.fn(),
@@ -29,7 +30,8 @@ vi.mock("@/pipeline/head-store", () => ({
 }));
 
 // Import after mocks so we get the mocked versions for vi.mocked() assertions.
-import { buildTrainingRows, trainStackedHeadsFromRows } from "@/pipeline/train-head";
+import { buildTrainingRows } from "@/pipeline/train-head";
+import { trainStackedHeadsViaSidecar } from "@/pipeline/train-head-sidecar";
 import { loadStackedHeads } from "@/pipeline/classifier-head";
 import { evaluateGate } from "@/pipeline/acceptance-gate";
 import { writeStackedHeads, restorePreviousHeads, loadRetrainMeta, saveRetrainMeta } from "@/pipeline/head-store";
@@ -154,14 +156,14 @@ describe("decideFromFolds", () => {
 describe("runRetrain", () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it("gate passes → writeStackedHeads called once, saveRetrainMeta called once; result {ran:true, swapped:true}", () => {
+  it("gate passes → writeStackedHeads called once, saveRetrainMeta called once; result {ran:true, swapped:true}", async () => {
     vi.mocked(buildTrainingRows).mockReturnValue(fakeRows);
-    vi.mocked(trainStackedHeadsFromRows).mockReturnValue(fakeCandidateData);
+    vi.mocked(trainStackedHeadsViaSidecar).mockResolvedValue(fakeCandidateData);
     vi.mocked(loadStackedHeads).mockReturnValue(fakeCurrentHeads);
     vi.mocked(loadRetrainMeta).mockReturnValue({ lastRetrainTs: FAKE_LAST_RETRAIN_TS });
     vi.mocked(evaluateGate).mockReturnValue(gatePass);
 
-    const result = runRetrain(mockVault, () => {});
+    const result = await runRetrain(mockVault, () => {});
 
     expect(result).toMatchObject({ ran: true, swapped: true, reason: "gate passed" });
     expect(vi.mocked(writeStackedHeads)).toHaveBeenCalledOnce();
@@ -169,33 +171,33 @@ describe("runRetrain", () => {
     expect(vi.mocked(restorePreviousHeads)).not.toHaveBeenCalled();
   });
 
-  it("gate models train with the cheaper GATE_OOF; the deployed head uses default OOF", () => {
+  it("gate models train with the cheaper GATE_OOF; the deployed head uses OOF_FOLDS", async () => {
     vi.mocked(buildTrainingRows).mockReturnValue(fakeRows);
-    vi.mocked(trainStackedHeadsFromRows).mockReturnValue(fakeCandidateData);
+    vi.mocked(trainStackedHeadsViaSidecar).mockResolvedValue(fakeCandidateData);
     vi.mocked(loadStackedHeads).mockReturnValue(fakeCurrentHeads);
     vi.mocked(loadRetrainMeta).mockReturnValue({ lastRetrainTs: FAKE_LAST_RETRAIN_TS });
     vi.mocked(evaluateGate).mockReturnValue(gatePass);
 
-    runRetrain(mockVault, () => {});
+    await runRetrain(mockVault, () => {});
 
-    const calls = vi.mocked(trainStackedHeadsFromRows).mock.calls;
-    // Every gate-model train (all but the final deploy) passes { oofFolds: GATE_OOF }.
+    const calls = vi.mocked(trainStackedHeadsViaSidecar).mock.calls;
+    // Every gate-model train (all but the final deploy) passes GATE_OOF positionally.
     const gateCalls = calls.slice(0, -1);
     expect(gateCalls.length).toBeGreaterThan(0);
-    for (const c of gateCalls) expect(c[1]).toEqual({ oofFolds: GATE_OOF });
-    // The final deploy train uses the default (no oofFolds override).
+    for (const c of gateCalls) expect(c[1]).toBe(GATE_OOF);
+    // The final deploy train uses OOF_FOLDS.
     const deployCall = calls[calls.length - 1];
-    expect(deployCall[1]).toBeUndefined();
+    expect(deployCall[1]).toBe(OOF_FOLDS);
   });
 
-  it("gate fails → writeStackedHeads NOT called; advances watermark (no re-fire every run); restorePreviousHeads NOT called", () => {
+  it("gate fails → writeStackedHeads NOT called; advances watermark (no re-fire every run); restorePreviousHeads NOT called", async () => {
     vi.mocked(buildTrainingRows).mockReturnValue(fakeRows);
-    vi.mocked(trainStackedHeadsFromRows).mockReturnValue(fakeCandidateData);
+    vi.mocked(trainStackedHeadsViaSidecar).mockResolvedValue(fakeCandidateData);
     vi.mocked(loadStackedHeads).mockReturnValue(fakeCurrentHeads);
     vi.mocked(loadRetrainMeta).mockReturnValue({ lastRetrainTs: FAKE_LAST_RETRAIN_TS });
     vi.mocked(evaluateGate).mockReturnValue(gateFail);
 
-    const result = runRetrain(mockVault, () => {});
+    const result = await runRetrain(mockVault, () => {});
 
     expect(result).toMatchObject({ ran: true, swapped: false, reason: "gate failed" });
     expect(vi.mocked(writeStackedHeads)).not.toHaveBeenCalled();
@@ -205,46 +207,56 @@ describe("runRetrain", () => {
     expect(vi.mocked(restorePreviousHeads)).not.toHaveBeenCalled();
   });
 
-  it("no baseline rows for any fold → protects live head; result {ran:false, swapped:false, reason:'no gate folds'}", () => {
+  it("no baseline rows for any fold → protects live head; result {ran:false, swapped:false, reason:'no gate folds'}", async () => {
     // All rows have ts well above the real watermark → effectiveWatermark=1 (lastRetrainTs>0)
     // → baselineRows empty for every fold → no usable folds.
     const futureRows = fakeRows.map((r) => ({ ...r, ts: 9999 }));
     vi.mocked(buildTrainingRows).mockReturnValue(futureRows);
     vi.mocked(loadStackedHeads).mockReturnValue(fakeCurrentHeads);
     vi.mocked(loadRetrainMeta).mockReturnValue({ lastRetrainTs: 1 });
-    vi.mocked(trainStackedHeadsFromRows).mockReturnValue(fakeCandidateData);
+    vi.mocked(trainStackedHeadsViaSidecar).mockResolvedValue(fakeCandidateData);
 
-    const result = runRetrain(mockVault, () => {});
+    const result = await runRetrain(mockVault, () => {});
 
     expect(result).toEqual({ ran: false, swapped: false, reason: "no gate folds" });
     expect(vi.mocked(writeStackedHeads)).not.toHaveBeenCalled();
   });
 
-  it("first train (no current head) → deploys unconditionally, saveRetrainMeta called, no gating", () => {
+  it("first train (no current head) → deploys unconditionally, saveRetrainMeta called, no gating", async () => {
     vi.mocked(buildTrainingRows).mockReturnValue(fakeRows);
-    vi.mocked(trainStackedHeadsFromRows).mockReturnValue(fakeCandidateData);
+    vi.mocked(trainStackedHeadsViaSidecar).mockResolvedValue(fakeCandidateData);
     vi.mocked(loadStackedHeads).mockReturnValue(null);
     vi.mocked(loadRetrainMeta).mockReturnValue({ lastRetrainTs: 0 });
-    const result = runRetrain(mockVault, () => {});
+    const result = await runRetrain(mockVault, () => {});
     expect(result).toMatchObject({ ran: true, swapped: true, reason: "first head" });
     expect(vi.mocked(writeStackedHeads)).toHaveBeenCalledOnce();
     expect(vi.mocked(saveRetrainMeta)).toHaveBeenCalledOnce();
     expect(vi.mocked(evaluateGate)).not.toHaveBeenCalled();
   });
 
-  it("write throws → restorePreviousHeads called; result {ran:true, swapped:false}; function does NOT re-throw", () => {
+  it("write throws → restorePreviousHeads called; result {ran:true, swapped:false}; function does NOT re-throw", async () => {
     vi.mocked(buildTrainingRows).mockReturnValue(fakeRows);
-    vi.mocked(trainStackedHeadsFromRows).mockReturnValue(fakeCandidateData);
+    vi.mocked(trainStackedHeadsViaSidecar).mockResolvedValue(fakeCandidateData);
     vi.mocked(loadStackedHeads).mockReturnValue(fakeCurrentHeads);
     vi.mocked(loadRetrainMeta).mockReturnValue({ lastRetrainTs: FAKE_LAST_RETRAIN_TS });
     vi.mocked(evaluateGate).mockReturnValue(gatePass);
     vi.mocked(writeStackedHeads).mockImplementation(() => { throw new Error("disk full"); });
 
-    let result: ReturnType<typeof runRetrain> | undefined;
-    expect(() => { result = runRetrain(mockVault, () => {}); }).not.toThrow();
+    const result = await runRetrain(mockVault, () => {});
 
     expect(result).toMatchObject({ ran: true, swapped: false, reason: "write failed, restored previous" });
     expect(vi.mocked(restorePreviousHeads)).toHaveBeenCalledOnce();
+    expect(vi.mocked(saveRetrainMeta)).not.toHaveBeenCalled();
+  });
+
+  it("sidecar unavailable (train returns null) → {ran:false, reason:'sidecar unavailable'}, nothing written", async () => {
+    vi.mocked(buildTrainingRows).mockReturnValue(fakeRows);
+    vi.mocked(loadStackedHeads).mockReturnValue(fakeCurrentHeads);
+    vi.mocked(loadRetrainMeta).mockReturnValue({ lastRetrainTs: FAKE_LAST_RETRAIN_TS });
+    vi.mocked(trainStackedHeadsViaSidecar).mockResolvedValue(null);
+    const result = await runRetrain(mockVault, () => {});
+    expect(result).toMatchObject({ ran: false, reason: "sidecar unavailable" });
+    expect(vi.mocked(writeStackedHeads)).not.toHaveBeenCalled();
     expect(vi.mocked(saveRetrainMeta)).not.toHaveBeenCalled();
   });
 });
@@ -272,19 +284,19 @@ describe("runRetrain bootstrap (lastRetrainTs=0)", () => {
   // from leaking its mockImplementation into this describe block.
   beforeEach(() => vi.resetAllMocks());
 
-  it("uses median pseudo-watermark on first enable → gate runs, candidate deployed (regression lock)", () => {
+  it("uses median pseudo-watermark on first enable → gate runs, candidate deployed (regression lock)", async () => {
     // fakeRows have ts: 100, 200, 300.  medianTs = 200.
     // Each of the 3 k-folds ends up with a non-empty baseline (ts <= 200 rows in train)
     // AND a non-empty holdout → evaluateGate IS called ≥ 1 time.
     // Before the fix this path returned {ran:false, reason:"no gate folds"} with 0 evaluateGate calls.
     vi.mocked(buildTrainingRows).mockReturnValue(fakeRows);
-    vi.mocked(trainStackedHeadsFromRows).mockReturnValue(fakeCandidateData);
+    vi.mocked(trainStackedHeadsViaSidecar).mockResolvedValue(fakeCandidateData);
     vi.mocked(loadStackedHeads).mockReturnValue(fakeCurrentHeads);
     vi.mocked(loadRetrainMeta).mockReturnValue({ lastRetrainTs: 0 }); // no real watermark → first enable
     vi.mocked(evaluateGate).mockReturnValue(gatePass);
     vi.mocked(writeStackedHeads).mockReturnValue(undefined);
 
-    const result = runRetrain(mockVault, () => {});
+    const result = await runRetrain(mockVault, () => {});
 
     // Regression lock: gate must have run (≥ 1 fold completed)
     expect(vi.mocked(evaluateGate)).toHaveBeenCalled();
