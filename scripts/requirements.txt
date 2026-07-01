@@ -5,3 +5,4 @@ einops
 faster-whisper>=1.0
 timm>=0.9
 Pillow>=9.0
+scikit-learn>=1.3

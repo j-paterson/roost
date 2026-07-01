@@ -274,6 +274,7 @@ def transcribe_file(path):
 
 VEC_DIM = 768
 _VEC_CACHE = {}  # path -> (mtime, keys, matrix)
+VAULT_ROOT = None
 
 def load_vec_bin(path):
     """Read a roost vectors .bin: first line = JSON keys, then raw <f4, 768/key.
@@ -306,6 +307,64 @@ def vec_maps(vault_root):
     vision = _cached_bin(os.path.join(cache, "embedding-vectors.bin"))
     text = _cached_bin(os.path.join(cache, "embedding-vectors-text.bin"))
     return vision, text
+
+
+def _fit_logreg(X, y, classes):
+    """Multinomial-equivalent LogReg matching the head format. Returns (W[K,D], b[K]).
+    Inputs are L2-normalized first (norm:'l2' at inference). Binary is expanded to
+    K=2 softmax rows so TS inference (softmax over K) is correct."""
+    from sklearn.linear_model import LogisticRegression
+    from sklearn.preprocessing import normalize
+    Xn = normalize(np.asarray(X, dtype="f8"), norm="l2")
+    clf = LogisticRegression(C=1.0, class_weight="balanced", max_iter=1000)
+    clf.fit(Xn, y)
+    # Reorder rows to match `classes` (sorted) — sklearn orders by clf.classes_.
+    idx = {c: i for i, c in enumerate(clf.classes_)}
+    D = Xn.shape[1]
+    if len(clf.classes_) == 2:
+        w = clf.coef_[0]; b0 = float(clf.intercept_[0])
+        # class order in `classes`: row for clf.classes_[1] gets (+w,+b), the other 0.
+        W = [[0.0] * D, [0.0] * D]; b = [0.0, 0.0]
+        pos = classes.index(clf.classes_[1]); neg = classes.index(clf.classes_[0])
+        W[pos] = w.tolist(); b[pos] = b0
+        return W, b
+    W = [None] * len(classes); b = [None] * len(classes)
+    for c in classes:
+        W[classes.index(c)] = clf.coef_[idx[c]].tolist()
+        b[classes.index(c)] = float(clf.intercept_[idx[c]])
+    return W, b
+
+def _oof_proba(X, y, classes, k):
+    from sklearn.linear_model import LogisticRegression
+    from sklearn.model_selection import cross_val_predict, StratifiedKFold
+    from sklearn.preprocessing import normalize
+    Xn = normalize(np.asarray(X, dtype="f8"), norm="l2")
+    clf = LogisticRegression(C=1.0, class_weight="balanced", max_iter=1000)
+    # cross_val_predict's predict_proba columns follow sorted(unique(y)) == `classes`
+    # (sklearn sorts classes), so no column realignment is needed.
+    return cross_val_predict(clf, Xn, y, cv=StratifiedKFold(k, shuffle=False),
+                             method="predict_proba")
+
+def _min_class_count(y):
+    from collections import Counter
+    return max(2, min(Counter(y).values()))
+
+def train_heads(Xt, Xv, y, oof_folds):
+    classes = sorted(set(y))
+    D = int(np.asarray(Xt).shape[1]); n = len(y)
+    tW, tb = _fit_logreg(Xt, y, classes)
+    vW, vb = _fit_logreg(Xv, y, classes)
+    head = lambda W, b: {"classes": classes, "W": W, "b": b, "dim": D,
+                         "norm": "l2", "trainedOn": n, "version": 1}
+    k = min(int(oof_folds), _min_class_count(y))
+    Pt = _oof_proba(Xt, y, classes, k)
+    Pv = _oof_proba(Xv, y, classes, k)
+    feat = np.hstack([Pt, Pv])
+    mW, mb = _fit_logreg(feat, y, classes)  # inputs already in [0,1]; l2-norm is harmless
+    C = len(classes)
+    meta = {"classes": classes, "W": mW, "b": mb, "inDim": 2 * C,
+            "norm": "none", "version": 1}
+    return {"text": head(tW, tb), "vision": head(vW, vb), "meta": meta}
 
 
 def load_model(model_path: Path, max_seq: int):
@@ -425,6 +484,26 @@ class EmbedHandler(BaseHTTPRequestHandler):
         if self.path == "/classify-uncensored":
             self._handle_classify_uncensored()
             return
+        if self.path == "/api/train-heads":
+            length = int(self.headers.get("Content-Length", "0"))
+            req = json.loads(self.rfile.read(length)) if length else {}
+            try:
+                rows = req.get("rows", [])
+                oof = int(req.get("oofFolds", 5))
+                vision_by_id, text_by_id = vec_maps(VAULT_ROOT)
+                Xt, Xv, y = [], [], []
+                for r in rows:
+                    rid = r.get("id")
+                    if rid in text_by_id and rid in vision_by_id:
+                        Xt.append(text_by_id[rid]); Xv.append(vision_by_id[rid]); y.append(r["category"])
+                if len(set(y)) < 2:
+                    self._json(422, {"error": "need >=2 classes with vectors"}); return
+                heads = train_heads(np.asarray(Xt), np.asarray(Xv), y, oof)
+                self._json(200, heads)
+            except Exception as e:
+                log.exception("train-heads failed")
+                self._json(500, {"error": str(e)})
+            return
         if self.path not in ("/api/embed", "/api/embeddings"):
             self._json(404, {"error": f"unknown path {self.path}"})
             return
@@ -500,6 +579,7 @@ def main():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s  %(message)s", datefmt="%H:%M:%S")
 
     vault_root = resolve_vault_root(args.vault_root)
+    global VAULT_ROOT; VAULT_ROOT = vault_root
     model_path = Path(args.model_path) if args.model_path else (vault_root / ".roost" / "build" / "nomic-finetuned-hardneg")
     if model_path.exists():
         load_model(model_path, args.max_seq)
@@ -517,6 +597,7 @@ def main():
     server = HTTPServer((args.host, args.port), EmbedHandler)
     log.info(f"Serving on http://{args.host}:{args.port}")
     log.info(f"  POST /api/embed        Ollama-compatible batched embed")
+    log.info(f"  POST /api/train-heads  Train stacked classifier heads with sklearn")
     log.info(f"  POST /transcribe       Speech-to-text (faster-whisper, if installed)")
     log.info(f"  POST /classify-uncensored  Explicit-content image/video scoring (timm Marqo, if installed)")
     log.info(f"  GET  /health           Health + request stats")
