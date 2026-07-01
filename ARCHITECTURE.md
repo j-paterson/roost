@@ -122,7 +122,7 @@ Each entry in `INTEGRATIONS` (`registry.ts`) carries a `detect(ctx)` method that
 
 The plugin **never installs or spawns** these tools. It detects availability and, when a tool is unavailable, surfaces setup instructions to the user. A tool is used only when its flag is enabled in `settings.integrations` **and** `detect()` succeeds.
 
-The **embedding sidecar** now serves `POST /transcribe` (faster-whisper, lazily loaded so embedding-only installs are unaffected; Silero VAD reports `no_speech` on music/silence) alongside its `/api/embed` endpoint; `/api/tags` reports `asr_available`. The plugin still doesn't spawn it — but it can be installed as a **durable auto-start service** (per-user macOS LaunchAgent / Linux systemd `--user` unit, running on a standalone uv-managed Python venv) via `scripts/install-sidecar-service.sh`, which `setup-integrations.sh` runs.
+The **embedding sidecar** now serves `POST /transcribe` (faster-whisper, lazily loaded so embedding-only installs are unaffected; Silero VAD reports `no_speech` on music/silence) and `POST /api/train-heads` (scikit-learn — trains the Smart Assign classifier heads off the UI thread; see "The self-improving loop" below) alongside its `/api/embed` endpoint; `/api/tags` reports `asr_available`. The plugin still doesn't spawn it — but it can be installed as a **durable auto-start service** (per-user macOS LaunchAgent / Linux systemd `--user` unit, running on a standalone uv-managed Python venv) via `scripts/install-sidecar-service.sh`, which `setup-integrations.sh` runs.
 
 **Backend transparency.** Because the sidecar is a separate process and `embeddingBackend: "auto"` *silently* falls back to raw Ollama when it's down, the active backend used to be invisible — and production silently ran raw embeddings for ~3 weeks. The transparency layer fixes this: `describeActiveEmbedding` (`lib/embedder.ts`) reports the *resolved* backend (not just the configured setting); `lib/embedding-provenance.ts` stamps which backend produced the cache (`.roost/cache/embedding-provenance.json`) and `classifyMismatch` detects `sidecar-down` / `vault-moved` / `upgrade-available`; the Smart Assign embed step warns at run-start and the Hub status strip shows the live backend; a "Re-embed all" command is the one-click recovery. Crucially, the honest Ollama-only default is never flagged as degraded. (`lib/sidecar-probe.ts` is the single shared probe.)
 
@@ -632,16 +632,26 @@ is now tier 2 of the cascade. Note: this was an *assignment* win; open-set rejec
 remains the separate, structurally-hard problem the conservative `τ` defaults manage rather
 than solve.
 
-### The self-improving loop (`training-set.ts`, `eval-log.ts`, `honesty-monitors.ts`, `logreg-fit.ts`, `train-head.ts`, `acceptance-gate.ts`, `head-store.ts`, `retrain.ts`) — 2026-06-27/28
+### The self-improving loop (`training-set.ts`, `eval-log.ts`, `honesty-monitors.ts`, `train-head.ts`, `train-head-sidecar.ts`, `acceptance-gate.ts`, `head-store.ts`, `retrain.ts`) — 2026-06-27/28, sidecar training 2026-07-01
 
 > Spec 2, both plans + the amendment shipped. **Plan 1** = the deterministic substrate +
 > rejection behavior. **Plan 2** = the retrain engine. **Amendment (2026-06-28)** = organic
 > capture (any hand edit becomes training signal), retrain moved to **run-start**, and a
 > validated gate (fair fresh baseline + overall&macro-recall rule). The head retrains
-> in-process from the user's labels, **opt-in** behind `smartAssignAutoRetrain` (default **off**).
-> Specs: `2026-06-26-self-improving-loop-design.md` + `2026-06-28-self-improving-loop-amendment-design.md`.
-> Training-NEGATIVES remain deferred (see "Out of scope"). Before enabling auto-retrain on a
-> vault, `scripts/validate-gate.py` must pass (gate accepts a better candidate, rejects a corrupted one).
+> from the user's labels; **default on** (`smartAssignAutoRetrain`).
+> Specs: `2026-06-26-self-improving-loop-design.md` + `2026-06-28-self-improving-loop-amendment-design.md`
+> + `2026-07-01-sidecar-retrain-design.md`.
+> Training-NEGATIVES remain deferred (see "Out of scope").
+>
+> **Sidecar training (2026-07-01).** The head fits used to run **in-process** in a TS-native
+> logistic-regression (`logreg-fit.ts`, now removed). On large label sets that synchronous fit
+> froze the Smart Assign UI for tens of minutes (one fit over ~4,500 labels × 768-dim took
+> minutes; a retrain does ~7). Training now runs in the **Python embedding sidecar** via
+> `POST /api/train-heads` (real scikit-learn, `scripts/embed-sidecar.py`) — off the UI thread
+> and **seconds** instead of minutes. The k-fold gate stays in TS (`retrain.ts`); only the fits
+> moved. When the sidecar is unreachable, retrain is **skipped** for that run (no in-process
+> fallback) — the existing head keeps working and the next run retries. Live-validated: 96.7%
+> holdout agreement between sidecar-trained weights and TS inference, ~30 ms per fit.
 
 - **Rejection capture.** In Smart Assign review, an item's gallery card can be **rejected**
   (marked wrong *without* picking a replacement) — `GroupStore.rejectItem` / `getRejects`,
@@ -671,21 +681,22 @@ than solve.
   (`eval-log.ts`). `honesty-monitors.ts` flags silently-rotting classes (uncorrected past a
   window) and per-class label-distribution drift. These inform; they do not act.
 
-**The retrain engine (opt-in `smartAssignAutoRetrain`, default off).** At the **START of a
+**The retrain engine (`smartAssignAutoRetrain`, default on).** At the **START of a
 Smart Assign run, before Step-1 scoring** (so the run scores with the improved head — the
-amendment moved this off the confirm hook), in its own try/catch (a retrain failure never
-breaks the run) — if the flag is on and `shouldRetrain` fires (new human labels since
-`lastRetrainTs` ≥ `RETRAIN_SIGNAL_FLOOR`, counting organic edits + review labels), `runRetrain`
-(`retrain.ts`) executes:
+amendment moved this off the confirm hook), surfaced as its own **"Retrain" pipeline step**, in
+its own try/catch (a retrain failure never breaks the run) — if the flag is on and `shouldRetrain`
+fires (new human labels since `lastRetrainTs` ≥ `RETRAIN_SIGNAL_FLOOR`, counting organic edits +
+review labels), `runRetrain` (`retrain.ts`, async) executes:
 
-1. **Train a candidate** (`train-head.ts`): build rows from the training-set's human positives
-   (eligible classes only, ≥5), fit text + vision base heads + an OOF-stacked meta head. The
-   fitter (`logreg-fit.ts`) is a TS-native multinomial logistic regression matching sklearn's
-   objective (softmax CE·C + ½‖W‖², no intercept penalty, balanced weights), optimized via the
-   `fmin` conjugate-gradient library. **Parity-tested vs scikit-learn** (`train-head-parity.test.ts`
-   against a committed golden fixture: weights within 0.02, ≥99% prediction agreement) — the
-   convex objective guarantees the same unique optimum. No Python at runtime; the encoder stays
-   frozen (only the linear head retrains).
+1. **Train a candidate in the sidecar** (`train-head-sidecar.ts` → `POST /api/train-heads`):
+   `buildTrainingRows` (`train-head.ts`) builds rows from the training-set's human positives
+   (eligible classes only, ≥5); the TS client sends just each row's `{id, category}` (the sidecar
+   loads the vectors from the on-disk `.roost/cache/embedding-vectors*.bin` by id) and the sidecar
+   fits text + vision base heads + an OOF-stacked meta head with scikit-learn, returning them in
+   the on-disk head JSON format. Binary problems emit `K=2` softmax rows; classes are sorted; the
+   meta head is scored on raw stacked probabilities (`norm:"none"`, matching the base-head
+   L2-norm-at-train convention). The encoder stays frozen — only the linear heads retrain. A
+   `null` from the sidecar (down/timeout) bails the whole retrain (`ran:false, "sidecar unavailable"`).
 2. **Gate, fail-closed, with a *fair* baseline** (`acceptance-gate.ts` + `retrain.ts`): the
    amendment fixed two structural flaws here. (a) The baseline is a **freshly-trained head on
    labels before `lastRetrainTs`** (excl. the holdout) — **never the live head**, which trained
