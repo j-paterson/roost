@@ -554,6 +554,7 @@ export class BookmarksBasesView extends BasesView
       uncertainRoostIds: this.uncertainRoostIds,
       matchedRoostIds: this.matchedRoostIds,
       matchDetailMap: this.matchDetailMap,
+      humanAssignedRoostIds: null,
       isSelectionActive: () => this.gallerySelection.isActive(),
       isSelected: (id: string) => this.gallerySelection.isSelected(id),
       onSelectionToggle: (id: string, cardEl: HTMLElement) => this.gallerySelection.toggle(id, cardEl),

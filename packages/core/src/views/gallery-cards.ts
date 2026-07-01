@@ -49,6 +49,7 @@ export interface GalleryCardHandlers {
   uncertainRoostIds: Set<string> | null;
   matchedRoostIds: Set<string> | null;
   matchDetailMap: Map<string, MatchDetail> | null;
+  humanAssignedRoostIds: Set<string> | null;
   isSelectionActive: () => boolean;
   isSelected: (roostId: string) => boolean;
   onSelectionToggle: (roostId: string, cardEl: HTMLElement) => void;
@@ -156,6 +157,9 @@ export function hydrateGalleryCard(
   const roostIdVal = safeGetValue(entry, "note.roost_id")?.toString();
   if (roostIdVal) el.dataset.roostId = roostIdVal;
 
+  const isHuman = !!roostIdVal && handlers.humanAssignedRoostIds?.has(roostIdVal);
+  if (isHuman) el.dataset.assigned = "human";
+
   if (roostIdVal && handlers.uncertainRoostIds?.has(roostIdVal)) {
     el.classList.add("roost-card-uncertain");
   }
@@ -219,7 +223,7 @@ export function hydrateGalleryCard(
   const coverEl = el.createDiv({ cls: "roost-card-cover" });
   coverEl.style.cssText = `aspect-ratio: 1 / ${cfg.imageRatio}; position: relative;`;
 
-  if (isMatched) {
+  if (isMatched && !isHuman) {
     const matchDetail = roostIdVal ? handlers.matchDetailMap?.get(roostIdVal) : null;
     const score = matchDetail?.score;
     coverEl.createDiv({

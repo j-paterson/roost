@@ -1732,6 +1732,13 @@
   box-shadow: 0 0 8px color-mix(in srgb, var(--color-cyan, var(--text-accent)) 35%, transparent) !important;
 }
 
+/* Human-assigned (confirmed/moved in the review pass) — green, precedence over matched */
+.roost-card[data-assigned="human"] {
+  outline: 2px solid var(--color-green, #16a34a) !important;
+  outline-offset: -2px;
+  box-shadow: 0 0 8px color-mix(in srgb, var(--color-green, #16a34a) 35%, transparent) !important;
+}
+
 /* Match info block in expanded card */
 .roost-expanded-match {
   display: flex;
