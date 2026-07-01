@@ -72,7 +72,7 @@ describe("maybeRetrainAtRunStart", () => {
     const order: string[] = [];
     const host = makeHost(true);
     vi.mocked(host.setPipelineStep).mockImplementation(() => { order.push("step"); });
-    vi.mocked(runRetrain).mockImplementation(() => { order.push("retrain"); return { ran: false, swapped: false, reason: "x" }; });
+    vi.mocked(runRetrain).mockImplementation(() => { order.push("retrain"); return Promise.resolve({ ran: false, swapped: false, reason: "x" }); });
 
     await maybeRetrainAtRunStart(host);
 

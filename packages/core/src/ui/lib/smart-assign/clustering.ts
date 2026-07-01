@@ -119,7 +119,7 @@ export async function maybeRetrainAtRunStart(
     // synchronous train begins (otherwise the paint is starved until it returns).
     await new Promise<void>((resolve) => setTimeout(resolve, 0));
 
-    const outcome = runRetrain(vault, host.log);
+    const outcome = await runRetrain(vault, host.log);
     const msg = retrainNoticeMessage(outcome);
     if (msg) new Notice(msg);
   } catch (e: unknown) {
