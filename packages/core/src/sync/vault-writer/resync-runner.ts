@@ -3,7 +3,7 @@ import type { ElectronWebview, Platform } from "@/types/sync";
 import { ensureFolder, updateNoteFrontmatter, type FrontmatterValue } from "@/lib/vault-helpers";
 import { type VaultIndex } from "./vault-index";
 import { type NoteFileWriter, articleFrontmatterFields } from "./note-file-writer";
-import { type MediaDownloader, type QuarantinedFile } from "./media-downloader";
+import { type MediaDownloader, type QuarantinedFile, EAGLE_VIDEO_ALTS, EAGLE_POSTER_ALTS } from "./media-downloader";
 import { type TwitterRecordWriter } from "./twitter-record-writer";
 import { type InstagramRecordWriter } from "./instagram-record-writer";
 import { type RedditRecordWriter } from "./reddit-record-writer";
@@ -97,10 +97,10 @@ export class ResyncRunner {
       );
     } else if (media.videoUrl && this.tiktokWc) {
       const wc = this.tiktokWc;
-      await this.mediaDownloader.downloadAndSave(() => downloadTikTokVideo(wc, media.videoUrl!), attachFolder, "video.mp4", true);
+      await this.mediaDownloader.downloadAndSave(() => downloadTikTokVideo(wc, media.videoUrl!), attachFolder, "video.mp4", true, EAGLE_VIDEO_ALTS);
     }
     if (media.coverUrl) {
-      await this.mediaDownloader.downloadAndSave(() => downloadTikTokImage(media.coverUrl!), attachFolder, "cover.jpg", true);
+      await this.mediaDownloader.downloadAndSave(() => downloadTikTokImage(media.coverUrl!), attachFolder, "cover.jpg", true, EAGLE_POSTER_ALTS);
     }
     let subtitle: string | undefined;
     const subtitleUrl = extractTikTokSubtitleUrl(record);
@@ -196,9 +196,9 @@ export class ResyncRunner {
           )
         );
       } else if (twitterMedia.videoUrl) {
-        await this.mediaDownloader.downloadAndSave(() => downloadTwitterVideo(twitterMedia.videoUrl!), attachFolder, "video.mp4", true);
+        await this.mediaDownloader.downloadAndSave(() => downloadTwitterVideo(twitterMedia.videoUrl!), attachFolder, "video.mp4", true, EAGLE_VIDEO_ALTS);
         if (twitterMedia.videoPosterUrl) {
-          await this.mediaDownloader.downloadAndSave(() => downloadTwitterImage(twitterMedia.videoPosterUrl!), attachFolder, "video-poster.jpg", true);
+          await this.mediaDownloader.downloadAndSave(() => downloadTwitterImage(twitterMedia.videoPosterUrl!), attachFolder, "video-poster.jpg", true, EAGLE_POSTER_ALTS);
         }
       }
       if (twitterMedia.cardMeta?.thumbnail) {

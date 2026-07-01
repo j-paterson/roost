@@ -3,7 +3,7 @@ import { buildFrontmatter, ensureFolder, type FrontmatterValue } from "@/lib/vau
 import { enrichmentVersionField } from "@/lib/enrichments";
 import { type VaultIndex } from "./vault-index";
 import { type NoteFileWriter, articleFrontmatterFields } from "./note-file-writer";
-import { type MediaDownloader } from "./media-downloader";
+import { type MediaDownloader, EAGLE_VIDEO_ALTS, EAGLE_POSTER_ALTS } from "./media-downloader";
 import { type NormalizedRecord } from "../../lib/normalize";
 import { renderCardAsync } from "../card-renderer";
 import { renderTweetBody } from "@/lib/tweet-render";
@@ -147,11 +147,13 @@ export class TwitterRecordWriter {
           if (ok) mediaEmbeds.push(`![[${attachFolder}/${media.photos[i].index + 1}.jpg]]`);
         });
       } else if (media.videoUrl) {
-        await this.mediaDownloader.downloadAndSave(() => downloadTwitterVideo(media.videoUrl!), attachFolder, "video.mp4");
+        // skipIfExists + Eagle alts: never store a second copy of a video that an
+        // Eagle import already saved as media.mp4 in this folder.
+        await this.mediaDownloader.downloadAndSave(() => downloadTwitterVideo(media.videoUrl!), attachFolder, "video.mp4", true, EAGLE_VIDEO_ALTS);
         // Poster JPG lives on the media entry and is the only thing the gallery
         // can render via <img> — the mp4 scrub video layers on top of it.
         if (media.videoPosterUrl) {
-          const posterOk = await this.mediaDownloader.downloadAndSave(() => downloadTwitterImage(media.videoPosterUrl!), attachFolder, "video-poster.jpg");
+          const posterOk = await this.mediaDownloader.downloadAndSave(() => downloadTwitterImage(media.videoPosterUrl!), attachFolder, "video-poster.jpg", true, EAGLE_POSTER_ALTS);
           if (posterOk) {
             coverFile = `${attachFolder}/video-poster.jpg`;
             mediaEmbeds.push(`![[${attachFolder}/video-poster.jpg]]`);

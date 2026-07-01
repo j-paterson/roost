@@ -9,6 +9,13 @@ function noteDirPath(filePath: string): string {
   return filePath.replace(/\/[^/]+\.md$/, "");
 }
 
+/** Filenames a roost video (video.mp4) may already exist under from an Eagle
+ *  import. Passed as downloadAndSave altNames so a resync/write skips instead of
+ *  storing a second copy. */
+export const EAGLE_VIDEO_ALTS = ["media.mp4", "media.mov"];
+/** Same, for a roost poster (video-poster.jpg / cover.jpg) vs Eagle's thumb.png. */
+export const EAGLE_POSTER_ALTS = ["thumb.png"];
+
 export interface QuarantinedFile { original: string; quarantined: string; }
 
 interface MediaDownloaderOpts {
@@ -96,10 +103,18 @@ export class MediaDownloader {
     attachFolder: string,
     filename: string,
     skipIfExists = false,
+    /** Alternative filenames that count as "already downloaded" — e.g. the Eagle
+     *  import convention media.mp4/thumb.png for a roost video.mp4/video-poster.jpg.
+     *  Prevents re-downloading (and double-storing) media saved under another name. */
+    altNames: string[] = [],
   ): Promise<string | null> {
     const destPath = `${attachFolder}/${filename}`;
-    if (skipIfExists && this.vault.getAbstractFileByPath(destPath)) {
-      return `![[${destPath}]]`;
+    if (skipIfExists) {
+      if (this.vault.getAbstractFileByPath(destPath)) return `![[${destPath}]]`;
+      for (const alt of altNames) {
+        const altPath = `${attachFolder}/${alt}`;
+        if (this.vault.getAbstractFileByPath(altPath)) return `![[${altPath}]]`;
+      }
     }
     if (this.stopSignal?.stopped) return null;
     const t0 = Date.now();

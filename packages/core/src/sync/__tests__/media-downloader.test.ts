@@ -73,6 +73,37 @@ describe("MediaDownloader.downloadAndSave", () => {
     expect(downloadFn).not.toHaveBeenCalled();
   });
 
+  it("skip-if-exists via altNames: skips (and returns the alt embed) when media exists under an Eagle-convention name", async () => {
+    const fakeVault = makeFakeVaultWithBinary();
+    const attachFolder = "Bookmarks/X/twitter-789";
+    // Eagle import already stored the video as media.mp4 — a resync must NOT
+    // download a second copy as video.mp4.
+    fakeVault.files.set(`${attachFolder}/media.mp4`, "[existing eagle video]");
+
+    const md = makeMediaDownloader(fakeVault);
+    const downloadFn = vi.fn(async () => { throw new Error("should not be called"); });
+
+    const result = await md.downloadAndSave(downloadFn, attachFolder, "video.mp4", true, ["media.mp4", "media.mov"]);
+
+    expect(result).toBe(`![[${attachFolder}/media.mp4]]`);
+    expect(downloadFn).not.toHaveBeenCalled();
+  });
+
+  it("altNames absent → still downloads when only the alt would have matched but skipIfExists off", async () => {
+    const fakeVault = makeFakeVaultWithBinary();
+    const attachFolder = "Bookmarks/X/twitter-790";
+    fakeVault.files.set(`${attachFolder}/media.mp4`, "[existing]");
+
+    const md = makeMediaDownloader(fakeVault);
+    const downloadFn = vi.fn(async () => new TextEncoder().encode("data").buffer);
+
+    // skipIfExists=false → altNames are ignored, download proceeds.
+    const result = await md.downloadAndSave(downloadFn, attachFolder, "video.mp4", false, ["media.mp4"]);
+
+    expect(result).toBe(`![[${attachFolder}/video.mp4]]`);
+    expect(downloadFn).toHaveBeenCalled();
+  });
+
   it("stop-signal abort: returns null without calling downloadFn when stopped", async () => {
     const fakeVault = makeFakeVaultWithBinary();
     const attachFolder = "Bookmarks/X/twitter-456";
