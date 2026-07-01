@@ -220,6 +220,36 @@ describe("Stage 2: dual-embedding (text-only + vision-on)", () => {
     expect(embedded).not.toContain("[[People");
   });
 
+  it("a hung embed call times out instead of hanging the whole run", async () => {
+    vi.useFakeTimers();
+    try {
+      // Seed vision+summary so only Stage 2 (embed) runs; make embed never resolve.
+      savedCache["test:hang"] = {
+        vision: null, summary: "A summary that is definitely longer than ten chars", category: "X", vec: null, vecText: null,
+      };
+      const vault = makeFakeVault();
+      const fakeFile = new TFile() as TFile & { path: string };
+      fakeFile.path = "Bookmarks/hang.md";
+      (vault as any).__fakeFiles = [fakeFile];
+      const app = makeApp(fakeFile, { roost_id: "test:hang", title: "A title clearly longer than ten characters" });
+
+      const embedder = { embed: vi.fn(() => new Promise<number[][]>(() => { /* never resolves */ })) };
+      const runP = describeItems({
+        vault, app: app as any, syncFolder: "Bookmarks", ollamaUrl: "http://localhost:11434", embedder: embedder as any,
+      });
+
+      // Fast-forward past the stage timeout for the initial attempt AND the retry pass.
+      await vi.advanceTimersByTimeAsync(120_000);
+      await vi.advanceTimersByTimeAsync(120_000);
+
+      const result = await runP;               // resolves — did NOT hang
+      expect(result.errors).toBeGreaterThan(0); // the item failed gracefully
+      expect(savedCache["test:hang"].vec).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("preserves existing entry.vec when backfilling vecText (vec must not be overwritten)", async () => {
     // Sentinel vector — a recognisable value that must survive the backfill path.
     const SENTINEL_VEC = new Array(768).fill(0.42);

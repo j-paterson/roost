@@ -31,6 +31,11 @@ export const SYNC_BATCH_SIZE = 200;
 export const EARLY_OUT_THRESHOLD = 3;
 export const TIKTOK_VIDEO_DOWNLOAD_TIMEOUT_MS = 60_000;
 export const MEDIA_DOWNLOAD_MAX_RETRIES = 2;
+/** Per-stage cap for the embed pipeline's backend calls (vision, topic, embed).
+ *  Without it, a stalled Ollama/sidecar request (cold model, VRAM contention)
+ *  hangs the whole Smart Assign indefinitely — a single un-embeddable item stalls
+ *  the run. On timeout the stage fails gracefully so the pipeline proceeds. */
+export const EMBED_STAGE_TIMEOUT_MS = 120_000;
 /** How many records writeBatch processes concurrently. Each item is network- and
  *  (for video) ffmpeg-bound, so a small pool overlaps the waits for a big speedup;
  *  kept low to avoid hammering platform CDNs/APIs into rate-limiting. */

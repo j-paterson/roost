@@ -11,8 +11,19 @@ import type { StopSignal } from "@/types/sync";
 import type { Embedder } from "@/lib/embedder";
 import { loadEmbeddingCache, saveEmbeddingCache } from "@/pipeline/shared";
 
-import { OLLAMA_URL, EMBED_CONCURRENCY, VISION_MODEL, VISION_NUM_CTX, EVAL_MODEL, TOPIC_MODEL, OLLAMA_NUM_CTX } from "@/config";
+import { OLLAMA_URL, EMBED_CONCURRENCY, VISION_MODEL, VISION_NUM_CTX, EVAL_MODEL, TOPIC_MODEL, OLLAMA_NUM_CTX, EMBED_STAGE_TIMEOUT_MS } from "@/config";
 import * as fs from "fs";
+
+/** Reject if `p` doesn't settle within `ms`. The underlying request keeps running
+ *  but is abandoned — this is a backstop so a stalled backend call (Ollama/sidecar)
+ *  can't hang the whole embed run. Mirrors the media-downloader's withTimeout. */
+function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+  });
+  return Promise.race([p, timeout]).finally(() => clearTimeout(timer)) as Promise<T>;
+}
 import * as path from "path";
 import * as os from "os";
 import { execFileSync } from "child_process";
@@ -176,7 +187,7 @@ async function embedItem(
       if (imageFile instanceof TFile && /^(jpg|jpeg|png|webp)$/i.test(imageFile.extension)) {
         const imageData = await vault.readBinary(imageFile);
         const base64 = arrayBufferToBase64(imageData);
-        const res = await requestUrl({
+        const res = await withTimeout(requestUrl({
           url: `${ollama}/api/generate`,
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -187,10 +198,12 @@ async function embedItem(
             stream: false,
             options: { num_ctx: VISION_NUM_CTX },
           }),
-        });
+        }), EMBED_STAGE_TIMEOUT_MS, `vision ${item.id}`);
         entry.vision = (res.json?.response || "").trim().slice(0, 500) || null;
       }
-    } catch {}
+    } catch (e: unknown) {
+      if (e instanceof Error && e.message.includes("timed out")) log(`Vision ${e.message}`);
+    }
   }
 
   // Stage 1b: Summary — combines vision description + caption + transcript + tags
@@ -208,12 +221,12 @@ async function embedItem(
     const prompt = `${context}\n\nWhat is this about? Focus on the actual subject.\n\nRespond in exactly this format:\nTopic: <one sentence starting with the subject, not "The video/image...">\n${categoryInstruction}`;
 
     try {
-      const res = await requestUrl({
+      const res = await withTimeout(requestUrl({
         url: `${ollama}/api/generate`,
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ model: TOPIC_MODEL, prompt, stream: false, options: { num_ctx: OLLAMA_NUM_CTX } }),
-      });
+      }), EMBED_STAGE_TIMEOUT_MS, `topic ${item.id}`);
       const raw = (res.json?.response || "").trim();
       const topicMatch = raw.match(/Topic:\s*(.+)/i);
       const categoryMatch = raw.match(/Category:\s*(\S+)/i);
@@ -232,7 +245,7 @@ async function embedItem(
     const plainText = [entry.summary, entry.category, item.text, item.subtitle].filter(Boolean).join(" ");
     if (plainText.length > 10) {
       try {
-        const [vText] = await embedder!.embed([plainText]);
+        const [vText] = await withTimeout(embedder!.embed([plainText]), EMBED_STAGE_TIMEOUT_MS, `embed ${item.id}`);
         entry.vecText = vText ?? null;
       } catch (e: unknown) {
         log(`Text embedding backfill failed for ${item.id}: ${e instanceof Error ? e.message : String(e)}`);
@@ -248,7 +261,7 @@ async function embedItem(
     const plainText = [entry.summary, entry.category, item.text, item.subtitle].filter(Boolean).join(" ");
     try {
       if (visionText.length > 10) {
-        const [vVision, vText] = await embedder!.embed([visionText, plainText]);
+        const [vVision, vText] = await withTimeout(embedder!.embed([visionText, plainText]), EMBED_STAGE_TIMEOUT_MS, `embed ${item.id}`);
         entry.vec = vVision ?? null;
         entry.vecText = plainText.length > 10 ? (vText ?? null) : (vVision ? [...vVision] : null);
       } else {
@@ -259,7 +272,7 @@ async function embedItem(
         // (the pipeline appears stuck at N). A minimal identity string gives them a
         // vector so the count converges. Only fires when real content is absent.
         const identity = [item.text, item.author, item.platform, ...item.tags].filter(Boolean).join(" ").trim() || item.id;
-        const [v] = await embedder!.embed([identity]);
+        const [v] = await withTimeout(embedder!.embed([identity]), EMBED_STAGE_TIMEOUT_MS, `embed ${item.id}`);
         entry.vec = v ?? null;
         entry.vecText = v ? [...v] : null;
       }
