@@ -324,3 +324,68 @@ describe("WindowedCardGrid model queries", () => {
     expect(gridEl.querySelectorAll(".roost-card").length).toBe(0);
   });
 });
+
+describe("WindowedCardGrid measured uniform row height", () => {
+  it("switches from the estimate to the measured height, and a shift uses it", () => {
+    const scrollEl = document.createElement("div");
+    const gridEl = document.createElement("div");
+    scrollEl.appendChild(gridEl);
+    // scrollEl.clientHeight is 0 under happy-dom; inject viewport via readColumns/rowHeight seams.
+    let measured: number | null = null;
+    const grid = new WindowedCardGrid({
+      scrollEl, gridEl,
+      rowHeight: () => 100,                 // estimate
+      count: () => 100,
+      keyAt: (i) => `k${i}`,
+      createPlaceholder: (parent, index) => {
+        const el = document.createElement("div");
+        el.className = "roost-card roost-card-placeholder";
+        el.dataset.idx = String(index);
+        parent.appendChild(el);
+        return el;
+      },
+      readColumns: () => 4,
+      bufferRows: 0,
+      measureRowHeight: () => measured,     // seam: null until a "real" height is known
+    });
+    // With no measurement, scrollIndexIntoView uses the estimate (100): index 40 → row 10 → scrollTop 1000.
+    grid.scrollKeyIntoView("k40");
+    expect(scrollEl.scrollTop).toBe(1000);
+    // Now a real height is available; recompute should pick it up.
+    measured = 200;
+    grid.recompute(true);
+    // scrollIndexIntoView now uses 200: index 40 → row 10 → scrollTop 2000.
+    grid.scrollKeyIntoView("k40");
+    expect(scrollEl.scrollTop).toBe(2000);
+  });
+
+  it("resets the measured height on resize so it re-measures", () => {
+    const scrollEl = document.createElement("div");
+    const gridEl = document.createElement("div");
+    scrollEl.appendChild(gridEl);
+    let measured: number | null = 250;
+    const grid = new WindowedCardGrid({
+      scrollEl, gridEl,
+      rowHeight: () => 100,
+      count: () => 100,
+      keyAt: (i) => `k${i}`,
+      createPlaceholder: (parent, index) => {
+        const el = document.createElement("div");
+        el.className = "roost-card"; el.dataset.idx = String(index);
+        parent.appendChild(el); return el;
+      },
+      readColumns: () => 4,
+      bufferRows: 0,
+      measureRowHeight: () => measured,
+    });
+    grid.recompute(true);
+    grid.scrollKeyIntoView("k20"); // row 5 * 250 = 1250
+    expect(scrollEl.scrollTop).toBe(1250);
+    // Simulate resize: measurement now reflects a new column width; invalidate + re-measure.
+    measured = 150;
+    grid.onResizeForTest();        // test hook that mirrors the ResizeObserver callback
+    grid.recompute(true);
+    grid.scrollKeyIntoView("k20"); // row 5 * 150 = 750
+    expect(scrollEl.scrollTop).toBe(750);
+  });
+});

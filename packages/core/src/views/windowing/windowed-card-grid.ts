@@ -22,6 +22,12 @@ export interface WindowedCardGridOptions {
   reuseKey?: { selector: string; get: (el: HTMLElement) => string | null };
   /** Called for each card element removed from the grid (e.g. to unobserve a hydration IO). */
   onEvict?: (el: HTMLElement) => void;
+  /**
+   * Override/seam for measuring the uniform row PITCH (card height + row gap) in px.
+   * Defaults to reading a hydrated card's offsetHeight + the grid's computed rowGap.
+   * Returns null when no real height is available yet (stay on the estimate).
+   */
+  measureRowHeight?: () => number | null;
 }
 
 export class WindowedCardGrid {
@@ -34,6 +40,7 @@ export class WindowedCardGrid {
   private rafHandle: number | null = null;
   private resizeObserver: ResizeObserver | null = null;
   private lastWindowKey = "";
+  private measuredRowHeight: number | null = null;
 
   constructor(private readonly opts: WindowedCardGridOptions) {
     this.topSpacer = this.makeSpacer("roost-grid-spacer-top");
@@ -46,7 +53,10 @@ export class WindowedCardGrid {
     this.attached = true;
     this.opts.scrollEl.addEventListener("scroll", this.onScroll, { passive: true });
     if (typeof ResizeObserver !== "undefined") {
-      this.resizeObserver = new ResizeObserver(() => this.scheduleRecompute());
+      this.resizeObserver = new ResizeObserver(() => {
+        this.measuredRowHeight = null; // column width changed → cover height changed → re-measure
+        this.scheduleRecompute();
+      });
       this.resizeObserver.observe(this.opts.scrollEl);
     }
   }
@@ -78,11 +88,40 @@ export class WindowedCardGrid {
     });
   }
 
+  private effectiveRowHeight(): number {
+    return this.measuredRowHeight ?? this.opts.rowHeight();
+  }
+
+  /** Read the uniform row pitch. Default: a hydrated card's offsetHeight + computed rowGap. */
+  private readRowHeight(): number | null {
+    if (this.opts.measureRowHeight) return this.opts.measureRowHeight();
+    const card = this.opts.gridEl.querySelector<HTMLElement>(".roost-card-ready[data-idx]");
+    if (!card) return null;
+    const gap = parseFloat(getComputedStyle(this.opts.gridEl).rowGap) || 0;
+    const h = card.offsetHeight;
+    return h > 0 ? h + gap : null;
+  }
+
+  /** Measure the uniform row height once; if it differs from the estimate/prior, re-lay exactly. */
+  private measureRowHeightOnce(): void {
+    if (this.measuredRowHeight != null) return; // uniform → stable until resize invalidates
+    const h = this.readRowHeight();
+    if (h == null || h <= 0) return;
+    this.measuredRowHeight = h;
+    this.recompute(true); // re-lay with the exact height
+  }
+
+  /** Test seam: simulate the ResizeObserver callback. */
+  onResizeForTest(): void {
+    this.measuredRowHeight = null;
+    this.scheduleRecompute();
+  }
+
   private currentWindow(): GridWindow {
     return computeGridWindow({
       total: this.opts.count(),
       columns: this.columns(),
-      rowHeight: Math.max(1, this.opts.rowHeight()),
+      rowHeight: Math.max(1, this.effectiveRowHeight()),
       scrollTop: this.opts.scrollEl.scrollTop,
       viewportHeight: this.opts.scrollEl.clientHeight,
       bufferRows: this.bufferRows(),
@@ -97,6 +136,7 @@ export class WindowedCardGrid {
     if (!force && key === this.lastWindowKey) return;
     this.lastWindowKey = key;
     this.applyWindow(win, false);
+    this.measureRowHeightOnce();
   }
 
   /** Data-update reseed at the current window (keep hydrated cards by key). */
@@ -132,7 +172,7 @@ export class WindowedCardGrid {
     if (index >= win.windowStart && index < win.windowEnd) return;
     const cols = this.columns();
     const row = Math.floor(index / cols);
-    this.opts.scrollEl.scrollTop = row * Math.max(1, this.opts.rowHeight());
+    this.opts.scrollEl.scrollTop = row * Math.max(1, this.effectiveRowHeight());
     this.recompute(true);
   }
 
