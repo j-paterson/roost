@@ -374,7 +374,7 @@ Frontmatter is built by `buildFrontmatter()` in `lib/vault-helpers.ts` — singl
 Custom Bases view type (`roost-bookmarks`) registered in the Bases dropdown:
 
 - **Card grid** with configurable size (120–400px, default 180px), aspect ratio, fit
-- **Incremental loading** — 60 cards per batch, sentinel IntersectionObserver triggers next batch
+- **Windowed grid rendering** — only near-viewport cards mounted between two full-width `grid-column: 1 / -1` spacers that preserve total scroll height (`WindowedCardGrid`, `views/windowing/`); rAF-throttled scroll+resize recompute, data-update reseed by `roost_id`. Explorer view (`base-card-view.ts`) retains the old sentinel/batch path (ready-to-adopt follow-up). Any render path that empties `containerEl` (split-pane, pipeline) must call `disableWindowGrid()` first or the controller corrupts the DOM on the next scroll event.
 - **Skeleton loading** — shimmer placeholders crossfade to real cards (fade-in animation)
 - **Video scrubbing** — hover to play, mousemove to seek, 300ms auto-resume, progress bar
 - **Multi-photo gallery** — `📷+` badge on cards, prev/next navigation in expanded view
@@ -970,7 +970,7 @@ Both library tree and staging tree use Obsidian-native CSS:
 | `grid-auto-flow: dense` | Backfills gaps when cards expand to full width |
 | Motion `animate()` for FLIP | Same spring physics as Electron app, vanilla DOM compatible |
 | `safeGetValue()` wrapper | Obsidian's `getValue()` throws on null frontmatter values |
-| Incremental loading (60/batch) | 14K+ placeholders in CSS grid caused multi-second lag |
+| Windowed grid rendering (bookmarks gallery) | 14K+ placeholders in CSS grid caused multi-second layout lag; `WindowedCardGrid` (`views/windowing/`) mounts only the visible window + buffer rows so layout cost scales with visible cards, not total count |
 | Data-level filtering (not CSS) | `display: none` on grid items caused reflow flash |
 | `roost_category` / `roost_subcategory` fields (not tags or folders) | Non-destructive, doesn't pollute tag namespace, queryable by Bases; subcategory is a sibling field rather than a nested tag so the two levels can be queried independently |
 | Inactivity timeout (not wall-clock) | Twitter sync: large collections scroll to completion |
