@@ -302,4 +302,20 @@ describe("GalleryFeedModeController review-pass dispatch", () => {
     const remaining = (ctrl as unknown as { trainingEntries: () => BasesEntry[] }).trainingEntries();
     expect(remaining.map(e => getRoostId(e))).toContain("id1");
   });
+
+  it("setTrainingMode(true) re-opens the feed when trainingMode is already on but the feed is closed", () => {
+    // Regression: exiting the feed via the view-mode toggle leaves trainingMode=true.
+    // Clicking "Review Pass" then hit the early-return in setTrainingMode and the
+    // feed silently never opened.
+    const entries = [makeEntry("id1", "Tech")];
+    const host = makeTestHost(entries);
+    const ctrl = new GalleryFeedModeController(host);
+    ctrl.trainingMode = true; // stale: training on, feed closed (viewMode "grid")
+    const setViewMode = vi.fn();
+    (ctrl as unknown as { setViewMode: (m: string) => void }).setViewMode = setViewMode;
+
+    ctrl.setTrainingMode(true);
+
+    expect(setViewMode).toHaveBeenCalledWith("feed");
+  });
 });

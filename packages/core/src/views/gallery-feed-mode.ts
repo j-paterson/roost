@@ -130,7 +130,13 @@ export class GalleryFeedModeController {
   }
 
   setTrainingMode(on: boolean): void {
-    if (this.trainingMode === on) return;
+    if (this.trainingMode === on) {
+      // trainingMode can be left ON with the feed closed (exiting via the
+      // view-mode toggle doesn't clear it). Re-requesting training mode must
+      // still open the feed, or "Review Pass" silently does nothing.
+      if (on && this.viewMode !== "feed") this.setViewMode("feed");
+      return;
+    }
     this.trainingMode = on;
     if (on) {
       if (this.viewMode !== "feed") {
