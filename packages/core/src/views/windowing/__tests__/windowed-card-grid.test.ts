@@ -35,6 +35,46 @@ function cardIdxs(gridEl: HTMLElement): number[] {
   return [...gridEl.querySelectorAll<HTMLElement>(".roost-card")].map((el) => Number(el.dataset.idx));
 }
 
+describe("WindowedCardGrid.applyWindow — no needless moves (anti-flicker)", () => {
+  // Spy on insertBefore to record which card indices get (re)inserted.
+  function spyInserts(gridEl: HTMLElement): number[] {
+    const inserted: number[] = [];
+    const orig = gridEl.insertBefore.bind(gridEl);
+    (gridEl as unknown as { insertBefore: Node["insertBefore"] }).insertBefore = ((node: Node, ref: Node | null) => {
+      const idx = (node as HTMLElement).dataset?.idx;
+      if (idx != null) inserted.push(Number(idx));
+      return orig(node as never, ref as never);
+    }) as Node["insertBefore"];
+    return inserted;
+  }
+
+  it("does NOT re-insert any card when the window is unchanged", () => {
+    const { grid, gridEl } = setup(100);
+    const win = computeGridWindow({ total: 100, columns: 4, rowHeight: 100, scrollTop: 400, viewportHeight: 400, bufferRows: 0 });
+    grid.applyWindow(win);
+    const inserted = spyInserts(gridEl);
+    grid.applyWindow(win); // identical window — must be a DOM no-op for cards
+    expect(inserted).toEqual([]);
+  });
+
+  it("only inserts newly-entering cards on a window shift, leaving on-screen cards in place", () => {
+    const { grid, gridEl } = setup(100);
+    const first = computeGridWindow({ total: 100, columns: 4, rowHeight: 100, scrollTop: 0, viewportHeight: 400, bufferRows: 0 });
+    grid.applyWindow(first); // [0,20)
+    const before = cardIdxs(gridEl);
+    const inserted = spyInserts(gridEl);
+    const shifted = computeGridWindow({ total: 100, columns: 4, rowHeight: 100, scrollTop: 100, viewportHeight: 400, bufferRows: 0 });
+    grid.applyWindow(shifted); // [4,24)
+    // cards present in BOTH windows are still on screen — they must NOT be moved
+    const stayed = before.filter((i) => i >= shifted.windowStart && i < shifted.windowEnd);
+    for (const idx of stayed) expect(inserted).not.toContain(idx);
+    // final order still correct + spacers bracket
+    expect(cardIdxs(gridEl)).toEqual(Array.from({ length: shifted.windowEnd - shifted.windowStart }, (_, k) => shifted.windowStart + k));
+    expect(gridEl.firstElementChild!.className).toContain("spacer-top");
+    expect(gridEl.lastElementChild!.className).toContain("spacer-bottom");
+  });
+});
+
 describe("WindowedCardGrid.applyWindow (index-stable)", () => {
   it("mounts only the windowed indices, in order, between spacers", () => {
     const { grid, gridEl } = setup(100);

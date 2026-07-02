@@ -211,7 +211,11 @@ export class WindowedCardGrid {
       }
     }
 
-    // Place every desired index, in ascending order, just before the bottom spacer.
+    // Place desired indices in ascending order right after the top spacer. Move a card
+    // ONLY when it is not already in its correct DOM position — re-inserting an
+    // already-placed on-screen card detaches+reattaches it, which repaints it (and
+    // re-evaluates `content-visibility`), causing visible flicker while scrolling.
+    let prev: Node = this.topSpacer;
     for (let i = win.windowStart; i < win.windowEnd; i++) {
       let el = mounted.get(i);
       if (!el && keptByKey) {
@@ -224,7 +228,10 @@ export class WindowedCardGrid {
         }
       }
       if (!el) el = createPlaceholder(gridEl, i);
-      gridEl.insertBefore(el, this.bottomSpacer); // ascending order → sorted
+      if (prev.nextSibling !== el) {
+        gridEl.insertBefore(el, prev.nextSibling); // only new/misplaced cards move
+      }
+      prev = el;
     }
 
     this.topSpacer.style.height = `${win.topSpacerPx}px`;
