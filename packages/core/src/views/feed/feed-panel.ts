@@ -16,6 +16,13 @@ import type { FeedSync } from "@/views/feed/feed-sync";
 
 const WINDOW_SIZE = 5;
 
+// Slots are cheap placeholder <div>s, but creating + observing thousands of them
+// synchronously (e.g. the Smart Assign review pass seeds the whole run) freezes
+// the main thread. Build the first CHUNK_SIZE synchronously (covers the mount
+// window + first screen) and append the rest across animation frames. For lists
+// at or below CHUNK_SIZE this is fully synchronous — identical to the old path.
+const CHUNK_SIZE = 300;
+
 /** Indices that should be mounted given the active index, total count, and window. */
 export function computeMountWindow(activeIndex: number, total: number, windowSize: number): Set<number> {
   const out = new Set<number>();
@@ -52,9 +59,13 @@ export function mountFeedPanel(
   let mounted: Set<number> = new Set();
   let activeIndex = 0;
   let suppressScrollSync = false;
+  // Bumped on every rebuild/dispose so a superseded chunked-append loop bails.
+  let buildToken = 0;
 
   function makeSlot(entry: BasesEntry): Slot {
-    const el = container.createDiv({ cls: "roost-feed-item" });
+    // Detached — appended to the container later (in chunks) by rebuild.
+    const el = document.createElement("div");
+    el.className = "roost-feed-item";
     return { el, entry, roostId: getRoostId(entry), handle: null };
   }
 
@@ -131,6 +142,8 @@ export function mountFeedPanel(
   container.addEventListener("scrollend", onScrollEnd);
 
   function rebuild(entries: BasesEntry[], preferredActiveRoostId: string | null) {
+    // Supersede any in-flight chunked append from a previous rebuild.
+    const myToken = ++buildToken;
     // Unobserve stale slots before clearing the DOM so IO callbacks cannot
     // fire for removed elements and corrupt activeIndex on the new slot list.
     for (const s of slots) observer.unobserve(s.el);
@@ -140,8 +153,9 @@ export function mountFeedPanel(
     container.empty();
     container.addClass("roost-feed-scroller");
 
+    // Create slot records with DETACHED elements (cheap); append/observe below.
     slots = entries.map(makeSlot);
-    slots.forEach((s, i) => { s.el.dataset.feedIndex = String(i); observer.observe(s.el); });
+    slots.forEach((s, i) => { s.el.dataset.feedIndex = String(i); });
 
     let nextActive = 0;
     if (preferredActiveRoostId) {
@@ -149,6 +163,19 @@ export function mountFeedPanel(
       if (idx >= 0) nextActive = idx;
     }
     activeIndex = nextActive;
+
+    // Append + observe a [start, end) index range, in order.
+    const appendRange = (start: number, end: number) => {
+      for (let i = start; i < end && i < slots.length; i++) {
+        container.appendChild(slots[i].el);
+        observer.observe(slots[i].el);
+      }
+    };
+
+    // Synchronous first chunk: enough to cover the mount window + first screen.
+    const firstEnd = Math.min(slots.length, Math.max(CHUNK_SIZE, activeIndex + WINDOW_SIZE + 1));
+    appendRange(0, firstEnd);
+
     const window = computeMountWindow(activeIndex, slots.length, WINDOW_SIZE);
     for (const i of window) mountIndex(i);
     mounted = window;
@@ -158,6 +185,19 @@ export function mountFeedPanel(
     suppressScrollSync = true;
     slots[activeIndex]?.el.scrollIntoView({ block: "start" });
     requestAnimationFrame(() => { suppressScrollSync = false; });
+
+    // Append the remaining slots across animation frames so the main thread
+    // never blocks on a multi-thousand-item list. Bails if superseded.
+    if (firstEnd < slots.length) {
+      let cursor = firstEnd;
+      const step = () => {
+        if (myToken !== buildToken) return; // a newer rebuild (or dispose) took over
+        appendRange(cursor, cursor + CHUNK_SIZE);
+        cursor += CHUNK_SIZE;
+        if (cursor < slots.length) requestAnimationFrame(step);
+      };
+      requestAnimationFrame(step);
+    }
   }
 
   // Subscribe to grid-driven activations. Smooth-scrolling across many
@@ -186,6 +226,7 @@ export function mountFeedPanel(
   return {
     setEntries(entries, preferredActiveRoostId) { rebuild(entries, preferredActiveRoostId); },
     dispose() {
+      buildToken++; // cancel any in-flight chunked append
       unsubSync();
       container.removeEventListener("scrollend", onScrollEnd);
       observer.disconnect();
