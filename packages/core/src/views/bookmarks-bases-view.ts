@@ -228,9 +228,10 @@ export class BookmarksBasesView extends BasesView
   ): void {
     this.matchedRoostIds = matched;
     this.matchDetailMap = detail;
-    this.humanAssignedRoostIds = null;    // reset per run — clears stale green rings + confirm exclusion set
-    this.syncHumanAssignedToPlugin();     // keep plugin.humanAssignedRoostIds in lockstep
-    this.feedMode.resetReviewPass();      // clear stale review-pass ids/proposals from prior run
+    // Do NOT reset review state (humanAssignedRoostIds / review pass) here:
+    // applyFilter calls setMatchState on EVERY data update, so a reset here
+    // wipes the review pass mid-judgment. The per-run reset happens on the
+    // "smartAssignRunStarted" item-click event instead (see onload subscriber).
   }
 
   applyFolderResult(result: GalleryFolderFilterApplied): void {
@@ -552,6 +553,13 @@ export class BookmarksBasesView extends BasesView
           // calls trainingEntries() with the correct reviewPassIds already set.
           this.feedMode.startReviewPass(data.itemIds, data.proposalMap);
           this.feedMode.setTrainingMode(true);
+        } else if (data?.action === "smartAssignRunStarted") {
+          // Per-run reset of review state. This must NOT live in setMatchState:
+          // applyFilter runs setMatchState on EVERY data update, so a reset there
+          // wiped humanAssignedRoostIds + the review-pass queue after each judgment.
+          this.humanAssignedRoostIds = null;
+          this.syncHumanAssignedToPlugin();
+          this.feedMode.resetReviewPass();
         }
       });
     }

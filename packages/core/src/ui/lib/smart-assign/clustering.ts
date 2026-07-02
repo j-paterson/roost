@@ -130,6 +130,9 @@ export async function maybeRetrainAtRunStart(
 export async function runSmartAssignClustering(host: SmartAssignClusteringHost): Promise<void> {
   host.setMode("staging");
   host.setPipelineStep(PIPELINE_STEP.EMBED);
+  // New run — the gallery view resets its per-run review state (judged-item set +
+  // review-pass queue) on this event. See ItemClickData."smartAssignRunStarted".
+  host.plugin.fireItemClick?.({ action: "smartAssignRunStarted" });
   const signal: StopSignal = { stopped: false, stop() { this.stopped = true; host.log("Stop requested..."); } };
   host.refs.stopSignalRef.current = signal;
 

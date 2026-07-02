@@ -25,51 +25,69 @@ describe("galleryFilterMatchState", () => {
 });
 
 /**
- * Fix #1 (cross-run stale Set): BookmarksBasesView.setMatchState now resets
- * humanAssignedRoostIds to null and calls syncHumanAssignedToPlugin().
+ * Per-run review-state reset contract.
  *
- * BookmarksBasesView cannot be instantiated in vitest (Obsidian runtime class).
- * This test exercises the SAME logic at the nearest testable seam — a minimal
- * plain-object view that mirrors the fixed setMatchState body exactly. The
- * intent is to document the contract and prove the reset + sync logic is correct.
+ * REGRESSION (found live): the reset originally lived in setMatchState, but
+ * applyFilter calls setMatchState on EVERY data update (performDataUpdate →
+ * applyFilter(currentFilter)), so each judgment's frontmatter write wiped
+ * humanAssignedRoostIds and the review-pass queue ~250ms later. The reset now
+ * fires ONLY on the "smartAssignRunStarted" item-click event, emitted once at
+ * the start of runSmartAssignClustering.
  *
- * Caller trace: SA run-2 Step 5 → applyFilter({folders}) → applyGalleryFilter
- *   → galleryFilterMatchState returns {null,null} → host.setMatchState(null,null)
- *   → humanAssignedRoostIds = null; syncHumanAssignedToPlugin().
- * Also: resetSmartAssignStaging → applyFilter(null) follows the same path.
+ * BookmarksBasesView cannot be instantiated in vitest (Obsidian runtime class);
+ * these tests exercise the contract at the nearest testable seam — plain-object
+ * mirrors of the setMatchState body and the event-handler body.
  */
-describe("setMatchState resets humanAssignedRoostIds per run (fix #1 seam test)", () => {
-  it("clears humanAssignedRoostIds and plugin ref when setMatchState is called with null/null", () => {
-    const plugin = { humanAssignedRoostIds: new Set(["stale-001"]) as Set<string> | null };
+describe("review-state reset lives on smartAssignRunStarted, NOT setMatchState", () => {
+  it("setMatchState preserves humanAssignedRoostIds (it runs on every data update)", () => {
+    const plugin = { humanAssignedRoostIds: new Set(["judged-001"]) as Set<string> | null };
 
-    // Mirrors BookmarksBasesView fields + the FIXED setMatchState body.
+    // Mirrors BookmarksBasesView fields + the CURRENT setMatchState body.
     const view = {
       matchedRoostIds: new Set(["old"]) as Set<string> | null,
       matchDetailMap: new Map() as Map<string, MatchDetail> | null,
-      humanAssignedRoostIds: new Set(["stale-001"]) as Set<string> | null,
-      getRoostPlugin() { return plugin; },
+      humanAssignedRoostIds: plugin.humanAssignedRoostIds,
       setMatchState(matched: Set<string> | null, detail: Map<string, MatchDetail> | null) {
         this.matchedRoostIds = matched;
         this.matchDetailMap = detail;
-        this.humanAssignedRoostIds = null;    // fix #1
-        const p = this.getRoostPlugin();
-        if (p) p.humanAssignedRoostIds = this.humanAssignedRoostIds; // syncHumanAssignedToPlugin
+        // no review-state reset here — see smartAssignRunStarted handler
       },
     };
 
     view.setMatchState(null, null);
 
-    expect(view.humanAssignedRoostIds).toBeNull();
-    expect(plugin.humanAssignedRoostIds).toBeNull();
-    // matchedRoostIds / matchDetailMap are also cleared (existing behaviour)
+    // Mid-pass data updates must NOT wipe the judged set.
+    expect(view.humanAssignedRoostIds).toEqual(new Set(["judged-001"]));
+    expect(plugin.humanAssignedRoostIds).toEqual(new Set(["judged-001"]));
     expect(view.matchedRoostIds).toBeNull();
     expect(view.matchDetailMap).toBeNull();
   });
 
-  it("returns null/null from galleryFilterMatchState for a folders filter (confirms SA step-5 path resets)", () => {
-    // When SA step 5 finalizes, applyFilter({folders: proposals}) is called.
-    // galleryFilterMatchState sees no matchedItemIds → returns {null, null}
-    // → setMatchState(null, null) → humanAssignedRoostIds cleared.
+  it("the smartAssignRunStarted handler clears the judged set, plugin ref, and review pass", () => {
+    const plugin = { humanAssignedRoostIds: new Set(["stale-001"]) as Set<string> | null };
+    let reviewPassResets = 0;
+
+    // Mirrors the view's onItemClick("smartAssignRunStarted") handler body.
+    const view = {
+      humanAssignedRoostIds: new Set(["stale-001"]) as Set<string> | null,
+      getRoostPlugin() { return plugin; },
+      feedMode: { resetReviewPass: () => { reviewPassResets++; } },
+      onRunStarted() {
+        this.humanAssignedRoostIds = null;
+        const p = this.getRoostPlugin();
+        if (p) p.humanAssignedRoostIds = this.humanAssignedRoostIds; // syncHumanAssignedToPlugin
+        this.feedMode.resetReviewPass();
+      },
+    };
+
+    view.onRunStarted();
+
+    expect(view.humanAssignedRoostIds).toBeNull();
+    expect(plugin.humanAssignedRoostIds).toBeNull();
+    expect(reviewPassResets).toBe(1);
+  });
+
+  it("galleryFilterMatchState returns null/null for a folders filter (no phantom matches at staging)", () => {
     const state = galleryFilterMatchState({ folders: [{ name: "Tech", itemIds: ["x"], count: 1 }] } as never);
     expect(state.matchedRoostIds).toBeNull();
     expect(state.matchDetailMap).toBeNull();

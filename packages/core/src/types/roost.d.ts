@@ -240,7 +240,12 @@ export type ItemClickData =
   /** Fired by the "Start review pass" button in RoostView; handled by the gallery
    *  view's onItemClick subscriber which calls feedMode.startReviewPass + setTrainingMode.
    *  proposalMap is roostId → proposed folder.name (the category the user sees in the UI). */
-  | { action: "startReviewPass"; itemIds: string[]; proposalMap: Record<string, string> };
+  | { action: "startReviewPass"; itemIds: string[]; proposalMap: Record<string, string> }
+  /** Fired once at the start of each Smart Assign clustering run; the gallery view
+   *  resets per-run review state (humanAssignedRoostIds + review-pass queue) on it.
+   *  This MUST NOT live in setMatchState — applyFilter calls setMatchState on EVERY
+   *  data update, which wiped the review pass mid-judgment (and forced churn). */
+  | { action: "smartAssignRunStarted" };
 
 /**
  * Input for a Smart Assign run. The hook operates purely as a function
