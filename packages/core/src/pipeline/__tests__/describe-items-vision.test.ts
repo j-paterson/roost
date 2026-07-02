@@ -63,19 +63,7 @@ vi.mock("@/lib/vault-utils", () => ({
   vaultBasePath: () => "/fake/vault",
 }));
 
-// We also need to mock child_process so no real ffmpeg is invoked even if
-// somehow a code path tries to call it.
-vi.mock("child_process", async (importOriginal) => {
-  const real = await importOriginal<typeof import("child_process")>();
-  return {
-    ...real,
-    execFileSync: vi.fn(() => {
-      throw new Error("execFileSync should not be called in vision tests");
-    }),
-  };
-});
-
-// ── Fake fs (readdirSync needs to not throw) ──
+// ── Fake fs so cache writes stay off the real disk during the test ──
 vi.mock("fs", async (importOriginal) => {
   const real = await importOriginal<typeof import("fs")>();
   return {
@@ -208,44 +196,5 @@ describe("Stage 1a: qwen cover-only vision describe", () => {
 
     const vision = savedCache["test:2"]?.vision;
     expect(vision).toBe("A skateboarder performs a kickflip over a set of stairs.");
-  });
-
-  it("takes the single-cover path even when mp4Path is present (no ffmpeg)", async () => {
-    // Mock fs.readdirSync to return an mp4 so mp4Path gets set
-    const { readdirSync } = await import("fs");
-    (readdirSync as ReturnType<typeof vi.fn>).mockImplementationOnce(() => ["video.mp4"]);
-
-    // Also spy on execFileSync to assert it is never called
-    const childProcess = await import("child_process");
-    const execSpy = vi.spyOn(childProcess, "execFileSync");
-
-    const coverPath = "Bookmarks/.attachments/item3/cover.jpg";
-    const vault = makeFakeVault(coverPath);
-    const fakeFile = new TFile() as TFile & { path: string };
-    fakeFile.path = "Bookmarks/item3.md";
-    (vault as any).__fakeFiles = [fakeFile];
-
-    const app = makeApp(fakeFile, {
-      roost_id: "test:3",
-      title: "Video with cover",
-      cover: coverPath,
-    });
-
-    await describeItems({
-      vault,
-      app: app as any,
-      syncFolder: "Bookmarks",
-      ollamaUrl: "http://localhost:11434",
-      embedder: fakeEmbedder as any,
-      ffmpeg: { ffmpeg: "/usr/bin/ffmpeg", ffprobe: "/usr/bin/ffprobe" },
-    });
-
-    // The vision call should still happen (cover path taken)
-    expect(lastBody).not.toBeNull();
-    expect(lastBody!.model).toBe(VISION_MODEL);
-    expect((lastBody!.images as unknown[]).length).toBe(1);
-
-    // ffmpeg must never be invoked
-    expect(execSpy).not.toHaveBeenCalled();
   });
 });

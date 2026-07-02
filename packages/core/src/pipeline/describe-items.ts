@@ -1,7 +1,8 @@
 /**
  * Embedding pipeline — enrichment stages per item:
- * - Multi-frame vision via Gemma 4 (3 keyframes) for videos, single-cover minicpm-v otherwise
- * - Topic + category extraction via llama3.2:3b
+ * - Vision: a single VISION_MODEL (qwen2.5-vl-abliterated) call on the cover image.
+ *   (The multi-keyframe video path was retired 2026-06-21.)
+ * - Topic + category extraction via llama3.2:3b (TOPIC_MODEL)
  * - Embedding vector via fine-tuned sentence-transformer sidecar
  */
 import { requestUrl, Vault, TFile, App } from "obsidian";
@@ -11,8 +12,7 @@ import type { StopSignal } from "@/types/sync";
 import type { Embedder } from "@/lib/embedder";
 import { loadEmbeddingCache, saveEmbeddingCache } from "@/pipeline/shared";
 
-import { OLLAMA_URL, EMBED_CONCURRENCY, VISION_MODEL, VISION_NUM_CTX, EVAL_MODEL, TOPIC_MODEL, OLLAMA_NUM_CTX, EMBED_STAGE_TIMEOUT_MS } from "@/config";
-import * as fs from "fs";
+import { OLLAMA_URL, EMBED_CONCURRENCY, VISION_MODEL, VISION_NUM_CTX, TOPIC_MODEL, OLLAMA_NUM_CTX, EMBED_STAGE_TIMEOUT_MS } from "@/config";
 
 /** Reject if `p` doesn't settle within `ms`. The underlying request keeps running
  *  but is abandoned — this is a backstop so a stalled backend call (Ollama/sidecar)
@@ -23,21 +23,6 @@ function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
     timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
   });
   return Promise.race([p, timeout]).finally(() => clearTimeout(timer)) as Promise<T>;
-}
-import * as path from "path";
-import * as os from "os";
-import { execFileSync } from "child_process";
-
-export interface FfmpegPaths { ffmpeg: string | null; ffprobe: string | null; }
-
-/** Resolve ffmpeg + ffprobe when the flag is on and BOTH binaries are found.
- *  `find` is injected (registry's findBinary in prod) so this is unit-testable. */
-export function resolveFfmpeg(flagOn: boolean, find: (name: string) => string | null): FfmpegPaths {
-  if (!flagOn) return { ffmpeg: null, ffprobe: null };
-  const ffmpeg = find("ffmpeg");
-  const ffprobe = find("ffprobe");
-  if (ffmpeg && ffprobe) return { ffmpeg, ffprobe };
-  return { ffmpeg: null, ffprobe: null };
 }
 
 function arrayBufferToBase64(buffer: ArrayBuffer): string {
@@ -59,8 +44,6 @@ interface DescribeOpts {
   onProgress?: (processed: number, total: number, status: string) => void;
   onLog?: (msg: string) => void;
   stopSignal?: StopSignal;
-  /** Resolved ffmpeg/ffprobe paths, or null paths to skip video-frame vision. */
-  ffmpeg?: FfmpegPaths;
 }
 
 /**
@@ -94,7 +77,7 @@ export async function describeItems(opts: DescribeOpts): Promise<{ processed: nu
 
   // Build items from the files that need work
   const vaultPath = vaultBasePath(vault);
-  const items: { id: string; text: string; tags: string[]; file: TFile; coverPath: string | null; subtitle: string; mp4Path: string | null; author: string; platform: string }[] = [];
+  const items: { id: string; text: string; tags: string[]; file: TFile; coverPath: string | null; subtitle: string; author: string; platform: string }[] = [];
   for (const file of needsEmbedding) {
     try {
       const fm = app?.metadataCache?.getFileCache(file)?.frontmatter;
@@ -112,17 +95,7 @@ export async function describeItems(opts: DescribeOpts): Promise<{ processed: nu
       const coverRaw: string = fm.cover || "";
       const coverPath = coverRaw.replace(/^\[\[/, "").replace(/\]\]$/, "").replace(/^"/, "").replace(/"$/, "") || null;
       const subtitle = fm.subtitle != null ? String(fm.subtitle) : "";
-      // Check for MP4 in attachment folder
-      let mp4Path: string | null = null;
-      if (coverPath) {
-        const attachDir = path.join(vaultPath, path.dirname(coverPath));
-        try {
-          const files = fs.readdirSync(attachDir);
-          const mp4 = files.find((f: string) => f.endsWith(".mp4"));
-          if (mp4) mp4Path = path.join(attachDir, mp4);
-        } catch { /* attach folder may not exist yet — mp4Path stays null */ }
-      }
-      items.push({ id, text, tags, file, coverPath, subtitle, mp4Path, author, platform });
+      items.push({ id, text, tags, file, coverPath, subtitle, author, platform });
     } catch { /* skip */ }
   }
 
@@ -136,8 +109,7 @@ export async function describeItems(opts: DescribeOpts): Promise<{ processed: nu
   for (let i = 0; i < items.length; i += EMBED_CONCURRENCY) {
     if (stopSignal?.stopped) break;
     const batch = items.slice(i, i + EMBED_CONCURRENCY);
-    const ff = opts.ffmpeg ?? { ffmpeg: null, ffprobe: null };
-    const results = await Promise.allSettled(batch.map(item => embedItem(item, cache, ollama, vault, vaultPath, log, opts.topics, opts.embedder, ff)));
+    const results = await Promise.allSettled(batch.map(item => embedItem(item, cache, ollama, vault, vaultPath, log, opts.topics, opts.embedder)));
     for (let j = 0; j < results.length; j++) {
       if (results[j].status === "fulfilled" && (results[j] as PromiseFulfilledResult<boolean>).value) processed++;
       else failed.push(batch[j]);
@@ -150,11 +122,10 @@ export async function describeItems(opts: DescribeOpts): Promise<{ processed: nu
   if (failed.length > 0 && !stopSignal?.stopped) {
     log(`Retrying ${failed.length} failed items...`);
     let retrySuccess = 0;
-    const ff = opts.ffmpeg ?? { ffmpeg: null, ffprobe: null };
     for (let i = 0; i < failed.length; i += EMBED_CONCURRENCY) {
       if (stopSignal?.stopped) break;
       const batch = failed.slice(i, i + EMBED_CONCURRENCY);
-      const results = await Promise.allSettled(batch.map(item => embedItem(item, cache, ollama, vault, vaultPath, log, opts.topics, opts.embedder, ff)));
+      const results = await Promise.allSettled(batch.map(item => embedItem(item, cache, ollama, vault, vaultPath, log, opts.topics, opts.embedder)));
       for (const r of results) {
         if (r.status === "fulfilled" && (r as PromiseFulfilledResult<boolean>).value) retrySuccess++;
       }
@@ -172,7 +143,7 @@ export async function describeItems(opts: DescribeOpts): Promise<{ processed: nu
 }
 
 async function embedItem(
-  item: { id: string; text: string; tags: string[]; file: TFile; coverPath: string | null; subtitle: string; mp4Path: string | null; author: string; platform: string },
+  item: { id: string; text: string; tags: string[]; file: TFile; coverPath: string | null; subtitle: string; author: string; platform: string },
   cache: Record<string, EmbeddingCacheEntry>,
   ollama: string,
   vault: Vault,
@@ -180,7 +151,6 @@ async function embedItem(
   log: (msg: string) => void,
   topics?: string[],
   embedder?: Embedder,
-  ff: FfmpegPaths = { ffmpeg: null, ffprobe: null },
 ): Promise<boolean> {
   const entry: EmbeddingCacheEntry = cache[item.id] || { vision: null, summary: null, category: null, vec: null, vecText: null };
 
@@ -288,38 +258,6 @@ async function embedItem(
 
   cache[item.id] = entry;
   return !!entry.vec;
-}
-
-// ── Video frame extraction helpers ────────────────────────────
-
-function getVideoDuration(ffprobe: string, mp4Path: string): number | null {
-  try {
-    const out = execFileSync(ffprobe, [
-      "-v", "error", "-show_entries", "format=duration",
-      "-of", "csv=p=0", mp4Path,
-    ], { encoding: "utf8", timeout: 10000 });
-    return parseFloat(out.trim());
-  } catch { return null; }
-}
-
-function extractKeyframes(ffmpeg: string, mp4Path: string, duration: number): { tmpDir: string; framePaths: string[] } {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "roost-frames-"));
-  const framePaths: string[] = [];
-  for (const [i, pos] of [0.25, 0.5, 0.75].entries()) {
-    const time = (duration * pos).toFixed(2);
-    const framePath = path.join(tmpDir, `frame_${i}.jpg`);
-    try {
-      execFileSync(ffmpeg, [
-        "-ss", time, "-i", mp4Path,
-        "-frames:v", "1", "-q:v", "2",
-        "-y", "-loglevel", "error", framePath,
-      ], { timeout: 15000 });
-      if (fs.existsSync(framePath) && fs.statSync(framePath).size > 100) {
-        framePaths.push(framePath);
-      }
-    } catch {}
-  }
-  return { tmpDir, framePaths };
 }
 
 function filterTags(tags: string[]): string[] {

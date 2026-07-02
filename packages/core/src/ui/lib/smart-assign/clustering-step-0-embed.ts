@@ -1,6 +1,5 @@
 import type { StopSignal } from "@/types/sync";
-import { describeItems, resolveFfmpeg } from "@/pipeline/describe-items";
-import { findBinary } from "@/integrations/detect";
+import { describeItems } from "@/pipeline/describe-items";
 import { loadEmbeddingCache, stripPreamble } from "@/pipeline/shared";
 import { probeSidecarUp } from "@/lib/sidecar-probe";
 
@@ -60,7 +59,6 @@ export async function runClusteringStep0Embed(
       host.setSyncProgress({ phase: "embedding", count: total, written: processed, skipped: 0, resynced: 0 }),
     onLog: host.log,
     stopSignal: signal,
-    ffmpeg: resolveFfmpeg(host.plugin.settings.integrations.ffmpeg, findBinary),
   });
   if (signal.stopped) { host.log("Smart Assign cancelled during embedding"); host.setMode("sync"); return null; }
   if (embedResult.processed > 0) {

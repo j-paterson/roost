@@ -52,7 +52,7 @@ export const INTEGRATIONS: Integration[] = [
   {
     id: "ffmpeg",
     label: "ffmpeg",
-    unlocks: "Video-frame vision embeddings (samples a frame per video).",
+    unlocks: "Reddit v.redd.it video download (audio/video muxing).",
     flagKey: "ffmpeg",
     kind: "cli",
     detect: async (ctx) =>

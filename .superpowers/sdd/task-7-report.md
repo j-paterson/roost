@@ -220,3 +220,59 @@ npx vitest run packages/core/src
 ```
 
 3 new tests (net +3 vs 1980 pre-fix-pass). All 3 findings fixed. No residual concerns.
+
+## Final-review fix pass
+
+Date: 2026-07-01  
+Commit: `5bee123` — fix(review): confirm uses proposed category; clear review-pass state; correct correction eval record
+
+### F1 — Confirm captures the WRONG category (or silently no-ops)
+
+**Root cause:** `handleReviewPassAction` confirm path used `readGuess(entry).category` (frontmatter `roost_category`) — absent/stale for Smart Assign uncategorized items.
+
+**Changes:**
+- `packages/core/src/types/roost.d.ts:242` — Added `proposalMap: Record<string, string>` to the `startReviewPass` ItemClickData variant.
+- `packages/core/src/ui/components/RoostView.tsx:365-373` — Build `proposalMap` (roostId → folder.name) from `proposedFolders` and include in `fireItemClick` payload.
+- `packages/core/src/views/gallery-feed-mode.ts` — Added `reviewProposals: Record<string, string> | null = null` public field (line ~83). `startReviewPass(ids, proposalMap?)` now stores it (line ~184). Confirm path resolves category as `this.reviewProposals?.[roostId] ?? readGuess(entry).category`; if still null logs `console.warn` and advances rather than no-oping (line ~290). Recategorize callback passes `originalGuess` to `host.reviewMove` (line ~265). Host interface `reviewMove` updated to `(roostId, category, originalGuess: string | null)` (line ~68).
+- `packages/core/src/views/bookmarks-bases-view.ts:549` — Passes `data.proposalMap` to `feedMode.startReviewPass`. `reviewMove` implementation updated to accept `originalGuess: string | null = null` and passes it to `planCorrection` (line ~370).
+
+### F2 — `reviewPassIds` leaks into later Train-mode sessions
+
+**Changes:**
+- `packages/core/src/views/gallery-feed-mode.ts` — `setTrainingMode(false)` branch now clears `this.reviewPassIds = null; this.reviewProposals = null` (line ~148). Added public `resetReviewPass()` method (line ~201).
+- `packages/core/src/views/bookmarks-bases-view.ts:232` — `setMatchState` calls `this.feedMode.resetReviewPass()` (belt-and-suspenders, clears on new SA run).
+
+### F3 — `planCorrection` eval record marks every correction "correct"
+
+**Changes:**
+- `packages/core/src/pipeline/training-actions.ts:81-90` — Signature changed to `planCorrection(ts, id, category, originalGuess: string | null, now)`. Eval record now: `guess: originalGuess`, `correct: originalGuess === category`.
+
+### Tests added
+
+`packages/core/src/views/__tests__/gallery-feed-training.test.ts`:
+- Confirm uses proposalMap category when entry has NO `roost_category` → calls `reviewConfirm("id1", "Tech")`
+- Confirm uses proposalMap even when frontmatter has a DIFFERENT stale category (Music → Tech)
+- Confirm with no proposal AND no frontmatter → warns, advances, does NOT call reviewConfirm
+- `setTrainingMode(false)` clears `reviewPassIds` and `reviewProposals`
+
+`packages/core/src/pipeline/__tests__/training-actions.test.ts`:
+- Eval record `guess=original`, `finalLabel=new`, `correct=false` for differing pair
+- `correct=true` case when originalGuess === category
+- `correct=false`, `guess=null` when originalGuess is null
+
+### Test results
+
+```
+npx vitest run packages/core/src/views/__tests__/gallery-feed-training.test.ts packages/core/src/pipeline/__tests__/training-actions.test.ts
+  → 2 files, 26 tests, all passed
+
+npx vitest run packages/core/src
+  → Test Files  234 passed | 2 skipped (236)
+  → Tests  1991 passed | 9 skipped (2000)
+
+npx tsc --noEmit → 0 errors
+```
+
+### Residual concerns
+
+None. The proposalMap is threaded end-to-end from the React button through the event payload, host handler, and controller, resolving the primary bug case (uncategorized SA items). The warning-and-advance path prevents a stuck feed when both proposal and frontmatter are absent. The F2 double-reset (setTrainingMode + setMatchState) is belt-and-suspenders.

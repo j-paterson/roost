@@ -105,7 +105,7 @@ and binary resolution).
 
 ### Integration Registry (the "lego" catalog)
 
-Roost is **a local bookmarks core + optional composable "legos."** The core (sync · store · gallery · organize) runs with zero add-ons; everything beyond it is an optional lego — a capability gated on an integration, installed via the opt-in `setup-integrations.sh`, detected at runtime, and degrading gracefully when absent. The integration registry **is** that lego catalog. Today's legos: Smart Categorization (Ollama LLM), Fine-tuned Embeddings (sidecar + a user-trained model — the lone non-borrowable lego), Video Vision (ffmpeg), and Semantic Search (vendored vault-search). A Roost MCP Server lego is planned. (Design: `docs/superpowers/specs/2026-06-15-lego-model-design.md`.)
+Roost is **a local bookmarks core + optional composable "legos."** The core (sync · store · gallery · organize) runs with zero add-ons; everything beyond it is an optional lego — a capability gated on an integration, installed via the opt-in `setup-integrations.sh`, detected at runtime, and degrading gracefully when absent. The integration registry **is** that lego catalog. Today's legos: Smart Categorization (Ollama LLM), Fine-tuned Embeddings (sidecar + a user-trained model — the lone non-borrowable lego), Video handling (ffmpeg — now Reddit v.redd.it audio/video muxing; the original keyframe-vision use was retired 2026-06-21, though `integrations/registry.ts` still labels it "Video-frame vision embeddings"), and Semantic Search (vendored vault-search). A Roost MCP Server lego is planned. (Design: `docs/superpowers/specs/2026-06-15-lego-model-design.md`.)
 
 `packages/core/src/integrations/` tracks the four optional tools the plugin can use:
 
@@ -190,7 +190,7 @@ Flow:
 1. Click **Smart Assign** → Topic editor with pre-detected collections
 2. Two-column scrollable checkbox grid — toggle off unwanted topics, add custom ones
 3. Click **Run** → Pipeline step indicator appears: `Embed → Score Known → Discover → Describe → Score New → Review`
-4. **Embed step** — describe-items.ts. For items missing vectors: keyframe vision (gemma4 over ffmpeg frames) → one-sentence summary + category via llama3.2:3b → 768-d embedding via the v2 sidecar. Results cached in `.roost/cache/`: 768-dim Float32 vectors in `embedding-vectors.bin`, text fields (vision/summary/category) in `embedding-cache.json`, a dim stamp in `embedding-meta.json` (see [On-disk caches](#on-disk-caches-obsidianbookmarksroost)).
+4. **Embed step** — describe-items.ts. For items missing vectors: cover-image vision (a single `qwen2.5-vl-abliterated` call) → one-sentence summary + category via llama3.2:3b → 768-d embedding via the v2 sidecar. Results cached in `.roost/cache/`: 768-dim Float32 vectors in `embedding-vectors.bin`, text fields (vision/summary/category) in `embedding-cache.json`, a dim stamp in `embedding-meta.json` (see [On-disk caches](#on-disk-caches-obsidianbookmarksroost)).
 5. **Score Known** — evaluate.ts `scoreAgainstCategories`. For every item with a cached vector, compute cosine similarity to all category centroids (built from existing `roost_category` labels), take the top-K, and run the score-first ensemble (see pipeline section below). Items that pass the conditional disagree-reject are assigned; the rest flow to discovery.
 6. **Discover** — evaluate.ts `discoverCategories`. Unmatched items are grouped by their cached Ollama category (resolved through the taxonomy); any group with ≥5 items and cohesion ≥ `MIN_DISCOVERY_COHESION` becomes a proposed new category.
 7. **Describe** — evaluate.ts `generateClusterDescriptions`. One contrastive LLM call per proposed category produces both a short description and a NOT clause (what it isn't), grounded in nearest neighbors + counter-examples. Cached in `.roost/collection-descriptions-contrastive.json` and `.roost/collection-not-descriptions.json`.
@@ -573,7 +573,7 @@ Deployed in `packages/core/src/pipeline/evaluate.ts` and coordinated from `packa
 
 Three stages per item, results cached in `.roost/cache/` (vectors in `embedding-vectors.bin`, text fields in `embedding-cache.json`, dim stamp in `embedding-meta.json`) and processed incrementally:
 
-1. **Vision** via `VISION_MODEL` (`minicpm-v`) — describe cover image → one-sentence description
+1. **Vision** via `VISION_MODEL` (`qwen2.5-vl-abliterated`, `config.ts:46`) — a single call on the cover image → one-sentence description. (The older multi-keyframe video path was retired 2026-06-21 — cover-only tied it at McNemar p=0.6–1.0; `extractKeyframes` in `describe-items.ts` is now vestigial.)
 2. **Topic + category** via `TOPIC_MODEL` (`llama3.2:3b`) — vision + post text + tags → topic and category guess
 3. **Embedding** via **Phase F v2 fine-tuned nomic** — 768d vector over a 5-field text (vision + summary + category + title + subtitle)
 
@@ -791,6 +791,19 @@ When Smart Assign runs in **category mode** (the default unsorted pass), the sco
 
 ### Measured performance (119 positive + 50 negative test set)
 
+> **⚠️ Contaminated-era numbers — kept as history, not as current truth.** This 119-item
+> test set (`test-strategies.mjs`) sourced ground truth as `roost_category ?? collection` —
+> `roost_category` first, the field Smart Assign itself writes — so it graded the LLM rerank
+> against the system's own past output (circular). On a **contamination-free** fixture
+> (2026-06-16, GT = human `collection`, never `roost_category`) the headline finding
+> **reversed**: embedding top-1 **beat** the LLM ensemble by **+11.7pp** (52.1% vs 40.4%),
+> the rerank was shown to actively *hurt*, and it was demoted to off-by-default. The
+> classifier head (not shown here) then beat nearest-centroid by +9–13pp on honest labels.
+> Treat the table/learnings below as the pre-reckoning record; the authoritative results are
+> in `docs/superpowers/specs/2026-06-16-honest-eval-results.md` and the "Default scoring:
+> the per-item cascade" section above. (Contamination ran three layers deep — eval GT,
+> production centroids, and the v2 fine-tune all keyed off machine labels.)
+
 | Stage | Top-1 | F1 |
 |---|---|---|
 | Raw nomic baseline | 72/119 (60.5%) | 0.685 |
@@ -810,7 +823,7 @@ These shaped the final pipeline. Kept here so the next person touching this code
 - **Fine-tuning pushes gains into the tail.** v2's top-3 oracle actually *dropped* 1.7pp vs baseline — the gain was in top-7 (97.5% vs 93%). K=3 rerank on the v2 cache regressed (73 < 76). **Must widen K to cash in a recall-focused fine-tune.**
 - **Position bias is real and K-dependent.** At K=5 gemma4 picks slot A 41.7% of the time (vs uniform 20%). At K=7 the bias shifts to B/A and end slots (E/F) get ~5% vs uniform 14%. Rotating the letter assignment over 5 permutations and majority-voting recovers +7/0 items at K=7 but is still 1 under deterministic K=5. **Prefer lower K with stronger candidates over wider K with mitigation.**
 - **When embedding margins collapse, look for orthogonal signals.** Post-v2 fine-tune, top-1 centroid sims for correct and wrong picks overlap almost completely. Pure `picked_sim` thresholding and all sim-distance variants (`sim - 2nd_topk`, `sim - mean(rest)`, etc.) were flat for F1. What worked: **T1≠T2 agreement**, an independent signal because the two prompt shapes (single-letter choice vs per-option JSON scores) have uncorrelated failure modes. Negatives disagree 32% of the time vs 11% for correct positives.
-- **Embedding quality is NOT the bottleneck.** A classifier-head diagnostic (LogReg/kNN/MLP over v2 embeddings) tops out at 61/119 vs the LLM ensemble's 88/119. Every linear/shallow head trails the ensemble by ≥27 items. The LLM rerank is doing genuine selection work that no linear decision boundary replicates.
+- **Embedding quality is NOT the bottleneck.** A classifier-head diagnostic (LogReg/kNN/MLP over v2 embeddings) tops out at 61/119 vs the LLM ensemble's 88/119. Every linear/shallow head trails the ensemble by ≥27 items. The LLM rerank is doing genuine selection work that no linear decision boundary replicates. **⚠️ REVERSED by the honest eval (see the contamination warning above):** on contamination-free labels the LogReg head *beats* nearest-centroid by +9–13pp and the LLM rerank *hurts* by −11.7pp. Both this diagnostic and the "88/119" ensemble score were computed on the circular fixture; do not cite them.
 - **Bigger LLM ≠ better reranker.** Qwen2.5:7b underperformed gemma4:e4b by −3 to −21 items on every K/template cell. Not a single qwen cell beat the deployed baseline. Prompts implicitly co-evolve with model idiosyncrasies; swapping families requires re-tuning.
 - **`think: false` is mandatory for gemma4 reasoning models via Ollama.** Without it, gemma4 exhausts `num_predict` during internal thinking and returns empty content with `done_reason=length`. Cost a full sweep before diagnosis.
 - **Oracle ceilings can lie.** 97.5% top-7 sounded like room to grow. The label-noise audit cut the achievable ceiling to 91.4%. **Always audit failure cases by hand before chasing oracle headroom.**
@@ -997,9 +1010,9 @@ Both library tree and staging tree use Obsidian-native CSS:
 | `MEDIA_DOWNLOAD_MAX_RETRIES` | 2 | Retry budget for media downloads |
 | `OLLAMA_URL` | `http://localhost:11434` | Ollama API endpoint (vision + topic + rerank) |
 | `EMBED_URL` | `http://localhost:11435` | Sidecar endpoint for the Phase F v2 fine-tuned embedder |
-| `VISION_MODEL` | `minicpm-v` | Fallback image description model |
+| `VISION_MODEL` | `huihui_ai/qwen2.5-vl-abliterated:latest` | Cover-image description model (single call; value in `config.ts:46`) |
 | `TOPIC_MODEL` | `llama3.2:3b` | Topic analysis + one-word category tag |
-| `EVAL_MODEL` | `gemma4:e4b` | Reranker for the Smart Assign score-first ensemble + multi-frame vision |
+| `EVAL_MODEL` | `gemma4:e4b` | Reranker for the retained-but-off-by-default LLM ensemble (`smartAssignEmbeddingOnly: false`) |
 | `EMBED_MODEL` | `nomic-embed-text` | Embedding model name (served by the sidecar with v2 fine-tune weights) |
 | `EMBED_CONCURRENCY` | 3 | Parallel embed requests |
 | `CARD_WIDTH` | 600 | Tweet card render width |
