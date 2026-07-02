@@ -87,6 +87,34 @@ describe("WindowedCardGrid.applyWindow reseed (data-update, keep-by-roost_id)", 
     expect(after.dataset.marker).toBe("kept");   // same node reused across reseed
     expect(synced).toContain(0);                  // syncKept called for kept card
   });
+
+  it("reseed removes a hydrated card whose index falls outside the new window", () => {
+    // total=20, 4 cols → 5 rows of 100px each
+    // initial window: scrollTop=0, viewportHeight=200, bufferRows=0 → rows [0,2) → indices [0,8)
+    // (ceil(200/100)=2 rows visible, 2*4=8 cards)
+    const { grid, gridEl } = setup(20);
+    grid.applyWindow(computeGridWindow({ total: 20, columns: 4, rowHeight: 100, scrollTop: 0, viewportHeight: 200, bufferRows: 0 }));
+
+    // hydrate index 0 and capture the node reference
+    const oldNode = gridEl.querySelector<HTMLElement>('[data-idx="0"]')!;
+    oldNode.classList.add("roost-card-ready");
+    oldNode.dataset.roostId = "k0";
+    oldNode.dataset.marker = "should-be-gone";
+
+    // reseed with a narrower window that excludes index 0:
+    // scrollTop=200, viewportHeight=100, bufferRows=0 → firstVisibleRow=2, lastVisibleRow=3
+    // → windowStart=8, windowEnd=12 (indices [8,12))
+    const narrowWin = computeGridWindow({ total: 20, columns: 4, rowHeight: 100, scrollTop: 200, viewportHeight: 100, bufferRows: 0 });
+    expect(narrowWin.windowStart).toBeGreaterThan(0); // confirm index 0 excluded
+    grid.applyWindow(narrowWin, true);
+
+    // index 0 must be absent from the DOM entirely
+    expect(gridEl.querySelector('[data-idx="0"]')).toBeNull();
+    // the specific node we captured must no longer be in the tree
+    expect(gridEl.contains(oldNode)).toBe(false);
+    // the new window's indices must be present
+    expect(cardIdxs(gridEl)).toContain(narrowWin.windowStart);
+  });
 });
 
 describe("WindowedCardGrid.disable/enable", () => {

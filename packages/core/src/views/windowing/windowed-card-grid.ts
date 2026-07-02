@@ -119,6 +119,7 @@ export class WindowedCardGrid {
 
   enable(): void {
     this.enabled = true;
+    this.ensureSpacers();
   }
 
   /** Yield ownership of gridEl to another render path (split/pipeline). */
@@ -126,10 +127,6 @@ export class WindowedCardGrid {
     this.enabled = false;
     this.topSpacer.remove();
     this.bottomSpacer.remove();
-  }
-
-  isEnabled(): boolean {
-    return this.enabled;
   }
 
   dispose(): void {
