@@ -43,6 +43,13 @@
   justify-content: center;
 }
 
+/* Windowing spacers reserve scroll height for off-window items. NOT snap targets. */
+.roost-feed-spacer-top,
+.roost-feed-spacer-bottom {
+  width: 100%;
+  flex: 0 0 auto;
+}
+
 /* TikTok feed item */
 .roost-feed-item-tiktok {
   background: #000;
