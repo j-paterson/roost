@@ -25,9 +25,102 @@ export class WindowedCardGrid {
   private readonly bottomSpacer: HTMLElement;
   private enabled = true;
 
+  private readonly onScroll = () => this.scheduleRecompute();
+  private rafHandle: number | null = null;
+  private resizeObserver: ResizeObserver | null = null;
+  private lastWindowKey = "";
+
   constructor(private readonly opts: WindowedCardGridOptions) {
     this.topSpacer = this.makeSpacer("roost-grid-spacer-top");
     this.bottomSpacer = this.makeSpacer("roost-grid-spacer-bottom");
+    this.attach();
+  }
+
+  attach(): void {
+    this.opts.scrollEl.addEventListener("scroll", this.onScroll, { passive: true });
+    if (typeof ResizeObserver !== "undefined") {
+      this.resizeObserver = new ResizeObserver(() => this.scheduleRecompute());
+      this.resizeObserver.observe(this.opts.scrollEl);
+    }
+  }
+
+  detach(): void {
+    this.opts.scrollEl.removeEventListener("scroll", this.onScroll);
+    this.resizeObserver?.disconnect();
+    this.resizeObserver = null;
+    if (this.rafHandle != null && typeof cancelAnimationFrame !== "undefined") {
+      cancelAnimationFrame(this.rafHandle);
+    }
+    this.rafHandle = null;
+  }
+
+  private scheduleRecompute(): void {
+    if (!this.enabled) return;
+    if (this.rafHandle != null) return;
+    const raf = typeof requestAnimationFrame !== "undefined"
+      ? requestAnimationFrame
+      : (cb: FrameRequestCallback) => setTimeout(() => cb(0), 0) as unknown as number;
+    this.rafHandle = raf(() => {
+      this.rafHandle = null;
+      this.recompute(false);
+    });
+  }
+
+  private currentWindow(): GridWindow {
+    return computeGridWindow({
+      total: this.opts.count(),
+      columns: this.columns(),
+      rowHeight: Math.max(1, this.opts.rowHeight()),
+      scrollTop: this.opts.scrollEl.scrollTop,
+      viewportHeight: this.opts.scrollEl.clientHeight,
+      bufferRows: this.bufferRows(),
+    });
+  }
+
+  /** Scroll/resize-driven reconcile. Skips work when the window is unchanged. */
+  recompute(force = false): void {
+    if (!this.enabled) return;
+    const win = this.currentWindow();
+    const key = `${win.windowStart}:${win.windowEnd}`;
+    if (!force && key === this.lastWindowKey) return;
+    this.lastWindowKey = key;
+    this.applyWindow(win, false);
+  }
+
+  /** Data-update reseed at the current window (keep hydrated cards by key). */
+  refresh(): void {
+    this.enabled = true;
+    const win = this.currentWindow();
+    this.lastWindowKey = `${win.windowStart}:${win.windowEnd}`;
+    this.applyWindow(win, true);
+  }
+
+  getOrderedKeys(): string[] {
+    const out: string[] = [];
+    const n = this.opts.count();
+    for (let i = 0; i < n; i++) {
+      const k = this.opts.keyAt(i);
+      if (k) out.push(k);
+    }
+    return out;
+  }
+
+  indexOfKey(key: string): number {
+    const n = this.opts.count();
+    for (let i = 0; i < n; i++) if (this.opts.keyAt(i) === key) return i;
+    return -1;
+  }
+
+  scrollIndexIntoView(index: number): void {
+    if (index < 0) return;
+    const cols = this.columns();
+    const row = Math.floor(index / cols);
+    this.opts.scrollEl.scrollTop = row * Math.max(1, this.opts.rowHeight());
+    this.recompute(true); // materialize the target's window synchronously
+  }
+
+  scrollKeyIntoView(key: string): void {
+    this.scrollIndexIntoView(this.indexOfKey(key));
   }
 
   private makeSpacer(cls: string): HTMLElement {
@@ -125,12 +218,14 @@ export class WindowedCardGrid {
   /** Yield ownership of gridEl to another render path (split/pipeline). */
   disable(): void {
     this.enabled = false;
+    this.lastWindowKey = "";
     this.topSpacer.remove();
     this.bottomSpacer.remove();
   }
 
   dispose(): void {
     this.enabled = false;
+    this.detach();
     this.topSpacer.remove();
     this.bottomSpacer.remove();
   }

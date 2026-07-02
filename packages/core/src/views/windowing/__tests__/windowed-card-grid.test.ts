@@ -126,3 +126,34 @@ describe("WindowedCardGrid.disable/enable", () => {
     expect(gridEl.querySelector(".roost-grid-spacer-bottom")).toBeNull();
   });
 });
+
+describe("WindowedCardGrid model queries", () => {
+  it("getOrderedKeys spans the full model, not just the window", () => {
+    const { grid } = setup(50);
+    grid.applyWindow(computeGridWindow({ total: 50, columns: 4, rowHeight: 100, scrollTop: 0, viewportHeight: 200, bufferRows: 0 }));
+    const keys = grid.getOrderedKeys();
+    expect(keys.length).toBe(50);
+    expect(keys[0]).toBe("k0");
+    expect(keys[49]).toBe("k49");
+  });
+
+  it("scrollKeyIntoView sets scrollTop to the key's row and materializes it", () => {
+    const { grid, scrollEl, gridEl } = setup(200, {
+      readColumns: () => 4,
+      rowHeight: () => 100,
+    });
+    // seed an initial window
+    grid.recompute(true);
+    grid.scrollKeyIntoView("k80"); // row 20 → scrollTop 2000
+    expect(scrollEl.scrollTop).toBe(2000);
+    // after recompute triggered by scrollKeyIntoView, index 80 is mounted
+    expect(gridEl.querySelector('[data-idx="80"]')).not.toBeNull();
+  });
+
+  it("recompute no-ops while disabled", () => {
+    const { grid, gridEl } = setup(50);
+    grid.disable();
+    grid.recompute(true);
+    expect(gridEl.querySelectorAll(".roost-card").length).toBe(0);
+  });
+});
