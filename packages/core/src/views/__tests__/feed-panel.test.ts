@@ -6,9 +6,17 @@ import { createFeedSync } from "@/views/feed/feed-sync";
 import type { FeedRenderContext } from "@/views/feed/feed-renderers";
 
 // Card rendering is out of scope — the windowed tests assert slot creation only.
+const handles: Array<{ dispose: any; activate: any; deactivate: any }> = [];
 vi.mock("@/views/feed/feed-renderers", async (importOriginal) => {
   const real = await importOriginal<typeof import("@/views/feed/feed-renderers")>();
-  return { ...real, renderFeedItem: vi.fn(() => ({ dispose: vi.fn() })) };
+  return {
+    ...real,
+    renderFeedItem: vi.fn(() => {
+      const h = { dispose: vi.fn(), activate: vi.fn(), deactivate: vi.fn() };
+      handles.push(h);
+      return h;
+    }),
+  };
 });
 
 beforeAll(() => {
@@ -96,10 +104,14 @@ describe("mountFeedPanel windowed slots", () => {
     const entries = Array.from({ length: 5000 }, (_, i) => makeEntry(`k${i}`));
     const sync = createFeedSync();
     const handle = mountFeedPanel(container, ctx, sync, entries, { itemHeight: () => 800 });
+    const snapLen = handles.length;
     sync.set("k2000", "grid");
     const idxs = [...container.querySelectorAll<HTMLElement>(".roost-feed-item")].map(e => Number(e.dataset.feedIndex));
     expect(idxs).toContain(2000);
     expect(container.scrollTop).toBe(2000 * 800);
+    // The handle for the slot at index 2000 (rendered during the jump) must have been activated.
+    const newHandles = handles.slice(snapLen);
+    expect(newHandles.some(h => h.activate.mock.calls.length > 0)).toBe(true);
     handle.dispose();
   });
 });

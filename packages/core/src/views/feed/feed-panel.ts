@@ -65,6 +65,7 @@ export function mountFeedPanel(
   let activeIndex = 0;
   let suppressScrollSync = false;
   let rafPending = false;
+  let disposed = false;
 
   function makeSpacer(cls: string): HTMLElement {
     const el = document.createElement("div");
@@ -82,9 +83,14 @@ export function mountFeedPanel(
   const clampIndex = (i: number): number =>
     slots.length === 0 ? 0 : Math.min(Math.max(i, 0), slots.length - 1);
 
+  const raf: (cb: FrameRequestCallback) => number =
+    typeof requestAnimationFrame !== "undefined"
+      ? requestAnimationFrame
+      : (cb) => setTimeout(() => cb(0), 0) as unknown as number;
+
   function ensureSpacers(): void {
     if (topSpacer.parentElement !== container) container.insertBefore(topSpacer, container.firstChild);
-    container.appendChild(bottomSpacer); // appendChild moves it to last
+    if (container.lastChild !== bottomSpacer) container.appendChild(bottomSpacer);
   }
 
   function detachSlot(i: number): void {
@@ -140,11 +146,9 @@ export function mountFeedPanel(
   const onScroll = (): void => {
     if (suppressScrollSync || rafPending) return;
     rafPending = true;
-    const raf = typeof requestAnimationFrame !== "undefined"
-      ? requestAnimationFrame
-      : (cb: FrameRequestCallback) => setTimeout(() => cb(0), 0) as unknown as number;
     raf(() => {
       rafPending = false;
+      if (disposed) return;
       const idx = currentIndexFromScroll();
       if (idx !== activeIndex) setActiveIndex(idx, true);
     });
@@ -162,7 +166,7 @@ export function mountFeedPanel(
         applyWindow(activeIndex);
         suppressScrollSync = true;
         container.scrollTop = activeIndex * H();
-        requestAnimationFrame(() => { suppressScrollSync = false; });
+        raf(() => { suppressScrollSync = false; });
       })
     : null;
   resizeObserver?.observe(container);
@@ -211,7 +215,7 @@ export function mountFeedPanel(
 
     suppressScrollSync = true;
     container.scrollTop = activeIndex * H();
-    requestAnimationFrame(() => { suppressScrollSync = false; });
+    raf(() => { suppressScrollSync = false; });
   }
 
   rebuild(initialEntries, sync.get());
@@ -219,6 +223,7 @@ export function mountFeedPanel(
   return {
     setEntries(entries, preferredActiveRoostId) { rebuild(entries, preferredActiveRoostId); },
     dispose() {
+      disposed = true;
       unsubSync();
       container.removeEventListener("scroll", onScroll);
       container.removeEventListener("scrollend", onScrollEnd);
