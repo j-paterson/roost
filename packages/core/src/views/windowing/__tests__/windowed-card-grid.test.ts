@@ -125,6 +125,38 @@ describe("WindowedCardGrid.disable/enable", () => {
     expect(gridEl.querySelector(".roost-grid-spacer-top")).toBeNull();
     expect(gridEl.querySelector(".roost-grid-spacer-bottom")).toBeNull();
   });
+
+  it("disable→refresh re-mounts cards and re-attaches spacers (split/pipeline → standard re-entry)", () => {
+    // Build a grid with 20 items; apply an initial window so cards get mounted.
+    const { grid, gridEl } = setup(20);
+    grid.applyWindow(computeGridWindow({ total: 20, columns: 4, rowHeight: 100, scrollTop: 0, viewportHeight: 200, bufferRows: 0 }));
+
+    // Confirm cards are present before disable.
+    expect(gridEl.querySelectorAll(".roost-card").length).toBeGreaterThan(0);
+
+    // disable() hands ownership of gridEl to another path (e.g. split/pipeline).
+    // It removes spacers but leaves cards for the alternative renderer to manage.
+    grid.disable();
+    // Spacers must be detached.
+    expect(gridEl.querySelector(".roost-grid-spacer-top")).toBeNull();
+    expect(gridEl.querySelector(".roost-grid-spacer-bottom")).toBeNull();
+
+    // Simulate the alternative renderer clearing cards (as split/pipeline would do).
+    for (const el of gridEl.querySelectorAll(".roost-card")) el.remove();
+    expect(gridEl.querySelectorAll(".roost-card").length).toBe(0);
+
+    // refresh() is the re-entry point (called by refreshWindowGrid() in the view).
+    // happy-dom clientHeight=0, bufferRows=0 → window=[0,4) (firstVisibleRow=0, lastVisibleRow=0).
+    grid.refresh();
+
+    // Spacers must be back in the DOM.
+    expect(gridEl.querySelector(".roost-grid-spacer-top")).not.toBeNull();
+    expect(gridEl.querySelector(".roost-grid-spacer-bottom")).not.toBeNull();
+
+    // At least one card must be mounted — proves refresh() re-enabled + applied the window.
+    // This assertion fails if refresh() left the grid disabled (no cards would be mounted).
+    expect(gridEl.querySelectorAll(".roost-card").length).toBeGreaterThanOrEqual(1);
+  });
 });
 
 describe("WindowedCardGrid model queries", () => {

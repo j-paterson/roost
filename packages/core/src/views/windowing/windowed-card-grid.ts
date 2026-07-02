@@ -122,10 +122,14 @@ export class WindowedCardGrid {
   scrollIndexIntoView(index: number): void {
     if (!this.enabled) return;
     if (index < 0) return;
+    const win = this.currentWindow();
+    // Already mounted (within the window incl. buffer) — no coarse snap needed;
+    // downstream (feed highlight / expand) handles fine positioning.
+    if (index >= win.windowStart && index < win.windowEnd) return;
     const cols = this.columns();
     const row = Math.floor(index / cols);
     this.opts.scrollEl.scrollTop = row * Math.max(1, this.opts.rowHeight());
-    this.recompute(true); // materialize the target's window synchronously
+    this.recompute(true);
   }
 
   scrollKeyIntoView(key: string): void {
@@ -222,6 +226,7 @@ export class WindowedCardGrid {
   enable(): void {
     this.enabled = true;
     this.ensureSpacers();
+    this.recompute(true);
   }
 
   /** Yield ownership of gridEl to another render path (split/pipeline). */

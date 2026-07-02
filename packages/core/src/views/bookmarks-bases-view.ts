@@ -603,7 +603,7 @@ export class BookmarksBasesView extends BasesView
       if (this.gallerySelection.isActive()) return; // enter mode handles its own keys
       if ((e.metaKey || e.ctrlKey) && e.key === "a") {
         e.preventDefault();
-        this.gallerySelection.selectAll(this.getOrderedVisibleRoostIds());
+        this.gallerySelection.selectAll(this.getOrderedRoostIds());
       } else if (e.key === "Escape") {
         this.gallerySelection.clear();
       }
@@ -756,7 +756,7 @@ export class BookmarksBasesView extends BasesView
       onOpenLink: (url: string) => { void openLinkInView(this.app, url); },
       onSelect: (roostId: string, e: MouseEvent) => {
         if (e.shiftKey) {
-          this.gallerySelection.selectRange(roostId, this.getOrderedVisibleRoostIds());
+          this.gallerySelection.selectRange(roostId, this.getOrderedRoostIds());
         } else if (e.metaKey || e.ctrlKey) {
           this.gallerySelection.toggleId(roostId);
         } else {
@@ -828,11 +828,6 @@ export class BookmarksBasesView extends BasesView
 
   dispatchPipelineGalleryView(): boolean {
     return this.pipelineHost.dispatch();
-  }
-
-  /** Ordered roostIds of ALL items (full model, not just mounted cards). */
-  private getOrderedVisibleRoostIds(): string[] {
-    return this.windowGrid?.getOrderedKeys() ?? [];
   }
 
   /** Unique, sorted vault category names derived from entry frontmatter. */
