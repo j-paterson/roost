@@ -3,8 +3,15 @@
   background: var(--background-primary);
 }
 .roost-feed-pane-left {
+  /* Flex column so the reparented grid scroller (flex:1;min-height:0;overflow-y:auto)
+   * stays bounded to the pane height. Without this the scroller grows to its full
+   * content height, the grid's window sees a giant viewport, and it materializes
+   * every card (multi-second layout) — the Review-Pass lag. */
+  display: flex;
+  flex-direction: column;
   min-width: 0;
-  overflow-y: auto;
+  min-height: 0;
+  overflow: hidden;
   border-right: 1px solid var(--background-modifier-border);
 }
 .roost-feed-pane-right {
@@ -30,7 +37,12 @@
   width: 100%;
   height: 100%;
   overflow-y: auto;
-  scroll-snap-type: y mandatory;
+  /* `proximity`, not `mandatory`: with windowed slots only the ~5 attached items are
+   * snap targets — the spacer regions have none, so `mandatory` would trap the scroll
+   * at the last attached item and you could never scroll past the window. `proximity`
+   * still snaps to items when you settle near one, but lets the scroll progress so the
+   * window can slide. */
+  scroll-snap-type: y proximity;
   outline: none;
 }
 .roost-feed-item {
