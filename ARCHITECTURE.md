@@ -374,7 +374,7 @@ Frontmatter is built by `buildFrontmatter()` in `lib/vault-helpers.ts` — singl
 Custom Bases view type (`roost-bookmarks`) registered in the Bases dropdown:
 
 - **Card grid** with configurable size (120–400px, default 180px), aspect ratio, fit
-- **Windowed grid rendering** — only near-viewport cards mounted between two full-width `grid-column: 1 / -1` spacers that preserve total scroll height (`WindowedCardGrid`, `views/windowing/`); rAF-throttled scroll+resize recompute, data-update reseed by `roost_id`. Explorer view (`base-card-view.ts`) retains the old sentinel/batch path (ready-to-adopt follow-up). Any render path that empties `containerEl` (split-pane, pipeline) must call `disableWindowGrid()` first or the controller corrupts the DOM on the next scroll event.
+- **Windowed grid rendering** — only near-viewport cards mounted between two full-width `grid-column: 1 / -1` spacers that preserve total scroll height (`WindowedCardGrid`, `views/windowing/`); rAF-throttled scroll+resize recompute, data-update reseed by `roost_id`. Explorer view (`base-card-view.ts`) also uses windowed rendering (keys on `file.path`; sentinel/batch path removed). Any render path that empties `containerEl` (split-pane, pipeline) must call `disableWindowGrid()` first or the controller corrupts the DOM on the next scroll event.
 - **Skeleton loading** — shimmer placeholders crossfade to real cards (fade-in animation)
 - **Video scrubbing** — hover to play, mousemove to seek, 300ms auto-resume, progress bar
 - **Multi-photo gallery** — `📷+` badge on cards, prev/next navigation in expanded view
