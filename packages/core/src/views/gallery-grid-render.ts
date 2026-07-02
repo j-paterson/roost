@@ -3,7 +3,6 @@
  */
 import type { BasesEntry } from "obsidian";
 import { traceEvent } from "@/lib/render-trace";
-import { reconcileStandardGrid } from "@/views/gallery-grid-reconcile";
 import { safeGetValue } from "@/lib/bases-entry";
 import {
   estimateGalleryCardHeight,
@@ -80,6 +79,7 @@ export function rebuildGalleryGrid(host: GalleryGridRenderHost): boolean {
   if (needsSplitPane || needsPipelineSubstitute) {
     host.hydrationObserver?.disconnect();
     host.containerEl.empty();
+    host.disableWindowGrid();
 
     traceEvent("onDataUpdated:rebuild", {
       filteredCount: host.filteredIndices?.length ?? null,
@@ -122,7 +122,7 @@ export function rebuildGalleryGrid(host: GalleryGridRenderHost): boolean {
     return true;
   }
 
-  // ── Standard grid: reconcile existing hydrated cards instead of full teardown ──
+  // ── Standard grid: windowed rendering (only near-viewport cards mounted) ──
 
   host.certainGrid = null;
   host.uncertainGrid = null;
@@ -137,21 +137,16 @@ export function rebuildGalleryGrid(host: GalleryGridRenderHost): boolean {
     newTotal = entries.length;
   }
 
-  const indices = host.filteredIndices ?? Array.from({ length: entries.length }, (_, i) => i);
-  reconcileStandardGrid({
-    containerEl: host.containerEl,
-    entries,
-    indices,
-    newTotal,
-    filteredCount: host.filteredIndices?.length ?? null,
-    estimatedHeight: host.estimatedHeight,
-    hydrationObserver: host.hydrationObserver,
-    createPlaceholder: (parent, index, height) => host.createPlaceholder(parent, index, height),
-    syncKeptCard: (card, entry) => host.syncKeptGalleryCard(card, entry),
-  });
-
   host.totalCount = newTotal;
   host.loadedCount = newTotal;
+
+  traceEvent("onDataUpdated:rebuild", {
+    filteredCount: host.filteredIndices?.length ?? null,
+    entriesLen: entries.length,
+    reconciled: true,
+  });
+
+  host.refreshWindowGrid();
 
   host.dispatchPipelineGalleryView();
 

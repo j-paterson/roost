@@ -85,6 +85,7 @@ function makeTestHost(
     app: {} as GalleryFeedModeHost["app"],
     scrollEl: {} as HTMLElement,
     containerEl: {} as HTMLElement,
+    scrollCardIntoView: () => {},
     getImagePropId: () => "note.cover",
     getScopedEntries: () => entries,
     getAllEntries: () => entries,

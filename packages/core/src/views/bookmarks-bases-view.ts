@@ -77,12 +77,16 @@ import { loadSnapshot, saveSnapshot } from "@/pipeline/category-snapshot";
 import { loadTrainingSet, saveTrainingSet } from "@/pipeline/training-set";
 import { appendEvalRecords } from "@/pipeline/eval-log";
 import { readGuess } from "@/views/feed/training-mode";
+import { WindowedCardGrid } from "@/views/windowing/windowed-card-grid";
 
 export const BASES_VIEW_ID = "roost-bookmarks";
 
 /** Coalescing window for gallery repaints — collapses an Obsidian re-index storm to one
  *  trailing paint (single updates still fire immediately via the leading edge). */
 const GALLERY_DATA_UPDATE_DEBOUNCE_MS = 250;
+
+/** Mirrors the gap: 12px in applyGalleryGridStyle; used for row-height estimation. */
+const GALLERY_GRID_GAP_PX = 12;
 
 export class BookmarksBasesView extends BasesView
   implements GallerySelectionHost, GalleryFeedModeHost, GalleryApplyFilterViewBind {
@@ -95,6 +99,7 @@ export class BookmarksBasesView extends BasesView
   private toolbarEl: HTMLElement;
   // Public: GalleryApplyFilterViewBind binds to it.
   hydrationObserver: IntersectionObserver | null = null;
+  private windowGrid: WindowedCardGrid | null = null;
   renderedKey = "";
   private unsubFilter: (() => void) | null = null;
   private unsubDataRefresh: (() => void) | null = null;
@@ -568,6 +573,23 @@ export class BookmarksBasesView extends BasesView
       this.hydrateCard(el, index),
     );
 
+    this.windowGrid = new WindowedCardGrid({
+      scrollEl: this.scrollEl,
+      gridEl: this.containerEl,
+      rowHeight: () => this.estimatedHeight + GALLERY_GRID_GAP_PX,
+      count: () => this.totalCount,
+      keyAt: (i) => {
+        const entry = this.getEntryByIndex(i);
+        return entry ? (safeGetValue(entry, "note.roost_id")?.toString() ?? null) : null;
+      },
+      createPlaceholder: (parent, index) =>
+        createGalleryPlaceholder(parent, index, this.estimatedHeight, this.hydrationObserver),
+      syncKept: (el, index) => {
+        const entry = this.getEntryByIndex(index);
+        if (entry) this.syncKeptGalleryCard(el, entry);
+      },
+    });
+
     // Make scroll container focusable for ⌘A/Esc keyboard shortcuts.
     this.scrollEl.tabIndex = 0;
 
@@ -609,6 +631,8 @@ export class BookmarksBasesView extends BasesView
     this.feedMode.dispose();
     this.hydrationObserver?.disconnect();
     this.hydrationObserver = null;
+    this.windowGrid?.dispose();
+    this.windowGrid = null;
     this.unsubFilter?.();
     this.unsubFilter = null;
     this.unsubDataRefresh?.();
@@ -742,6 +766,18 @@ export class BookmarksBasesView extends BasesView
     createGalleryPlaceholder(parent, index, height, this.hydrationObserver);
   }
 
+  refreshWindowGrid(): void {
+    this.windowGrid?.refresh();
+  }
+
+  disableWindowGrid(): void {
+    this.windowGrid?.disable();
+  }
+
+  scrollCardIntoView(roostId: string): void {
+    this.windowGrid?.scrollKeyIntoView(roostId);
+  }
+
   private hydrateCard(el: HTMLElement, index: number): void {
     const entry = this.getEntryByIndex(index);
     if (!entry) return;
@@ -758,6 +794,7 @@ export class BookmarksBasesView extends BasesView
   }
 
   expandInPlaceById(roostId: string): void {
+    this.windowGrid?.scrollKeyIntoView(roostId); // materialize the target first
     expandGalleryInPlaceById(this.expandFocusHost(), roostId);
   }
 
@@ -783,11 +820,9 @@ export class BookmarksBasesView extends BasesView
     return this.pipelineHost.dispatch();
   }
 
-  /** Ordered roostIds of all currently-rendered (hydrated) cards. */
+  /** Ordered roostIds of ALL items (full model, not just mounted cards). */
   private getOrderedVisibleRoostIds(): string[] {
-    return Array.from(this.containerEl.querySelectorAll("[data-roost-id]"))
-      .map(el => (el as HTMLElement).dataset.roostId!)
-      .filter(Boolean);
+    return this.windowGrid?.getOrderedKeys() ?? [];
   }
 
   /** Unique, sorted vault category names derived from entry frontmatter. */

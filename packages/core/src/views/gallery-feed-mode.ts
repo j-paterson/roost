@@ -53,6 +53,7 @@ export interface GalleryFeedModeHost {
   app: App;
   scrollEl: HTMLElement;
   containerEl: HTMLElement;
+  scrollCardIntoView(roostId: string): void;
   getImagePropId(): string;
   getScopedEntries(): BasesEntry[];
   getAllEntries(): BasesEntry[];
@@ -434,10 +435,7 @@ export class GalleryFeedModeController {
   }
 
   private scrollGalleryCardIntoView(roostId: string): void {
-    const card = this.host.containerEl.querySelector<HTMLElement>(
-      `.roost-card[data-roost-id="${CSS.escape(roostId)}"]`,
-    );
-    if (card) card.scrollIntoView({ block: "nearest" });
+    this.host.scrollCardIntoView(roostId);
   }
 
   private lookupPathByRoostId(roostId: string): string | null {

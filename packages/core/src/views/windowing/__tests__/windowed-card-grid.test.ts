@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect } from "vitest";
 import { WindowedCardGrid, type WindowedCardGridOptions } from "../windowed-card-grid";
 import { computeGridWindow } from "../compute-grid-window";
 

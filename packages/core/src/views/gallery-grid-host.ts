@@ -52,6 +52,10 @@ export interface GalleryGridStateSource {
   getFeedViewMode(): "grid" | "feed";
   /** Update metadata-dependent DOM on a reconciled hydrated card. */
   syncKeptGalleryCard(card: HTMLElement, entry: BasesEntry): void;
+  /** Standard-grid render path is active: (re)seed the windowed grid from the model. */
+  refreshWindowGrid(): void;
+  /** Another render path (split/pipeline) owns the grid: disable windowing. */
+  disableWindowGrid(): void;
 }
 
 /** Host surface consumed by rebuildGalleryGrid (includes mutable rebuild outputs). */
@@ -94,6 +98,10 @@ export interface GalleryGridViewBind {
   getFeedViewMode(): "grid" | "feed";
   /** Update metadata-dependent DOM on a reconciled hydrated card. */
   syncKeptGalleryCard(card: HTMLElement, entry: BasesEntry): void;
+  /** Standard-grid render path is active: (re)seed the windowed grid from the model. */
+  refreshWindowGrid(): void;
+  /** Another render path (split/pipeline) owns the grid: disable windowing. */
+  disableWindowGrid(): void;
 }
 
 export function bindGalleryGridStateSource(view: GalleryGridViewBind): GalleryGridStateSource {
@@ -129,6 +137,8 @@ export function bindGalleryGridStateSource(view: GalleryGridViewBind): GalleryGr
     onPlatformsDiscovered: (platforms) => view.onPlatformsDiscovered(platforms),
     getFeedViewMode: () => view.getFeedViewMode(),
     syncKeptGalleryCard: (card, entry) => view.syncKeptGalleryCard(card, entry),
+    refreshWindowGrid: () => view.refreshWindowGrid(),
+    disableWindowGrid: () => view.disableWindowGrid(),
   };
 }
 
@@ -233,5 +243,7 @@ export function bindGalleryGridRenderHost(
     onPlatformsDiscovered: (platforms) => source.onPlatformsDiscovered(platforms),
     getFeedViewMode: () => source.getFeedViewMode(),
     syncKeptGalleryCard: (card, entry) => source.syncKeptGalleryCard(card, entry),
+    refreshWindowGrid: () => source.refreshWindowGrid(),
+    disableWindowGrid: () => source.disableWindowGrid(),
   };
 }

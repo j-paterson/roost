@@ -41,6 +41,8 @@ function minimalGridSource(overrides: Partial<GalleryGridStateSource> = {}): Gal
     onPlatformsDiscovered: () => {},
     getFeedViewMode: () => "grid" as const,
     syncKeptGalleryCard: () => {},
+    refreshWindowGrid: () => {},
+    disableWindowGrid: () => {},
     ...overrides,
   };
 }
