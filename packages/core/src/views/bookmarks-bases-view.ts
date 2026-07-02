@@ -601,6 +601,7 @@ export class BookmarksBasesView extends BasesView
         const entry = this.getEntryByIndex(index);
         if (entry) this.syncKeptGalleryCard(el, entry);
       },
+      onEvict: (el) => this.hydrationObserver?.unobserve(el),
     });
 
     // Make scroll container focusable for ⌘A/Esc keyboard shortcuts.

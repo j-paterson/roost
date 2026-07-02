@@ -194,6 +194,66 @@ describe("WindowedCardGrid.disable/enable", () => {
   });
 });
 
+describe("WindowedCardGrid reuseKey option", () => {
+  it("reuses hydrated cards by a custom selector/attribute across reseed", () => {
+    const scrollEl = document.createElement("div");
+    const gridEl = document.createElement("div");
+    scrollEl.appendChild(gridEl);
+    const grid = new WindowedCardGrid({
+      scrollEl, gridEl,
+      rowHeight: () => 100,
+      count: () => 20,
+      keyAt: (i) => `p${i}`,
+      createPlaceholder: (parent, index) => {
+        const el = document.createElement("div");
+        el.className = "roost-card roost-card-placeholder";
+        el.dataset.idx = String(index);
+        parent.appendChild(el);
+        return el;
+      },
+      readColumns: () => 4,
+      bufferRows: 0,
+      reuseKey: { selector: ".roost-card-ready[data-path]", get: (el) => el.dataset.path ?? null },
+    });
+    grid.applyWindow(computeGridWindow({ total: 20, columns: 4, rowHeight: 100, scrollTop: 0, viewportHeight: 200, bufferRows: 0 }));
+    const c0 = gridEl.querySelector<HTMLElement>('[data-idx="0"]')!;
+    c0.classList.add("roost-card-ready");
+    c0.dataset.path = "p0";
+    c0.dataset.marker = "kept";
+    grid.applyWindow(computeGridWindow({ total: 20, columns: 4, rowHeight: 100, scrollTop: 0, viewportHeight: 200, bufferRows: 0 }), true);
+    expect(gridEl.querySelector<HTMLElement>('[data-idx="0"]')!.dataset.marker).toBe("kept");
+  });
+});
+
+describe("WindowedCardGrid onEvict option", () => {
+  it("calls onEvict for every card removed on scroll-out and reseed", () => {
+    const scrollEl = document.createElement("div");
+    const gridEl = document.createElement("div");
+    scrollEl.appendChild(gridEl);
+    const evicted: string[] = [];
+    const grid = new WindowedCardGrid({
+      scrollEl, gridEl,
+      rowHeight: () => 100,
+      count: () => 100,
+      keyAt: (i) => `k${i}`,
+      createPlaceholder: (parent, index) => {
+        const el = document.createElement("div");
+        el.className = "roost-card roost-card-placeholder";
+        el.dataset.idx = String(index);
+        parent.appendChild(el);
+        return el;
+      },
+      readColumns: () => 4,
+      bufferRows: 0,
+      onEvict: (el) => evicted.push(el.dataset.idx!),
+    });
+    grid.applyWindow(computeGridWindow({ total: 100, columns: 4, rowHeight: 100, scrollTop: 0, viewportHeight: 200, bufferRows: 0 })); // [0,12)
+    grid.applyWindow(computeGridWindow({ total: 100, columns: 4, rowHeight: 100, scrollTop: 400, viewportHeight: 200, bufferRows: 0 })); // slides down, evicts low indices
+    expect(evicted).toContain("0");
+    expect(evicted.length).toBeGreaterThan(0);
+  });
+});
+
 describe("WindowedCardGrid model queries", () => {
   it("getOrderedKeys spans the full model, not just the window", () => {
     const { grid } = setup(50);

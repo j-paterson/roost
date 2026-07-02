@@ -18,6 +18,10 @@ export interface WindowedCardGridOptions {
   syncKept?: (el: HTMLElement, index: number) => void;                      // refresh kept card metadata
   readColumns?: () => number;   // test seam; defaults to reading computed grid tracks
   bufferRows?: number;          // default 2
+  /** Keep-by-key reuse across reseed for non-roost_id consumers. Defaults to data-roost-id. */
+  reuseKey?: { selector: string; get: (el: HTMLElement) => string | null };
+  /** Called for each card element removed from the grid (e.g. to unobserve a hydration IO). */
+  onEvict?: (el: HTMLElement) => void;
 }
 
 export class WindowedCardGrid {
@@ -158,10 +162,20 @@ export class WindowedCardGrid {
   /** Snapshot hydrated cards by key so a reseed can reuse them. */
   private snapshotKept(): Map<string, HTMLElement> {
     const map = new Map<string, HTMLElement>();
-    for (const el of this.opts.gridEl.querySelectorAll<HTMLElement>(".roost-card-ready[data-roost-id]")) {
-      map.set(el.dataset.roostId!, el);
+    const rk = this.opts.reuseKey ?? {
+      selector: ".roost-card-ready[data-roost-id]",
+      get: (el: HTMLElement) => el.dataset.roostId ?? null,
+    };
+    for (const el of this.opts.gridEl.querySelectorAll<HTMLElement>(rk.selector)) {
+      const k = rk.get(el);
+      if (k) map.set(k, el);
     }
     return map;
+  }
+
+  private removeCard(el: HTMLElement): void {
+    this.opts.onEvict?.(el);
+    el.remove();
   }
 
   /**
@@ -185,13 +199,13 @@ export class WindowedCardGrid {
     if (reseed) {
       // Remove ALL card elements (incl. stray no-data-idx skeletons); keptByKey holds
       // references to hydrated cards for reuse below.
-      for (const el of gridEl.querySelectorAll<HTMLElement>(".roost-card")) el.remove();
+      for (const el of gridEl.querySelectorAll<HTMLElement>(".roost-card")) this.removeCard(el);
       mounted.clear();
     } else {
       // Drop cards that scrolled out of the window.
       for (const [idx, el] of mounted) {
         if (idx < win.windowStart || idx >= win.windowEnd) {
-          el.remove();
+          this.removeCard(el);
           mounted.delete(idx);
         }
       }
