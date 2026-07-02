@@ -7,6 +7,7 @@ import { safeGetValue } from "@/lib/bases-entry";
 import {
   estimateGalleryCardHeight,
 } from "@/views/gallery-cards";
+import { galleryEntryCount } from "@/views/gallery-entry-index";
 import type { GalleryGridRenderHost } from "@/views/gallery-grid-host";
 
 export type { GalleryGridConfigAccess, GalleryGridRenderHost } from "@/views/gallery-grid-host";
@@ -128,14 +129,7 @@ export function rebuildGalleryGrid(host: GalleryGridRenderHost): boolean {
   host.uncertainGrid = null;
   host.applyGridStyle(cardSize);
 
-  let newTotal: number;
-  if (host.filteredIndices) {
-    newTotal = host.filteredIndices.length;
-  } else if (host.data.groupedData && host.data.groupedData.length > 0) {
-    newTotal = host.data.groupedData.reduce((n, g) => n + g.entries.length, 0);
-  } else {
-    newTotal = entries.length;
-  }
+  const newTotal = galleryEntryCount(host.data, host.filteredIndices);
 
   host.totalCount = newTotal;
   host.loadedCount = newTotal;

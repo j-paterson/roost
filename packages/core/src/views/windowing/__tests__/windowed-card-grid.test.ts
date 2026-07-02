@@ -117,6 +117,41 @@ describe("WindowedCardGrid.applyWindow reseed (data-update, keep-by-roost_id)", 
   });
 });
 
+describe("WindowedCardGrid.applyWindow reseed clears initial skeletons", () => {
+  it("removes stray no-data-idx .roost-card skeletons on reseed", () => {
+    const { grid, gridEl } = setup(10);
+
+    // Pre-populate gridEl with two skeleton cards that have NO data-idx (simulating
+    // the initial skeletons rendered by showGalleryInitialSkeletons before the window grid).
+    const skel1 = document.createElement("div");
+    skel1.className = "roost-card roost-card-placeholder";
+    // intentionally omit data-idx
+    gridEl.appendChild(skel1);
+
+    const skel2 = document.createElement("div");
+    skel2.className = "roost-card roost-card-placeholder";
+    gridEl.appendChild(skel2);
+
+    // Confirm skeletons exist before reseed.
+    expect(gridEl.querySelectorAll(".roost-card").length).toBeGreaterThanOrEqual(2);
+
+    // Call applyWindow with reseed=true (the data-update path).
+    grid.applyWindow(
+      computeGridWindow({ total: 10, columns: 4, rowHeight: 100, scrollTop: 0, viewportHeight: 200, bufferRows: 0 }),
+      true,
+    );
+
+    // The two stray skeletons (no data-idx) must be gone.
+    expect(gridEl.contains(skel1)).toBe(false);
+    expect(gridEl.contains(skel2)).toBe(false);
+
+    // Only windowed [data-idx] cards and spacers should remain.
+    for (const el of gridEl.querySelectorAll<HTMLElement>(".roost-card")) {
+      expect(el.dataset.idx).toBeDefined();
+    }
+  });
+});
+
 describe("WindowedCardGrid.disable/enable", () => {
   it("disable detaches spacers", () => {
     const { grid, gridEl } = setup(20);

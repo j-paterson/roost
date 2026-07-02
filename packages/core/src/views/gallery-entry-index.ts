@@ -32,6 +32,18 @@ export function galleryEntryAtIndex(
   return source.data[index] ?? null;
 }
 
+/** Total renderable card count (filtered → grouped sum → flat length). Mirrors galleryEntryAtIndex's domain. */
+export function galleryEntryCount(
+  source: GalleryEntryDataSource,
+  filteredIndices: number[] | null,
+): number {
+  if (filteredIndices) return filteredIndices.length;
+  if (source.groupedData && source.groupedData.length > 0) {
+    return source.groupedData.reduce((n, g) => n + g.entries.length, 0);
+  }
+  return source.data.length;
+}
+
 /** Find an entry by roost_id in the flat data array. */
 export function findGalleryEntryByRoostId(
   entries: BasesEntry[],

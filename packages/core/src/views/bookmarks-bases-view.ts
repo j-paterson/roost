@@ -14,6 +14,7 @@ import { traceEvent } from "@/lib/render-trace";
 import { createCoalescingTrigger, type CoalescingTrigger } from "@/lib/debounce";
 import {
   createGalleryPlaceholder,
+  estimateGalleryCardHeight,
   hydrateGalleryCard,
   syncGalleryCardFromEntry,
   type GalleryCardConfig,
@@ -27,7 +28,7 @@ import {
   bindGalleryGridRenderHost,
   bindGalleryGridStateSource,
 } from "@/views/gallery-grid-host";
-import { galleryEntryAtIndex, findGalleryEntryByRoostId } from "@/views/gallery-entry-index";
+import { galleryEntryAtIndex, galleryEntryCount, findGalleryEntryByRoostId } from "@/views/gallery-entry-index";
 import {
   expandGalleryInPlaceById,
   findNeighborRoostId,
@@ -534,6 +535,13 @@ export class BookmarksBasesView extends BasesView
     this.gallerySelection.enter(itemIds, targetName, onAccept);
   }
 
+  /** Live per-row estimate from config (do NOT read this.estimatedHeight — it's a stale snapshot). */
+  private galleryEstimatedHeight(): number {
+    const cardSize = (this.config.get("cardSize") as number) ?? 220;
+    const imageRatioPct = (this.config.get("imageRatio") as number) ?? 75;
+    return estimateGalleryCardHeight(cardSize, imageRatioPct);
+  }
+
   onload(): void {
     if (this.renderedKey === "") {
       applyGalleryGridStyle(
@@ -580,11 +588,11 @@ export class BookmarksBasesView extends BasesView
     this.windowGrid = new WindowedCardGrid({
       scrollEl: this.scrollEl,
       gridEl: this.containerEl,
-      rowHeight: () => this.estimatedHeight + GALLERY_GRID_GAP_PX,
-      count: () => this.totalCount,
+      rowHeight: () => this.galleryEstimatedHeight() + GALLERY_GRID_GAP_PX,
+      count: () => galleryEntryCount(this.data, this.filteredIndices),
       keyAt: (i) => this.roostIdAt(i),
       createPlaceholder: (parent, index) => {
-        const el = createGalleryPlaceholder(parent, index, this.estimatedHeight, this.hydrationObserver);
+        const el = createGalleryPlaceholder(parent, index, this.galleryEstimatedHeight(), this.hydrationObserver);
         const rid = this.roostIdAt(index);
         if (rid) el.dataset.roostId = rid;
         return el;

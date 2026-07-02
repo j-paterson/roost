@@ -183,8 +183,9 @@ export class WindowedCardGrid {
     }
 
     if (reseed) {
-      // Detach all cards; the kept snapshot still holds the ones we may reuse.
-      for (const el of mounted.values()) el.remove();
+      // Remove ALL card elements (incl. stray no-data-idx skeletons); keptByKey holds
+      // references to hydrated cards for reuse below.
+      for (const el of gridEl.querySelectorAll<HTMLElement>(".roost-card")) el.remove();
       mounted.clear();
     } else {
       // Drop cards that scrolled out of the window.
