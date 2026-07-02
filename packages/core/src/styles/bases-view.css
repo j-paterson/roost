@@ -297,11 +297,11 @@
    * with visible cards (~50-100) instead of total cards.
    *
    * contain-intrinsic-size keeps scroll position stable across renders;
-   * `auto 230px` matches the cardSize(180) + body(~50) estimate the
-   * skeleton hydration uses, and `auto` lets the browser remember the
-   * real measured size after a card has been rendered once. */
+   * `auto 275px` approximates cover + the fixed 76px body, and `auto` lets
+   * the browser remember the real measured size after a card renders once.
+   * (WindowedCardGrid also measures the exact uniform row height at runtime.) */
   content-visibility: auto;
-  contain-intrinsic-size: auto 230px;
+  contain-intrinsic-size: auto 275px;
 }
 
 /* Uncertain items — subtle desaturation in non-split mode */

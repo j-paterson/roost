@@ -111,7 +111,7 @@ export class WindowedCardGrid {
     this.recompute(true); // re-lay with the exact height
   }
 
-  /** Test seam: simulate the ResizeObserver callback. */
+  /** @internal Test seam only — simulate the ResizeObserver callback. Not production API. */
   onResizeForTest(): void {
     this.measuredRowHeight = null;
     this.scheduleRecompute();
