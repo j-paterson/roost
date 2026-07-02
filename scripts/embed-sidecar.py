@@ -32,7 +32,7 @@ import os
 import sys
 import time
 import urllib.request
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from threading import Lock
 import numpy as np
@@ -194,6 +194,7 @@ def classify_uncensored(paths: list) -> list:
 # still import and run this sidecar.
 _asr_model = None
 _asr_available_cache = None
+_asr_lock = Lock()  # serialize lazy-load + transcribe under the threading server
 
 
 def asr_available():
@@ -250,19 +251,22 @@ def _fmt_ts(seconds):
 
 
 def transcribe_file(path):
-    """Transcribe a local media file. Returns the /transcribe response dict."""
+    """Transcribe a local media file. Returns the /transcribe response dict.
+    Serialized via _asr_lock — faster-whisper models are not thread-safe and
+    the server handles requests on multiple threads."""
     audio = _decode_audio_16k_mono(path)
     duration = len(audio) / 16000.0
-    model = get_asr_model()
-    segments, info = model.transcribe(audio, beam_size=1, vad_filter=True)
     cues = []
     parts = []
-    for seg in segments:  # generator — iterating does the work
-        txt = seg.text.strip()
-        if not txt:
-            continue
-        cues.append(f"{_fmt_ts(seg.start)} --> {_fmt_ts(seg.end)}\n{txt}")
-        parts.append(txt)
+    with _asr_lock:
+        model = get_asr_model()
+        segments, info = model.transcribe(audio, beam_size=1, vad_filter=True)
+        for seg in segments:  # generator — iterating does the work, so keep it inside the lock
+            txt = seg.text.strip()
+            if not txt:
+                continue
+            cues.append(f"{_fmt_ts(seg.start)} --> {_fmt_ts(seg.end)}\n{txt}")
+            parts.append(txt)
     text = " ".join(parts).strip()
     vtt = "WEBVTT\n\n" + "\n\n".join(cues) + ("\n" if cues else "")
     return {
@@ -591,7 +595,11 @@ def main():
     # when the conflict is a HEALTHY sidecar, exit 0 so launchd
     # (KeepAlive.SuccessfulExit=false) stops respawning us entirely.
     try:
-        server = HTTPServer((args.host, args.port), EmbedHandler)
+        # Threaded so /health and small requests are never starved behind a long
+        # queue (a wedged embed backlog once made the whole server unresponsive
+        # for an hour). Heavy models stay serialized via their own locks
+        # (_model_lock, _uncensored_lock, _asr_lock); daemon threads by default.
+        server = ThreadingHTTPServer((args.host, args.port), EmbedHandler)
     except OSError as e:
         if e.errno != errno.EADDRINUSE:
             raise
