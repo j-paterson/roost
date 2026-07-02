@@ -24,6 +24,7 @@ export class WindowedCardGrid {
   private readonly topSpacer: HTMLElement;
   private readonly bottomSpacer: HTMLElement;
   private enabled = true;
+  private attached = false;
 
   private readonly onScroll = () => this.scheduleRecompute();
   private rafHandle: number | null = null;
@@ -37,6 +38,8 @@ export class WindowedCardGrid {
   }
 
   attach(): void {
+    if (this.attached) return;
+    this.attached = true;
     this.opts.scrollEl.addEventListener("scroll", this.onScroll, { passive: true });
     if (typeof ResizeObserver !== "undefined") {
       this.resizeObserver = new ResizeObserver(() => this.scheduleRecompute());
@@ -48,10 +51,15 @@ export class WindowedCardGrid {
     this.opts.scrollEl.removeEventListener("scroll", this.onScroll);
     this.resizeObserver?.disconnect();
     this.resizeObserver = null;
-    if (this.rafHandle != null && typeof cancelAnimationFrame !== "undefined") {
-      cancelAnimationFrame(this.rafHandle);
+    if (this.rafHandle != null) {
+      if (typeof cancelAnimationFrame !== "undefined") {
+        cancelAnimationFrame(this.rafHandle);
+      } else {
+        clearTimeout(this.rafHandle);
+      }
     }
     this.rafHandle = null;
+    this.attached = false;
   }
 
   private scheduleRecompute(): void {
@@ -112,6 +120,7 @@ export class WindowedCardGrid {
   }
 
   scrollIndexIntoView(index: number): void {
+    if (!this.enabled) return;
     if (index < 0) return;
     const cols = this.columns();
     const row = Math.floor(index / cols);
