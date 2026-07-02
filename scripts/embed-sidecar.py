@@ -25,11 +25,13 @@ Usage:
     # Then in Obsidian plugin config, set EMBED_URL=http://localhost:11435
 """
 import argparse
+import errno
 import json
 import logging
 import os
 import sys
 import time
+import urllib.request
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from threading import Lock
@@ -580,6 +582,30 @@ def main():
 
     vault_root = resolve_vault_root(args.vault_root)
     global VAULT_ROOT; VAULT_ROOT = vault_root
+
+    # Bind the port BEFORE the multi-second, CPU-heavy model load. A stale
+    # instance holding the port once put launchd into a crash-respawn loop
+    # where every ~25s cycle paid a full torch model load and THEN died on the
+    # bind — pinning a core indefinitely and making the whole machine laggy.
+    # Bind-first makes a conflicting start fail in milliseconds instead; and
+    # when the conflict is a HEALTHY sidecar, exit 0 so launchd
+    # (KeepAlive.SuccessfulExit=false) stops respawning us entirely.
+    try:
+        server = HTTPServer((args.host, args.port), EmbedHandler)
+    except OSError as e:
+        if e.errno != errno.EADDRINUSE:
+            raise
+        try:
+            with urllib.request.urlopen(f"http://{args.host}:{args.port}/health", timeout=3) as resp:
+                healthy = json.loads(resp.read()).get("status") == "ok"
+        except Exception:  # any probe failure = not a healthy sidecar
+            healthy = False
+        if healthy:
+            log.info(f"Port {args.port} already served by a healthy sidecar — exiting cleanly.")
+            sys.exit(0)
+        log.error(f"Port {args.port} is in use by something that is not a healthy sidecar.")
+        sys.exit(1)
+
     model_path = Path(args.model_path) if args.model_path else (vault_root / ".roost" / "build" / "nomic-finetuned-hardneg")
     if model_path.exists():
         load_model(model_path, args.max_seq)
@@ -594,7 +620,6 @@ def main():
         )
         load_model(DEFAULT_BASE_MODEL, args.max_seq)
 
-    server = HTTPServer((args.host, args.port), EmbedHandler)
     log.info(f"Serving on http://{args.host}:{args.port}")
     log.info(f"  POST /api/embed        Ollama-compatible batched embed")
     log.info(f"  POST /api/train-heads  Train stacked classifier heads with sklearn")
