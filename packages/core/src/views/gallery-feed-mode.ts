@@ -388,8 +388,8 @@ export class GalleryFeedModeController {
 
     this.feedSyncUnsub = this.feedSync.subscribe((roostId, source) => {
       this.lastActiveRoostId = roostId;
-      this.applyFeedActiveHighlight(roostId);
       if (roostId && source === "feed") this.scrollGalleryCardIntoView(roostId);
+      this.applyFeedActiveHighlight(roostId);
     });
 
     if (this.trainingMode) {

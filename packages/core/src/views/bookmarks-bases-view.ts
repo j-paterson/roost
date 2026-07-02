@@ -578,12 +578,13 @@ export class BookmarksBasesView extends BasesView
       gridEl: this.containerEl,
       rowHeight: () => this.estimatedHeight + GALLERY_GRID_GAP_PX,
       count: () => this.totalCount,
-      keyAt: (i) => {
-        const entry = this.getEntryByIndex(i);
-        return entry ? (safeGetValue(entry, "note.roost_id")?.toString() ?? null) : null;
+      keyAt: (i) => this.roostIdAt(i),
+      createPlaceholder: (parent, index) => {
+        const el = createGalleryPlaceholder(parent, index, this.estimatedHeight, this.hydrationObserver);
+        const rid = this.roostIdAt(index);
+        if (rid) el.dataset.roostId = rid;
+        return el;
       },
-      createPlaceholder: (parent, index) =>
-        createGalleryPlaceholder(parent, index, this.estimatedHeight, this.hydrationObserver),
       syncKept: (el, index) => {
         const entry = this.getEntryByIndex(index);
         if (entry) this.syncKeptGalleryCard(el, entry);
@@ -787,6 +788,11 @@ export class BookmarksBasesView extends BasesView
   private getEntryByIndex(index: number): BasesEntry | null {
     if (!this.data?.data) return null;
     return galleryEntryAtIndex(this.data, this.filteredIndices, index);
+  }
+
+  private roostIdAt(index: number): string | null {
+    const entry = this.getEntryByIndex(index);
+    return entry ? (safeGetValue(entry, "note.roost_id")?.toString() ?? null) : null;
   }
 
   applyGridStyle(cardSize: number, target?: HTMLElement): void {
