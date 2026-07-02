@@ -16,6 +16,17 @@ import type { FeedSync } from "@/views/feed/feed-sync";
 
 const WINDOW_SIZE = 5;
 
+/** Inclusive slot index range to attach around the active item. */
+export function feedWindowRange(
+  active: number,
+  total: number,
+  buffer: number,
+): { start: number; end: number } {
+  if (total <= 0) return { start: 0, end: -1 };
+  const a = Math.min(Math.max(active, 0), total - 1);
+  return { start: Math.max(0, a - buffer), end: Math.min(total - 1, a + buffer) };
+}
+
 // Slots are cheap placeholder <div>s, but creating + observing thousands of them
 // synchronously (e.g. the Smart Assign review pass seeds the whole run) freezes
 // the main thread. Build the first CHUNK_SIZE synchronously (covers the mount

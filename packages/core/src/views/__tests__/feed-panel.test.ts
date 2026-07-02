@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { describe, it, expect, vi, beforeAll, beforeEach } from "vitest";
 import type { BasesEntry } from "obsidian";
-import { computeMountWindow, mountFeedPanel } from "@/views/feed/feed-panel";
+import { feedWindowRange, mountFeedPanel } from "@/views/feed/feed-panel";
 import { createFeedSync } from "@/views/feed/feed-sync";
 import type { FeedRenderContext } from "@/views/feed/feed-renderers";
 
@@ -11,26 +11,26 @@ vi.mock("@/views/feed/feed-renderers", async (importOriginal) => {
   return { ...real, renderFeedItem: vi.fn(() => ({ dispose: vi.fn() })) };
 });
 
-describe("computeMountWindow", () => {
-  it("returns a centered window when in the middle", () => {
-    expect(computeMountWindow(5, 100, 5)).toEqual(new Set([3, 4, 5, 6, 7]));
+describe("feedWindowRange", () => {
+  it("centers on the active index with the given buffer", () => {
+    expect(feedWindowRange(5, 100, 2)).toEqual({ start: 3, end: 7 });
   });
-
-  it("clamps to 0 at the start", () => {
-    expect(computeMountWindow(0, 100, 5)).toEqual(new Set([0, 1, 2]));
-    expect(computeMountWindow(1, 100, 5)).toEqual(new Set([0, 1, 2, 3]));
+  it("clamps at the start", () => {
+    expect(feedWindowRange(0, 100, 2)).toEqual({ start: 0, end: 2 });
+    expect(feedWindowRange(1, 100, 2)).toEqual({ start: 0, end: 3 });
   });
-
-  it("clamps to total-1 at the end", () => {
-    expect(computeMountWindow(99, 100, 5)).toEqual(new Set([97, 98, 99]));
+  it("clamps at the end", () => {
+    expect(feedWindowRange(99, 100, 2)).toEqual({ start: 97, end: 99 });
   });
-
-  it("handles total smaller than window", () => {
-    expect(computeMountWindow(1, 3, 5)).toEqual(new Set([0, 1, 2]));
+  it("clamps the active index into range", () => {
+    expect(feedWindowRange(999, 10, 2)).toEqual({ start: 7, end: 9 });
+    expect(feedWindowRange(-5, 10, 2)).toEqual({ start: 0, end: 2 });
   });
-
-  it("handles total === 0", () => {
-    expect(computeMountWindow(0, 0, 5)).toEqual(new Set());
+  it("handles total smaller than the window", () => {
+    expect(feedWindowRange(1, 3, 2)).toEqual({ start: 0, end: 2 });
+  });
+  it("returns an empty range for total 0", () => {
+    expect(feedWindowRange(0, 0, 2)).toEqual({ start: 0, end: -1 });
   });
 });
 
