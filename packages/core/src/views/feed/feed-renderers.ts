@@ -13,6 +13,7 @@ import {
   getNoteTitle,
   getRoostId,
   parseEntryTags,
+  safeGetString,
   safeGetValue,
 } from "@/lib/bases-entry";
 import {
@@ -167,13 +168,13 @@ function renderFeedExpandedItem(
   );
   // After the expanded card body, append a full-width link card when the entry has a
   // scraped link preview. Link preview card — click opens the URL in a RoostLinkView tab.
-  const feedLinkUrl = safeGetValue(entry, "note.link_url")?.toString();
+  const feedLinkUrl = safeGetString(entry, "note.link_url");
   if (feedLinkUrl) {
     const feedLinkCard = renderLinkCard(inner, {
       url: feedLinkUrl,
-      title: safeGetValue(entry, "note.link_title")?.toString(),
-      description: safeGetValue(entry, "note.link_desc")?.toString(),
-      site: safeGetValue(entry, "note.link_site")?.toString(),
+      title: safeGetString(entry, "note.link_title") ?? undefined,
+      description: safeGetString(entry, "note.link_desc") ?? undefined,
+      site: safeGetString(entry, "note.link_site") ?? undefined,
       imageSrc: resolveImageUrl(ctx.app, entry, "note.link_image"),
     }, { compact: false });
     if (feedLinkCard) {

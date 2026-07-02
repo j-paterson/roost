@@ -1,6 +1,18 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeAll, beforeEach } from "vitest";
 import type { BasesEntry } from "obsidian";
-import { inferFeedPlatform, maybeAppendTrainingBar, type FeedRenderContext } from "@/views/feed/feed-renderers";
+
+// Isolate the link-card call-site guard: heavy card rendering is out of scope.
+vi.mock("@/ui/components/expanded-card", () => ({ renderExpandedCard: vi.fn() }));
+vi.mock("@/views/entry-to-expanded-card", () => ({ entryToExpandedCardData: vi.fn(() => ({})) }));
+vi.mock("@/views/feed/card-helpers", () => ({
+  resolveImageUrl: vi.fn(() => null),
+  resolveVideoUrl: vi.fn(() => null),
+  resolveAllImages: vi.fn(() => []),
+}));
+vi.mock("@/views/link-card-renderer", () => ({ renderLinkCard: vi.fn(() => null) }));
+
+import { renderLinkCard } from "@/views/link-card-renderer";
+import { inferFeedPlatform, maybeAppendTrainingBar, renderFeedItem, type FeedRenderContext } from "@/views/feed/feed-renderers";
 
 function makeEntry(values: Record<string, unknown>): BasesEntry {
   return { getValue: (k: string) => values[k] ?? null, file: { basename: "x" } } as unknown as BasesEntry;
@@ -59,5 +71,64 @@ describe("maybeAppendTrainingBar — review-pass guess override", () => {
     const entry = makeEntry({ "note.roost_id": "twitter:3" }); // no category
     maybeAppendTrainingBar(el, entry, baseCtx({ guessFor: () => null }), "twitter:3");
     expect(el.children.length).toBe(0);
+  });
+});
+
+describe("renderFeedItem — link card guarded against Bases 'null' wrapper sentinels", () => {
+  beforeAll(() => {
+    const proto = HTMLElement.prototype as any;
+    if (!proto.createDiv) {
+      proto.createDiv = function (opts?: { cls?: string; text?: string }) {
+        const d = document.createElement("div");
+        if (opts?.cls) d.className = opts.cls;
+        if (opts?.text) d.textContent = opts.text;
+        this.appendChild(d);
+        return d;
+      };
+    }
+    const p = HTMLElement.prototype as any;
+    if (!p.addClass) p.addClass = function (cls: string) { this.classList.add(cls); };
+    if (!p.removeClass) p.removeClass = function (cls: string) { this.classList.remove(cls); };
+    if (!p.empty) p.empty = function () { while (this.firstChild) this.removeChild(this.firstChild); };
+  });
+
+  beforeEach(() => { vi.mocked(renderLinkCard).mockClear(); });
+
+  const ctx = { app: {} as never, imagePropId: "note.cover", onAction: vi.fn() } as unknown as FeedRenderContext;
+  // A Base that declares the link_url column hands back a Value wrapper whose
+  // toString() is the literal "null" for notes lacking the field.
+  const nullWrapper = { toString: () => "null" };
+
+  it("does NOT render a link card when link fields are 'null' wrapper sentinels (the null/null/null box)", () => {
+    const entry = makeEntry({
+      "note.roost_id": "twitter:10",
+      "note.platform": "twitter",
+      "note.link_url": nullWrapper,
+      "note.link_title": nullWrapper,
+      "note.link_desc": nullWrapper,
+      "note.link_site": nullWrapper,
+    });
+    renderFeedItem(document.createElement("div"), entry, ctx);
+    expect(renderLinkCard).not.toHaveBeenCalled();
+  });
+
+  it("still renders the link card for a real link_url, with sentinel fields collapsed to undefined", () => {
+    const entry = makeEntry({
+      "note.roost_id": "reddit:11",
+      "note.platform": "reddit",
+      "note.link_url": "https://example.com/article",
+      "note.link_title": "A real title",
+      "note.link_desc": nullWrapper, // absent in the note — must not render as "null"
+      "note.link_site": "example.com",
+    });
+    renderFeedItem(document.createElement("div"), entry, ctx);
+    expect(renderLinkCard).toHaveBeenCalledOnce();
+    const [, data] = vi.mocked(renderLinkCard).mock.calls[0];
+    expect(data).toMatchObject({
+      url: "https://example.com/article",
+      title: "A real title",
+      site: "example.com",
+    });
+    expect(data.description).toBeUndefined();
   });
 });

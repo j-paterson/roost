@@ -3,7 +3,7 @@
  */
 import type { App, BasesEntry, MarkdownRenderChild } from "obsidian";
 import { MarkdownRenderer } from "obsidian";
-import { safeGetValue, getNoteTitle } from "@/lib/bases-entry";
+import { safeGetString, safeGetValue, getNoteTitle } from "@/lib/bases-entry";
 import { stripFrontmatter } from "@/lib/vault-utils";
 import { ContentType, detectContentType, extractDomain, hasValue } from "@/views/content-detector";
 import { EXPLORER_RICH_FIELDS, EXPLORER_SKIP_PROPS } from "@/views/explorer-view-options";
@@ -138,13 +138,13 @@ export function renderExplorerExpandedPanel(
 
   // When note.link_url is present, render the rich link card (compact) instead of a bare
   // anchor. Keep the bare-<a> path only as fallback for a generic note.url field.
-  const linkUrlRaw = safeGetValue(entry, "note.link_url")?.toString();
+  const linkUrlRaw = safeGetString(entry, "note.link_url");
   if (linkUrlRaw) {
     const expandedLinkCard = renderLinkCard(info, {
       url: linkUrlRaw,
-      title: safeGetValue(entry, "note.link_title")?.toString(),
-      description: safeGetValue(entry, "note.link_desc")?.toString(),
-      site: safeGetValue(entry, "note.link_site")?.toString(),
+      title: safeGetString(entry, "note.link_title") ?? undefined,
+      description: safeGetString(entry, "note.link_desc") ?? undefined,
+      site: safeGetString(entry, "note.link_site") ?? undefined,
       imageSrc: host.resolveImageUrl(entry, "note.link_image"),
     }, { compact: true });
     if (expandedLinkCard) {
