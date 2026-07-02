@@ -477,7 +477,10 @@
 }
 
 .roost-card-body {
+  box-sizing: border-box;
+  height: 76px; /* 2-line title + one meta/path/tags row; tuned visually in Task 3 */
   padding: 8px 10px 10px;
+  overflow: hidden;
 }
 
 .roost-card-title {
