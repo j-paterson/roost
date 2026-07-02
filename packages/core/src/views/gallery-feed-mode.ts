@@ -343,6 +343,8 @@ export class GalleryFeedModeController {
       app: this.host.app,
       imagePropId: this.host.getImagePropId(),
       get trainingMode() { return self.trainingMode; },
+      // Review pass: supply the staged proposed category (frontmatter has none yet).
+      guessFor: (roostId) => self.reviewProposals?.[roostId] ?? null,
       onTrainingAction: (action, roostId) => {
         this.handleTrainingAction(action, roostId);
       },

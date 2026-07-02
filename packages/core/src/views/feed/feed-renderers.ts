@@ -54,6 +54,10 @@ export interface FeedRenderContext {
   trainingMode?: boolean;
   /** Routes a training-mode action for an item to the host (confirm/reject/recategorize/skip). */
   onTrainingAction?: (action: "confirm" | "reject" | "recategorize" | "skip", roostId: string) => void;
+  /** Per-item guessed category override. In the Smart Assign review pass the proposed
+   *  category lives in memory (proposedFolders), NOT in frontmatter, so readGuess can't
+   *  see it — this supplies it. Returns null to fall back to readGuess (regular Train mode). */
+  guessFor?: (roostId: string) => string | null;
 }
 
 export function buildTrainingBar(
@@ -122,14 +126,16 @@ function mountFeedActionsRow(
   return actions;
 }
 
-function maybeAppendTrainingBar(
+export function maybeAppendTrainingBar(
   el: HTMLElement,
   entry: BasesEntry,
   ctx: FeedRenderContext,
   roostId: string,
 ): void {
   if (!ctx.trainingMode || !ctx.onTrainingAction) return;
-  const { category } = readGuess(entry);
+  // Review pass: the proposed category is in memory (guessFor), not frontmatter.
+  // Regular Train mode: guessFor is absent/null → fall back to the frontmatter guess.
+  const category = ctx.guessFor?.(roostId) ?? readGuess(entry).category;
   if (!category) return;
   const bar = buildTrainingBar(el.ownerDocument, category, {
     onConfirm: () => ctx.onTrainingAction!("confirm", roostId),
