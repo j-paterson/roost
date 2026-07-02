@@ -156,6 +156,10 @@ export class BookmarksBasesView extends BasesView
     return this.currentFilter;
   }
 
+  getOrderedRoostIds(): string[] {
+    return this.windowGrid?.getOrderedKeys() ?? [];
+  }
+
   getRoostPlugin() {
     return getRoostPlugin(this.app);
   }

@@ -11,6 +11,8 @@ export interface GallerySelectionHost {
   getGallerySelectionBar(): HTMLElement | null;
   getRoostPlugin(): IRoostPlugin | null;
   getCurrentFilter(): RoostFilter;
+  /** Full ordered roost_id list of all items (not just mounted cards). */
+  getOrderedRoostIds(): string[];
 }
 
 export class GallerySelectionController {
@@ -178,11 +180,7 @@ export class GallerySelectionController {
 
       const selectAllBtn = actions.createEl("button", { cls: "roost-nav-btn", text: "Select all" });
       selectAllBtn.addEventListener("click", () => {
-        this.host.getGalleryContainer().querySelectorAll("[data-roost-id]").forEach(el => {
-          const id = (el as HTMLElement).dataset.roostId;
-          if (id) { this.selectedIds.add(id); el.classList.add("roost-card-selected"); }
-        });
-        this.updateBar();
+        this.selectAll(this.host.getOrderedRoostIds());
       });
 
       const deselectAllBtn = actions.createEl("button", { cls: "roost-nav-btn", text: "Deselect all" });

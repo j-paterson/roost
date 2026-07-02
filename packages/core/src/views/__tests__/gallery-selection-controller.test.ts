@@ -2,6 +2,8 @@
 import { describe, it, expect } from "vitest";
 import { GallerySelectionController } from "../gallery-selection";
 
+const ORDERED_IDS = ["a", "b", "c", "d", "e"];
+
 function makeHost() {
   const container = document.createElement("div");
   const scrollEl = document.createElement("div");
@@ -11,6 +13,7 @@ function makeHost() {
     getGallerySelectionBar: () => null as HTMLElement | null, // no DOM bar in unit tests
     getRoostPlugin: () => null,
     getCurrentFilter: () => null,
+    getOrderedRoostIds: () => [...ORDERED_IDS],
   };
 }
 
@@ -98,5 +101,13 @@ describe("GallerySelectionController — Finder-style free selection", () => {
     ctrl.selectSingle("a"); // anchor = "a"
     ctrl.exit();
     expect(ctrl.anchor).toBeNull();
+  });
+
+  it("selectAll via host.getOrderedRoostIds() selects the full model list", () => {
+    const host = makeHost();
+    const ctrl = new GallerySelectionController(host);
+    ctrl.selectAll(host.getOrderedRoostIds());
+    expect(new Set(ctrl.getSelected())).toEqual(new Set(ORDERED_IDS));
+    expect(ctrl.getSelected()).toHaveLength(ORDERED_IDS.length);
   });
 });
