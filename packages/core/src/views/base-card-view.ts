@@ -5,7 +5,7 @@
  * - CSS grid layout with configurable card size
  * - Skeleton placeholder loading before data arrives
  * - Deferred hydration via IntersectionObserver (400px look-ahead)
- * - Incremental batch loading with sentinel observer (60-card batches)
+ * - Windowed rendering via `WindowedCardGrid` (only near-viewport cards mounted)
  * - FLIP expand/collapse animation (spring physics via "motion")
  * - Image URL resolution from frontmatter properties
  *
@@ -25,6 +25,9 @@ import { animate } from "motion";
 import { safeGetValue } from "@/lib/bases-entry";
 import { stripWikilink } from "@/lib/vault-utils";
 import { imageResourcePathForFile } from "./content-detector";
+import { WindowedCardGrid } from "@/views/windowing/windowed-card-grid";
+
+const GRID_GAP_PX = 12; // matches applyGridStyle's `gap: 12px`
 
 /** Base config fields shared by all card views */
 export interface BaseCardConfig {
@@ -42,16 +45,12 @@ export abstract class BaseCardView extends BasesView {
   containerEl: HTMLElement;
   scrollEl: HTMLElement;
   protected hydrationObserver: IntersectionObserver | null = null;
+  protected windowGrid: WindowedCardGrid | null = null;
   protected renderedKey: string = "";
 
-  // Incremental loading state
-  protected loadedCount = 0;
+  // Windowed rendering state
   protected totalCount = 0;
   protected estimatedHeight = 0;
-  protected gridTarget: HTMLElement | null = null;
-  protected sentinelObserver: IntersectionObserver | null = null;
-  protected sentinel: HTMLElement | null = null;
-  protected static BATCH = 60;
 
   /** When set, grid indices map through this array into data.data */
   protected filteredIndices: number[] | null = null;
@@ -160,13 +159,29 @@ export abstract class BaseCardView extends BasesView {
       },
       { rootMargin: "400px" }
     );
+
+    this.windowGrid = new WindowedCardGrid({
+      scrollEl: this.scrollEl,
+      gridEl: this.containerEl,
+      rowHeight: () => this.estimatedHeight + GRID_GAP_PX,
+      count: () => this.getTotalCount(this.data.data),
+      keyAt: (i) => this.getEntryByIndex(i)?.file.path ?? null,
+      createPlaceholder: (parent, index) => {
+        const el = this.createPlaceholder(parent, index, this.estimatedHeight);
+        const p = this.getEntryByIndex(index)?.file.path;
+        if (p) el.dataset.path = p;
+        return el;
+      },
+      reuseKey: { selector: ".roost-card-ready[data-path]", get: (el) => el.dataset.path ?? null },
+      onEvict: (el) => this.hydrationObserver?.unobserve(el),
+    });
   }
 
   onunload() {
     this.hydrationObserver?.disconnect();
     this.hydrationObserver = null;
-    this.sentinelObserver?.disconnect();
-    this.sentinelObserver = null;
+    this.windowGrid?.dispose();
+    this.windowGrid = null;
   }
 
   onDataUpdated(): void {
@@ -178,62 +193,22 @@ export abstract class BaseCardView extends BasesView {
     if (newKey === this.renderedKey) return;
     this.renderedKey = newKey;
 
-    this.hydrationObserver?.disconnect();
-    this.containerEl.empty();
-
     const cardSize = (this.config.get("cardSize") as number) ?? 220;
     const imageRatio = ((this.config.get("imageRatio") as number) ?? 75) / 100;
-
-    const estimatedHeight = Math.round(cardSize * imageRatio + 50);
+    this.estimatedHeight = Math.round(cardSize * imageRatio + 50);
     this.applyGridStyle(cardSize);
-
     this.totalCount = this.getTotalCount(entries);
-    this.estimatedHeight = estimatedHeight;
-    this.gridTarget = this.containerEl;
-    this.loadedCount = 0;
 
-    this.sentinelObserver?.disconnect();
-    this.loadMorePlaceholders();
+    this.windowGrid?.refresh();
   }
 
-  protected loadMorePlaceholders() {
-    if (!this.gridTarget || this.loadedCount >= this.totalCount) return;
-
-    const batchSize = (this.constructor as typeof BaseCardView).BATCH;
-    const end = Math.min(this.loadedCount + batchSize, this.totalCount);
-    for (let i = this.loadedCount; i < end; i++) {
-      this.createPlaceholder(this.gridTarget, i, this.estimatedHeight);
-    }
-    this.loadedCount = end;
-
-    if (this.loadedCount < this.totalCount) {
-      if (!this.sentinel) {
-        this.sentinel = document.createElement("div");
-        this.sentinel.className = "roost-load-sentinel";
-        this.sentinel.style.cssText = "grid-column: 1 / -1; height: 1px;";
-      }
-      this.gridTarget.appendChild(this.sentinel);
-
-      if (!this.sentinelObserver) {
-        this.sentinelObserver = new IntersectionObserver(
-          (entries) => {
-            if (entries[0]?.isIntersecting) this.loadMorePlaceholders();
-          },
-          { rootMargin: "600px" }
-        );
-      }
-      this.sentinelObserver.observe(this.sentinel);
-    } else {
-      this.sentinel?.remove();
-    }
-  }
-
-  protected createPlaceholder(parent: HTMLElement, index: number, height: number) {
+  protected createPlaceholder(parent: HTMLElement, index: number, height: number): HTMLElement {
     const el = parent.createDiv({ cls: "roost-card roost-card-placeholder" });
     el.dataset.idx = String(index);
     el.style.minHeight = `${height}px`;
     el.createDiv({ cls: "roost-shimmer" });
     this.hydrationObserver?.observe(el);
+    return el;
   }
 
   /** Hydrate a placeholder into a full card — shared shell, delegates to subclass */
