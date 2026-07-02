@@ -20,6 +20,7 @@ import { useLibraryTree } from "@/ui/hooks/use-library-tree";
 import { useRoostSidebarLog } from "@/ui/hooks/use-roost-sidebar-log";
 import { buildFilterInput } from "@/ui/lib/smart-assign-inputs";
 import { seedReviewIds } from "@/ui/lib/smart-assign/review-pass";
+import { PIPELINE_STEP } from "@/ui/lib/smart-assign/pipeline-steps";
 import { getPipelineCategoryNames } from "@/lib/enrichments";
 import { isCategoryPipelineActive } from "@/lib/pipeline-gate-plugin";
 import { embeddingBackendAvailable } from "@/ui/lib/smart-assign/embedding-available";
@@ -354,7 +355,7 @@ export function RoostView({ app, plugin }: RoostViewProps) {
             )}
           </>
         )}
-        {smartAssign.mode === "staging" && smartAssign.pipelineStep === 5 && (
+        {smartAssign.mode === "staging" && smartAssign.pipelineStep === PIPELINE_STEP.REVIEW && (
           <>
             <div className="flex-1" />
             <Button
