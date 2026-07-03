@@ -162,22 +162,15 @@ function hasProductFastPath(tags: string[]): boolean {
 /** Id-only predicate — returns the set of roostIds that are product candidates.
  *  No readRawJson call, so this is cheap enough to use in the pending-pipeline scan. */
 export function gatherProductCandidateIds(app: App, syncFolder: string): Set<string> {
-  const embeddingCache = loadEmbeddingCache(app.vault);
   const fileIndex = buildFileIndex(app, syncFolder);
   const ids = new Set<string>();
   for (const [roostId, file] of fileIndex) {
     const fm = app.metadataCache.getFileCache(file)?.frontmatter;
     if (!fm) continue;
-    const category = (embeddingCache[roostId]?.category || "").toLowerCase();
-    const rawTags: string[] = Array.isArray(fm.tags)
-      ? (fm.tags as unknown[]).map(t => String(t).toLowerCase())
-      : [];
-    const categoryMatch = PRODUCT_CATEGORIES.has(category);
-    const tagMatch = rawTags.some(t => PRODUCT_TAG_KEYWORDS.some(kw => t.includes(kw)));
     const filedCat = String(fm[CATEGORY_FIELD] ?? "").toLowerCase();
     const filedSub = String(fm[SUBCATEGORY_FIELD] ?? "").toLowerCase();
     const filedMatch = FILED_PRODUCT_CATEGORIES.has(filedCat) || FILED_PRODUCT_CATEGORIES.has(filedSub);
-    if (categoryMatch || tagMatch || filedMatch) ids.add(roostId);
+    if (filedMatch) ids.add(roostId);
   }
   return ids;
 }

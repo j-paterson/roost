@@ -314,6 +314,7 @@ function makeRawSyncFile(
   roostId: string,          // e.g. "tiktok:recipe_1"
   syncFolder: string,       // e.g. "Bookmarks/synced"
   embeddingCategory: string,
+  filedCategory?: string,   // optional roost_category to seed in frontmatter
 ): void {
   // 1. Parse platform and id
   const colonIdx = roostId.indexOf(":");
@@ -325,11 +326,12 @@ function makeRawSyncFile(
   // 2. Write sync markdown note with roost_id frontmatter
   const noteDir = path.join(baseDir, syncFolder, platformFolder, attachFolder);
   fs.mkdirSync(noteDir, { recursive: true });
+  const filedCategoryLine = filedCategory ? `\nroost_category: "${filedCategory}"` : "";
   const noteContent = `---
 roost_id: ${roostId}
 title: "Test post for ${roostId}"
 subtitle: ""
-source: tiktok
+source: tiktok${filedCategoryLine}
 ---
 
 How to do a thing. Step by step instructions.
@@ -741,7 +743,7 @@ describe("pipeline runners — uniform harness", () => {
   describe("recipe (in-place enrichment)", () => {
     it("writes recipe_* fields onto the source bookmark", async () => {
       const roostId = "tiktok:recipe_inplace_1";
-      makeRawSyncFile(tmp, roostId, "Bookmarks/synced", "recipe");
+      makeRawSyncFile(tmp, roostId, "Bookmarks/synced", "recipe", "Recipes");
       installOllamaStub("recipe", makeRecipeExtraction());
 
       const app = makeApp(tmp);
@@ -770,7 +772,7 @@ describe("pipeline runners — uniform harness", () => {
 
     it("idempotent: rerun stamps the same fields without churn", async () => {
       const roostId = "tiktok:recipe_inplace_idem";
-      makeRawSyncFile(tmp, roostId, "Bookmarks/synced", "recipe");
+      makeRawSyncFile(tmp, roostId, "Bookmarks/synced", "recipe", "Recipes");
       installOllamaStub("recipe", makeRecipeExtraction());
 
       const app = makeApp(tmp);
@@ -797,7 +799,7 @@ describe("pipeline runners — uniform harness", () => {
   describe("place (in-place enrichment)", () => {
     it("writes place_* fields onto the source bookmark", async () => {
       const roostId = "tiktok:place_inplace_1";
-      makeRawSyncFile(tmp, roostId, "Bookmarks/synced", "travel");
+      makeRawSyncFile(tmp, roostId, "Bookmarks/synced", "travel", "Places");
       installOllamaStub("place", makePlaceExtraction());
 
       const app = makeApp(tmp);
@@ -827,7 +829,7 @@ describe("pipeline runners — uniform harness", () => {
 
     it("idempotent: rerun stamps the same fields without churn", async () => {
       const roostId = "tiktok:place_inplace_idem";
-      makeRawSyncFile(tmp, roostId, "Bookmarks/synced", "travel");
+      makeRawSyncFile(tmp, roostId, "Bookmarks/synced", "travel", "Places");
       installOllamaStub("place", makePlaceExtraction());
 
       const app = makeApp(tmp);
@@ -854,7 +856,7 @@ describe("pipeline runners — uniform harness", () => {
   describe("product (in-place enrichment)", () => {
     it("writes product_* fields onto the source bookmark", async () => {
       const roostId = "tiktok:product_inplace_1";
-      makeRawSyncFile(tmp, roostId, "Bookmarks/synced", "product");
+      makeRawSyncFile(tmp, roostId, "Bookmarks/synced", "product", "Products");
       installOllamaStub("product", makeProductExtraction());
 
       const app = makeApp(tmp);
@@ -883,7 +885,7 @@ describe("pipeline runners — uniform harness", () => {
 
     it("idempotent: rerun stamps the same fields without churn", async () => {
       const roostId = "tiktok:product_inplace_idem";
-      makeRawSyncFile(tmp, roostId, "Bookmarks/synced", "product");
+      makeRawSyncFile(tmp, roostId, "Bookmarks/synced", "product", "Products");
       installOllamaStub("product", makeProductExtraction());
 
       const app = makeApp(tmp);
@@ -910,7 +912,7 @@ describe("pipeline runners — uniform harness", () => {
   describe("workout (in-place enrichment)", () => {
     it("writes workout_* fields onto the source bookmark", async () => {
       const roostId = "tiktok:workout_inplace_1";
-      makeRawSyncFile(tmp, roostId, "Bookmarks/synced", "fitness");
+      makeRawSyncFile(tmp, roostId, "Bookmarks/synced", "fitness", "Fitness");
       installOllamaStub("workout", makeWorkoutExtraction());
 
       const app = makeApp(tmp);
@@ -939,7 +941,7 @@ describe("pipeline runners — uniform harness", () => {
 
     it("idempotent: rerun stamps the same fields without churn", async () => {
       const roostId = "tiktok:workout_inplace_idem";
-      makeRawSyncFile(tmp, roostId, "Bookmarks/synced", "fitness");
+      makeRawSyncFile(tmp, roostId, "Bookmarks/synced", "fitness", "Fitness");
       installOllamaStub("workout", makeWorkoutExtraction());
 
       const app = makeApp(tmp);
@@ -975,7 +977,7 @@ describe("pipeline runners — uniform harness", () => {
   describe("tutorial (full-pipeline integration)", () => {
     it("single matching post → writes tutorial_* fields onto the source bookmark, spawns no Pipelines/Tutorials/ note", async () => {
       const roostId = "tiktok:tutorial_integ_1";
-      makeRawSyncFile(tmp, roostId, "Bookmarks/synced", "tutorial");
+      makeRawSyncFile(tmp, roostId, "Bookmarks/synced", "tutorial", "Tutorials");
       installOllamaStub("tutorial", makeTutorialExtraction());
 
       const app = makeApp(tmp);
@@ -1015,7 +1017,7 @@ describe("pipeline runners — uniform harness", () => {
 
     it("idempotent rerun does not churn the source bookmark", async () => {
       const roostId = "tiktok:tutorial_integ_idem";
-      makeRawSyncFile(tmp, roostId, "Bookmarks/synced", "tutorial");
+      makeRawSyncFile(tmp, roostId, "Bookmarks/synced", "tutorial", "Tutorials");
       installOllamaStub("tutorial", makeTutorialExtraction());
 
       const app = makeApp(tmp);
@@ -1037,7 +1039,7 @@ describe("pipeline runners — uniform harness", () => {
 
     it("triage 'skip' writes no tutorial_* fields and caches the skip", async () => {
       const roostId = "tiktok:tutorial_integ_skip";
-      makeRawSyncFile(tmp, roostId, "Bookmarks/synced", "tutorial");
+      makeRawSyncFile(tmp, roostId, "Bookmarks/synced", "tutorial", "Tutorials");
       __setRequestUrlImpl(async () => ({ status: 200, json: { response: "skip" }, text: "" }));
 
       const app = makeApp(tmp);
@@ -1061,7 +1063,7 @@ describe("pipeline runners — uniform harness", () => {
   describe("home (full-pipeline integration)", () => {
     it("single matching post → writes home_* fields onto the source bookmark, spawns no Pipelines/Home/ note", async () => {
       const roostId = "tiktok:home_integ_1";
-      makeRawSyncFile(tmp, roostId, "Bookmarks/synced", "home");
+      makeRawSyncFile(tmp, roostId, "Bookmarks/synced", "home", "Home");
       installOllamaStub("home", makeHomeExtraction());
 
       const app = makeApp(tmp);
@@ -1102,7 +1104,7 @@ describe("pipeline runners — uniform harness", () => {
 
     it("idempotent rerun does not churn the source bookmark", async () => {
       const roostId = "tiktok:home_integ_idem";
-      makeRawSyncFile(tmp, roostId, "Bookmarks/synced", "home");
+      makeRawSyncFile(tmp, roostId, "Bookmarks/synced", "home", "Home");
       installOllamaStub("home", makeHomeExtraction());
 
       const app = makeApp(tmp);
@@ -1124,7 +1126,7 @@ describe("pipeline runners — uniform harness", () => {
 
     it("triage 'skip' writes no home_* fields and caches the skip", async () => {
       const roostId = "tiktok:home_integ_skip";
-      makeRawSyncFile(tmp, roostId, "Bookmarks/synced", "home");
+      makeRawSyncFile(tmp, roostId, "Bookmarks/synced", "home", "Home");
       __setRequestUrlImpl(async () => ({ status: 200, json: { response: "skip" }, text: "" }));
 
       const app = makeApp(tmp);
@@ -1156,7 +1158,7 @@ describe("pipeline runners — uniform harness", () => {
   describe("recipe (3-way triage — restaurant verdict)", () => {
     it("triage 'restaurant' → no recipe_* fields, no note, cached as restaurant", async () => {
       const roostId = "tiktok:recipe_restaurant_1";
-      makeRawSyncFile(tmp, roostId, "Bookmarks/synced", "recipe");
+      makeRawSyncFile(tmp, roostId, "Bookmarks/synced", "recipe", "Recipes");
       installOllamaStub("restaurant", makeRecipeExtraction());
 
       const app = makeApp(tmp);
@@ -1232,8 +1234,8 @@ describe("pipeline runners — uniform harness", () => {
       // characterizes current allSettled error handling — Phase B will normalize this; update intentionally if it changes.
       const idA = "tiktok:recipe_extok_A";
       const idB = "tiktok:recipe_extfail_B";
-      makeRawSyncFile(tmp, idA, "Bookmarks/synced", "recipe");
-      makeRawSyncFile(tmp, idB, "Bookmarks/synced", "recipe");
+      makeRawSyncFile(tmp, idA, "Bookmarks/synced", "recipe", "Recipes");
+      makeRawSyncFile(tmp, idB, "Bookmarks/synced", "recipe", "Recipes");
       installFailingExtractionStub("recipe", makeRecipeExtraction(), new Set([idB]));
 
       const app = makeApp(tmp);
@@ -1266,8 +1268,8 @@ describe("pipeline runners — uniform harness", () => {
       // characterizes current all+catch error handling — Phase B will normalize this; update intentionally if it changes.
       const idA = "tiktok:product_extok_A";
       const idB = "tiktok:product_extfail_B";
-      makeRawSyncFile(tmp, idA, "Bookmarks/synced", "product");
-      makeRawSyncFile(tmp, idB, "Bookmarks/synced", "product");
+      makeRawSyncFile(tmp, idA, "Bookmarks/synced", "product", "Products");
+      makeRawSyncFile(tmp, idB, "Bookmarks/synced", "product", "Products");
       installFailingExtractionStub("product", makeProductExtraction(), new Set([idB]));
 
       const app = makeApp(tmp);

@@ -39,6 +39,11 @@ import {
   FILED_HOME_CATEGORIES,
   HOME_ENRICHMENT,
 } from "@/pipeline/home-pipeline";
+import {
+  gatherRecipeCandidateIds,
+  FILED_RECIPE_CATEGORIES,
+  RECIPE_ENRICHMENT,
+} from "@/pipeline/recipe-pipeline";
 import { __resetEmbeddingCache } from "@/pipeline/shared";
 
 // ── Minimal fake App factory ──
@@ -160,6 +165,11 @@ describe("gatherPlaceCandidateIds — filed-category branch", () => {
     expect(ids.has("tiktok:p3")).toBe(false);
   });
 
+  it("does NOT gather on content category alone (no filed category)", () => {
+    const { app, syncFolder } = makeApp(tmp, "tiktok:p9", "architecture");
+    expect(gatherPlaceCandidateIds(app, syncFolder).has("tiktok:p9")).toBe(false);
+  });
+
   it("FILED_PLACE_CATEGORIES matches PLACE_ENRICHMENT.categoryMatches (single source of truth)", () => {
     const fromGate = [...FILED_PLACE_CATEGORIES].sort();
     const fromRegistry = (PLACE_ENRICHMENT.categoryMatches ?? [])
@@ -192,6 +202,11 @@ describe("gatherProductCandidateIds — filed-category branch", () => {
     const { app, syncFolder } = makeApp(tmp, "tiktok:pr3", "random-unrelated-thing");
     const ids = gatherProductCandidateIds(app, syncFolder);
     expect(ids.has("tiktok:pr3")).toBe(false);
+  });
+
+  it("does NOT gather on content category alone (no filed category)", () => {
+    const { app, syncFolder } = makeApp(tmp, "tiktok:pr9", "gadget");
+    expect(gatherProductCandidateIds(app, syncFolder).has("tiktok:pr9")).toBe(false);
   });
 
   it("FILED_PRODUCT_CATEGORIES matches PRODUCT_ENRICHMENT.categoryMatches (single source of truth)", () => {
@@ -228,6 +243,11 @@ describe("gatherWorkoutCandidateIds — filed-category branch", () => {
     expect(ids.has("tiktok:w3")).toBe(false);
   });
 
+  it("does NOT gather on content category alone (no filed category)", () => {
+    const { app, syncFolder } = makeApp(tmp, "tiktok:w9", "yoga");
+    expect(gatherWorkoutCandidateIds(app, syncFolder).has("tiktok:w9")).toBe(false);
+  });
+
   it("FILED_WORKOUT_CATEGORIES matches WORKOUT_ENRICHMENT.categoryMatches (single source of truth)", () => {
     const fromGate = [...FILED_WORKOUT_CATEGORIES].sort();
     const fromRegistry = (WORKOUT_ENRICHMENT.categoryMatches ?? [])
@@ -260,6 +280,11 @@ describe("gatherTutorialCandidateIds — filed-category branch", () => {
     const { app, syncFolder } = makeApp(tmp, "tiktok:t3", "random-unrelated-thing");
     const ids = gatherTutorialCandidateIds(app, syncFolder);
     expect(ids.has("tiktok:t3")).toBe(false);
+  });
+
+  it("does NOT gather on content category alone (no filed category)", () => {
+    const { app, syncFolder } = makeApp(tmp, "tiktok:t9", "coding");
+    expect(gatherTutorialCandidateIds(app, syncFolder).has("tiktok:t9")).toBe(false);
   });
 
   it("FILED_TUTORIAL_CATEGORIES matches TUTORIAL_ENRICHMENT.categoryMatches (single source of truth)", () => {
@@ -304,11 +329,38 @@ describe("gatherHomeCandidateIds — filed-category branch", () => {
     expect(ids.has("tiktok:h3")).toBe(false);
   });
 
+  it("does NOT gather on content category alone (no filed category)", () => {
+    const { app, syncFolder } = makeApp(tmp, "tiktok:h9", "furniture");
+    expect(gatherHomeCandidateIds(app, syncFolder).has("tiktok:h9")).toBe(false);
+  });
+
   it("FILED_HOME_CATEGORIES matches HOME_ENRICHMENT.categoryMatches (single source of truth)", () => {
     const fromGate = [...FILED_HOME_CATEGORIES].sort();
     const fromRegistry = (HOME_ENRICHMENT.categoryMatches ?? [])
       .map(c => c.toLowerCase())
       .sort();
+    expect(fromRegistry).toEqual(fromGate);
+  });
+});
+
+// ── Recipe pipeline ──
+
+describe("gatherRecipeCandidateIds — filed-category branch", () => {
+  it("gathers item whose roost_category matches categoryMatches even with non-recipe embedded.category", () => {
+    const { app, syncFolder } = makeApp(tmp, "tiktok:r1", "unrelated-thing", {
+      roost_category: "Recipes",
+    });
+    expect(gatherRecipeCandidateIds(app, syncFolder).has("tiktok:r1")).toBe(true);
+  });
+
+  it("does NOT gather on content category alone (no filed category)", () => {
+    const { app, syncFolder } = makeApp(tmp, "tiktok:r9", "baking");
+    expect(gatherRecipeCandidateIds(app, syncFolder).has("tiktok:r9")).toBe(false);
+  });
+
+  it("FILED_RECIPE_CATEGORIES matches RECIPE_ENRICHMENT.categoryMatches (single source of truth)", () => {
+    const fromGate = [...FILED_RECIPE_CATEGORIES].sort();
+    const fromRegistry = (RECIPE_ENRICHMENT.categoryMatches ?? []).map(c => c.toLowerCase()).sort();
     expect(fromRegistry).toEqual(fromGate);
   });
 });

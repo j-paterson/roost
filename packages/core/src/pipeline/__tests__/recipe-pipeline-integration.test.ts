@@ -31,6 +31,7 @@ roost_id: ${roostId}
 title: "Pasta carbonara with guanciale"
 subtitle: ""
 source: twitter
+roost_category: "Recipes"
 ---
 
 Pasta carbonara recipe video.

@@ -163,7 +163,7 @@ describe("scanPendingPipelines", () => {
   });
 
   it("(a) in-scope candidate with no cache entry → counted pending", () => {
-    const fake = makeApp(tmp, "tiktok:r1", "recipe");
+    const fake = makeApp(tmp, "tiktok:r1", "recipe", { roost_category: "Recipes" });
     const plugin = makePlugin(fake);
     const result = scanPendingPipelines(plugin, Date.now());
     expect(result.byPipeline["recipe"].pending).toBeGreaterThanOrEqual(1);
@@ -200,7 +200,7 @@ describe("scanPendingPipelines", () => {
   });
 
   it("(d) {triage:'recipe', extraction:null} → counted pending (triaged-to-extract)", () => {
-    const fake = makeApp(tmp, "tiktok:r1", "recipe");
+    const fake = makeApp(tmp, "tiktok:r1", "recipe", { roost_category: "Recipes" });
     savePipelineCache(
       fake.vault as unknown as Parameters<typeof savePipelineCache>[0],
       RECIPE_CACHE_FILE,
@@ -217,6 +217,7 @@ describe("scanPendingPipelines", () => {
     // Note has an OLD enrichment_v_recipe field
     const fake = makeApp(tmp, "tiktok:r1", "recipe", {
       [`enrichment_v_recipe`]: schemaV - 1,
+      roost_category: "Recipes",
     });
     // Completed (non-pending) cache entry
     savePipelineCache(
