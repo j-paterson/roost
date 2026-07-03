@@ -76,3 +76,6 @@ tools/vault-search/dist/
 !tools/vault-search/docs/
 !tools/vault-search/docs/**
 tests/e2e/.ig-rest-probe.json
+
+# Large ML training checkpoints — live in the vault (.roost/build/checkpoints), never in git
+checkpoints/
