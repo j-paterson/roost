@@ -1,15 +1,22 @@
 import { describe, it, expect } from "vitest";
-import { seedReviewIds, greenLast } from "@/ui/lib/smart-assign/review-pass";
+import { orderReviewIdsByGrid, greenLast } from "@/ui/lib/smart-assign/review-pass";
 
-describe("seedReviewIds", () => {
-  it("flattens all proposal ids, most-uncertain (lowest score) first, stable when scoreless", () => {
-    const folders = [{ name: "A", itemIds: ["a1", "a2"] }, { name: "B", itemIds: ["b1"] }];
-    const score = (id: string) => ({ a1: 8, a2: 3, b1: 5 } as Record<string, number>)[id];
-    expect(seedReviewIds(folders, score)).toEqual(["a2", "b1", "a1"]);
+describe("orderReviewIdsByGrid", () => {
+  it("orders proposals by the grid order", () => {
+    const gridOrder = ["c", "a", "b", "d"];       // gallery display order
+    const proposals = ["a", "b", "c"];
+    expect(orderReviewIdsByGrid(gridOrder, proposals)).toEqual(["c", "a", "b"]);
   });
-  it("keeps proposal order when no scores", () => {
-    const folders = [{ name: "A", itemIds: ["a1", "a2"] }, { name: "B", itemIds: ["b1"] }];
-    expect(seedReviewIds(folders, () => undefined)).toEqual(["a1", "a2", "b1"]);
+  it("appends proposals not present in the grid, preserving their input order", () => {
+    const gridOrder = ["c", "a"];
+    const proposals = ["a", "x", "c", "y"];        // x,y not in grid
+    expect(orderReviewIdsByGrid(gridOrder, proposals)).toEqual(["c", "a", "x", "y"]);
+  });
+  it("returns the proposal order when the grid order is empty (fallback)", () => {
+    expect(orderReviewIdsByGrid([], ["a", "b"])).toEqual(["a", "b"]);
+  });
+  it("ignores grid ids that are not proposals", () => {
+    expect(orderReviewIdsByGrid(["z", "a", "z"], ["a"])).toEqual(["a"]);
   });
 });
 

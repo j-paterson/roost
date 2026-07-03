@@ -76,7 +76,7 @@ export class GalleryFeedModeController {
   feedAutoOpenedForMedia = false;
   trainingMode = false;
   /** When non-null the controller is in review-pass mode: feed entries are seeded from
-   *  these ids (pre-ordered by seedReviewIds) instead of filterTrainingEntries. */
+   *  these ids (ordered by the gallery grid) instead of filterTrainingEntries. */
   reviewPassIds: string[] | null = null;
   /** roostId → proposed folder.name; set by startReviewPass, used in confirm to avoid
    *  reading stale frontmatter. Null when not in a review pass. */
@@ -183,8 +183,8 @@ export class GalleryFeedModeController {
     if (this.viewMode === "feed") this.exitFeedMode();
   }
 
-  /** Enter review-pass mode: seed the feed from pre-ordered proposal ids (produced
-   *  by seedReviewIds at the call site). Must be called while trainingMode is on
+  /** Enter review-pass mode: seed the feed from pre-ordered proposal ids (ordered
+   *  by the gallery grid at the call site). Must be called while trainingMode is on
    *  (or before entering training mode).
    *  proposalMap is roostId → proposed folder.name so confirm can use the proposed
    *  category rather than (potentially absent or stale) frontmatter. */

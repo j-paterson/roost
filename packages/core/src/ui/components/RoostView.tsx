@@ -19,7 +19,6 @@ import { useRoostCategoryTree } from "@/ui/hooks/use-roost-category-tree";
 import { useLibraryTree } from "@/ui/hooks/use-library-tree";
 import { useRoostSidebarLog } from "@/ui/hooks/use-roost-sidebar-log";
 import { buildFilterInput } from "@/ui/lib/smart-assign-inputs";
-import { seedReviewIds } from "@/ui/lib/smart-assign/review-pass";
 import { PIPELINE_STEP } from "@/ui/lib/smart-assign/pipeline-steps";
 import { getPipelineCategoryNames } from "@/lib/enrichments";
 import { isCategoryPipelineActive } from "@/lib/pipeline-gate-plugin";
@@ -364,7 +363,7 @@ export function RoostView({ app, plugin }: RoostViewProps) {
               disabled={smartAssign.confirming || !(smartAssign.proposedFolders?.length)}
               onClick={() => {
                 const folders = smartAssign.proposedFolders ?? [];
-                const ids = seedReviewIds(folders, (id) => smartAssign.matchDetailMap?.get(id)?.score);
+                const ids = folders.flatMap((f) => f.itemIds);
                 // Build roostId → proposed category name so the controller can confirm
                 // the PROPOSED category rather than the stale frontmatter value.
                 const proposalMap: Record<string, string> = {};

@@ -78,6 +78,7 @@ import { loadSnapshot, saveSnapshot } from "@/pipeline/category-snapshot";
 import { loadTrainingSet, saveTrainingSet } from "@/pipeline/training-set";
 import { appendEvalRecords } from "@/pipeline/eval-log";
 import { readGuess } from "@/views/feed/training-mode";
+import { orderReviewIdsByGrid } from "@/ui/lib/smart-assign/review-pass";
 import { WindowedCardGrid } from "@/views/windowing/windowed-card-grid";
 
 export const BASES_VIEW_ID = "roost-bookmarks";
@@ -568,7 +569,10 @@ export class BookmarksBasesView extends BasesView
         if (data?.action === "startReviewPass") {
           // Set review-pass ids FIRST so enterFeedMode (triggered by setTrainingMode)
           // calls trainingEntries() with the correct reviewPassIds already set.
-          this.feedMode.startReviewPass(data.itemIds, data.proposalMap);
+          this.feedMode.startReviewPass(
+            orderReviewIdsByGrid(this.getOrderedRoostIds(), data.itemIds),
+            data.proposalMap,
+          );
           this.feedMode.setTrainingMode(true);
         } else if (data?.action === "smartAssignRunStarted") {
           // Per-run reset of review state. This must NOT live in setMatchState:

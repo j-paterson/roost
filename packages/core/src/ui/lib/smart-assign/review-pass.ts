@@ -1,20 +1,16 @@
 // packages/core/src/ui/lib/smart-assign/review-pass.ts
 /** Pure helpers for the Smart Assign review pass. No Obsidian deps. */
 
-/** All proposal item ids, ordered most-uncertain first (lowest score), stable otherwise.
- *  `score` returns a match confidence (higher = more confident); undefined sorts last. */
-export function seedReviewIds(
-  folders: { name: string; itemIds: string[] }[],
-  score: (id: string) => number | undefined,
-): string[] {
-  const ids = folders.flatMap((f) => f.itemIds);
-  return ids
-    .map((id, i) => ({ id, i, s: score(id) }))
-    .sort((a, b) => {
-      const av = a.s ?? Infinity, bv = b.s ?? Infinity;
-      return av !== bv ? av - bv : a.i - b.i; // lowest score first; stable
-    })
-    .map((x) => x.id);
+/** Order the proposal ids to match the gallery's display order (the single source of truth).
+ *  Proposals present in `gridOrder` come first in that order; any not currently in the grid are
+ *  appended, preserving their input order. Falls back to the proposal order when `gridOrder` is
+ *  empty (grid not yet built). */
+export function orderReviewIdsByGrid(gridOrder: string[], proposalIds: string[]): string[] {
+  const proposals = new Set(proposalIds);
+  const ordered = gridOrder.filter((id) => proposals.has(id));
+  const seen = new Set(ordered);
+  const missing = proposalIds.filter((id) => !seen.has(id));
+  return [...ordered, ...missing];
 }
 
 /** Reorder a folder's ids so human-assigned (green) ids come after the rest,
