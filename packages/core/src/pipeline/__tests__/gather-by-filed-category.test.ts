@@ -44,6 +44,11 @@ import {
   FILED_RECIPE_CATEGORIES,
   RECIPE_ENRICHMENT,
 } from "@/pipeline/recipe-pipeline";
+import {
+  gatherMediaCandidateIds,
+  FILED_MEDIA_CATEGORIES,
+  MEDIA_EXTRACTION_ENRICHMENT,
+} from "@/pipeline/media-pipeline";
 import { __resetEmbeddingCache } from "@/pipeline/shared";
 
 // ── Minimal fake App factory ──
@@ -361,6 +366,35 @@ describe("gatherRecipeCandidateIds — filed-category branch", () => {
   it("FILED_RECIPE_CATEGORIES matches RECIPE_ENRICHMENT.categoryMatches (single source of truth)", () => {
     const fromGate = [...FILED_RECIPE_CATEGORIES].sort();
     const fromRegistry = (RECIPE_ENRICHMENT.categoryMatches ?? []).map(c => c.toLowerCase()).sort();
+    expect(fromRegistry).toEqual(fromGate);
+  });
+});
+
+// ── Media pipeline ──
+
+describe("gatherMediaCandidateIds — filed-category gate", () => {
+  it("gathers item filed under a media category (e.g. roost_category: Media)", () => {
+    const { app, syncFolder } = makeApp(tmp, "tiktok:m1", "unrelated-thing", {
+      roost_category: "Media",
+    });
+    expect(gatherMediaCandidateIds(app, syncFolder).has("tiktok:m1")).toBe(true);
+  });
+
+  it("gathers item whose roost_subcategory is a music subcategory (playback routing)", () => {
+    const { app, syncFolder } = makeApp(tmp, "tiktok:m2", "unrelated-thing", {
+      roost_subcategory: "Music",
+    });
+    expect(gatherMediaCandidateIds(app, syncFolder).has("tiktok:m2")).toBe(true);
+  });
+
+  it("does NOT gather on content category alone (no filed category)", () => {
+    const { app, syncFolder } = makeApp(tmp, "tiktok:m9", "podcast");
+    expect(gatherMediaCandidateIds(app, syncFolder).has("tiktok:m9")).toBe(false);
+  });
+
+  it("FILED_MEDIA_CATEGORIES matches MEDIA_EXTRACTION_ENRICHMENT.categoryMatches (single source of truth)", () => {
+    const fromGate = [...FILED_MEDIA_CATEGORIES].sort();
+    const fromRegistry = (MEDIA_EXTRACTION_ENRICHMENT.categoryMatches ?? []).map(c => c.toLowerCase()).sort();
     expect(fromRegistry).toEqual(fromGate);
   });
 });

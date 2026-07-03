@@ -541,7 +541,7 @@ describe("pipeline runners — uniform harness", () => {
   describe("media (in-place enrichment)", () => {
     it("writes media_* fields onto the source bookmark", async () => {
       const roostId = "tiktok:media_inplace_1";
-      makeRawSyncFile(tmp, roostId, "Bookmarks/synced", "film");
+      makeRawSyncFile(tmp, roostId, "Bookmarks/synced", "film", "Media");
       installOllamaStub("media", makeMediaExtraction());
 
       const app = makeApp(tmp);
@@ -574,7 +574,7 @@ describe("pipeline runners — uniform harness", () => {
 
     it("idempotent: rerun stamps the same fields without churn", async () => {
       const roostId = "tiktok:media_inplace_idem";
-      makeRawSyncFile(tmp, roostId, "Bookmarks/synced", "film");
+      makeRawSyncFile(tmp, roostId, "Bookmarks/synced", "film", "Media");
       installOllamaStub("media", makeMediaExtraction());
 
       const app = makeApp(tmp);
@@ -597,8 +597,8 @@ describe("pipeline runners — uniform harness", () => {
 
     // ── Rule 2: subcategory backfill ─────────────────────────────────
 
-    it("subcategory backfill: sets both roost_category + roost_subcategory when both empty", async () => {
-      const roostId = "tiktok:media_subcat_blank";
+    it("does NOT process a media-content item that has no filed category", async () => {
+      const roostId = "tiktok:media_unfiled";
       makeRawSyncFile(tmp, roostId, "Bookmarks/synced", "film");
       installOllamaStub("media", makeMediaExtraction({ mediaType: "book" }));
 
@@ -609,8 +609,8 @@ describe("pipeline runners — uniform harness", () => {
       const sourceFile = app.vault.getMarkdownFiles()
         .find((f: any) => f.path.startsWith("Bookmarks/synced/")) as any;
       const fm = (app as any).metadataCache.getFileCache(sourceFile)?.frontmatter ?? {};
-      expect(fm.roost_category).toBe("Media");
-      expect(fm.roost_subcategory).toBe("Books");
+      expect(fm.roost_category).toBeUndefined();
+      expect(fm.media_title).toBeUndefined();
     });
 
     it("subcategory backfill: fills subcategory only when category=\"Media\" is already set", async () => {
@@ -635,8 +635,8 @@ describe("pipeline runners — uniform harness", () => {
       expect(fm.roost_subcategory).toBe("Films");
     });
 
-    it("subcategory backfill: leaves both alone when category is set to something other than \"Media\"", async () => {
-      const roostId = "tiktok:media_subcat_other_cat";
+    it("does NOT enrich an item filed under a non-media category (Travel)", async () => {
+      const roostId = "tiktok:media_travel";
       makeRawSyncFile(tmp, roostId, "Bookmarks/synced", "film");
       const target = findMdUnder(path.join(tmp, "Bookmarks", "synced"));
       let content = fs.readFileSync(target, "utf-8");
@@ -653,12 +653,7 @@ describe("pipeline runners — uniform harness", () => {
         .find((f: any) => f.path.startsWith("Bookmarks/synced/")) as any;
       const fm = (app as any).metadataCache.getFileCache(sourceFile)?.frontmatter ?? {};
       expect(fm.roost_category).toBe("Travel");
-      expect(fm.roost_subcategory).toBeUndefined();
-      // Pipeline never writes media_type alongside the user's curation —
-      // roost_subcategory is the single source of truth.
-      expect(fm.media_type).toBeUndefined();
-      // ...but the LLM-extracted data fields still land.
-      expect(fm.media_title).toBeDefined();
+      expect(fm.media_title).toBeUndefined();
     });
 
     // ── Rule 1: filter-scoped runs ───────────────────────────────────

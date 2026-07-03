@@ -135,18 +135,14 @@ interface MediaCandidate {
 
 // ── Constants ──
 
-const MEDIA_CATEGORIES = new Set([
-  "book", "film", "movie", "anime", "music", "reading", "watchlist",
-  "manga", "series", "soundtrack", "entertainment", "tv", "television",
-  "podcast", "documentary", "gaming",
-]);
+/** Single source of truth for the roost_category / roost_subcategory values the
+ *  media pipeline owns. Feeds FILED_MEDIA_CATEGORIES (the gather gate, lowercased)
+ *  and MEDIA_ENRICHMENT.categoryMatches so the two can't desync. */
+const MEDIA_FILED_CATEGORIES = ["Media", "Media List", "Books", "Book", "Film", "TV"] as const;
 
-const MEDIA_TAG_KEYWORDS = [
-  "book", "booktok", "reading", "film", "filmtok", "movie", "movietok",
-  "anime", "animetok", "manga", "mangatok", "music", "musictok",
-  "series", "tvshow", "podcast", "documentary", "watchlist", "tbr",
-  "bookish", "readingtok", "soundtrack", "kdrama",
-];
+/** roost_category / roost_subcategory values the media pipeline owns. Exported
+ *  for the single-source-of-truth test. */
+export const FILED_MEDIA_CATEGORIES = new Set(MEDIA_FILED_CATEGORIES.map(c => c.toLowerCase()));
 
 /** Tags that auto-triage as media without needing LLM. */
 const FAST_PATH_TAGS = new Set([
@@ -230,19 +226,18 @@ function hasMediaFastPath(tags: string[]): boolean {
  *  per-run narrowing mode not part of the default discovery pass.
  *  No readRawJson call, so this is cheap enough to use in the pending-pipeline scan. */
 export function gatherMediaCandidateIds(app: App, syncFolder: string): Set<string> {
-  const embeddingCache = loadEmbeddingCache(app.vault);
   const fileIndex = buildFileIndex(app, syncFolder);
   const ids = new Set<string>();
   for (const [roostId, file] of fileIndex) {
     const fm = app.metadataCache.getFileCache(file)?.frontmatter;
     if (!fm) continue;
-    const category = (embeddingCache[roostId]?.category || "").toLowerCase();
-    const rawTags: string[] = Array.isArray(fm.tags)
-      ? (fm.tags as unknown[]).map(t => String(t).toLowerCase())
-      : [];
-    const categoryMatch = MEDIA_CATEGORIES.has(category);
-    const tagMatch = rawTags.some(t => MEDIA_TAG_KEYWORDS.some(kw => t.includes(kw)));
-    if (categoryMatch || tagMatch) ids.add(roostId);
+    const filedCat = String(fm[CATEGORY_FIELD] ?? "").toLowerCase();
+    const filedSub = String(fm[SUBCATEGORY_FIELD] ?? "").toLowerCase();
+    const filedMatch =
+      FILED_MEDIA_CATEGORIES.has(filedCat) ||
+      FILED_MEDIA_CATEGORIES.has(filedSub) ||
+      MUSIC_SUBCATEGORIES.has(filedSub);
+    if (filedMatch) ids.add(roostId);
   }
   return ids;
 }
@@ -276,18 +271,13 @@ function gatherCandidates(
         if (fmSubcategory !== filter.subcategory.toLowerCase()) continue;
       }
     } else {
-      const embedded = embeddingCache[roostId];
-      const category = (embedded?.category || "").toLowerCase();
-      const rawTags: string[] = Array.isArray(fm.tags)
-        ? (fm.tags as unknown[]).map(t => String(t).toLowerCase())
-        : [];
-
-      const categoryMatch = MEDIA_CATEGORIES.has(category);
-      const tagMatch = rawTags.some(t =>
-        MEDIA_TAG_KEYWORDS.some(kw => t.includes(kw)),
-      );
-
-      if (!categoryMatch && !tagMatch) continue;
+      const filedCat = String(fm[CATEGORY_FIELD] ?? "").toLowerCase();
+      const filedSub = String(fm[SUBCATEGORY_FIELD] ?? "").toLowerCase();
+      const filedMatch =
+        FILED_MEDIA_CATEGORIES.has(filedCat) ||
+        FILED_MEDIA_CATEGORIES.has(filedSub) ||
+        MUSIC_SUBCATEGORIES.has(filedSub);
+      if (!filedMatch) continue;
     }
 
     const embedded = embeddingCache[roostId];
@@ -503,17 +493,13 @@ async function writeMediaToBookmark(
   if (Object.keys(updates).length === 0) return;
 
   const fm = app.metadataCache.getFileCache(c.file)?.frontmatter ?? {};
-  const existingCategory = typeof fm[CATEGORY_FIELD] === "string" ? fm[CATEGORY_FIELD] : null;
   const existingSubcategory = typeof fm[SUBCATEGORY_FIELD] === "string" ? fm[SUBCATEGORY_FIELD] : null;
-  // Subcategory backfill (rule 2) requires an extraction — without it
-  // we don't know which media-type display name to stamp.
+  // Subcategory backfill: only when the note is already filed under Media and
+  // has no subcategory. Never assign a fresh roost_category.
   if (extraction && !existingSubcategory) {
-    const displayName = MEDIA_TYPE_DISPLAY[extraction.mediaType];
-    if (!existingCategory) {
-      updates[CATEGORY_FIELD] = "Media";
-      updates[SUBCATEGORY_FIELD] = displayName;
-    } else if (existingCategory === "Media") {
-      updates[SUBCATEGORY_FIELD] = displayName;
+    const existingCategory = typeof fm[CATEGORY_FIELD] === "string" ? fm[CATEGORY_FIELD] : null;
+    if (existingCategory === "Media") {
+      updates[SUBCATEGORY_FIELD] = MEDIA_TYPE_DISPLAY[extraction.mediaType];
     }
   }
 
@@ -869,7 +855,7 @@ export const MEDIA_EXTRACTION_ENRICHMENT: EnrichmentDef = {
     await runMediaPipeline(plugin.app, plugin.settings.syncFolder, opts?.onLog, opts?.filter, "", opts?.signal);
   },
   panelDetail: "Extract titles, creators, ratings, and where-to-watch links. Writes media_* fields onto each source bookmark.",
-  categoryMatches: ["Media", "Media List", "Books", "Book", "Film", "TV"],
+  categoryMatches: [...MEDIA_FILED_CATEGORIES],
   fieldsWritten: ["media_title", "media_creator", "media_genre", "media_rating", "media_where", "media_year", "media_spotify_id", "media_tmdb_id", "media_tmdb_type", "media_anilist_id", "media_description"],
   legacyAliases: ["pipeline_v_media"],
   chips: [
@@ -878,3 +864,4 @@ export const MEDIA_EXTRACTION_ENRICHMENT: EnrichmentDef = {
     { field: "media_where", kind: "where" },
   ],
 };
+
