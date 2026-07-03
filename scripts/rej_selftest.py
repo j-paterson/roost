@@ -62,3 +62,18 @@ if __name__ == "__main__":
     test_head_confident_on_clean_clusters()
     test_cascade_rejects_far_point()
     print("rej_signals OK")
+
+N = _load("rej_negatives")
+
+def test_leave_one_out_splits():
+    train = [{"id": "f1", "groundTruth": "Food", "isNegative": False},
+             {"id": "t1", "groundTruth": "Tech", "isNegative": False}]
+    ev = [{"id": "f2", "groundTruth": "Food", "isNegative": False},
+          {"id": "t2", "groundTruth": "Tech", "isNegative": False}]
+    train_wo, ood = N.leave_one_out(train, ev, "Food")
+    assert [x["id"] for x in train_wo] == ["t1"], train_wo
+    assert ood == ["f2"], ood
+
+if __name__ == "__main__":
+    test_leave_one_out_splits()
+    print("rej_negatives OK")
