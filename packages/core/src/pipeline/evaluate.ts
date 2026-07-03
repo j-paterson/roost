@@ -1244,7 +1244,7 @@ export function buildCategoryDefs(
 ): CategoryDef[] {
   const defs: CategoryDef[] = [];
   for (const [name, ids] of Object.entries(collections)) {
-    if (RESERVED_NON_CATEGORIES.has(name.toLowerCase())) continue;
+    if (RESERVED_NON_CATEGORIES.has(name.toLowerCase())) continue; // also drops any subcategory-named "Other"; harmless at current data
     const validIds = ids.filter(id => cache[id]?.vec);
     const vecs = validIds.map(id => cache[id].vec!);
     const nameVec = nameEmbeddings?.get(name.toLowerCase()) ?? null;

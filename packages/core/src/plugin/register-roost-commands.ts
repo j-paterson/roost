@@ -106,7 +106,7 @@ export function registerRoostCommands(plugin: RoostCommandHost): void {
   });
   plugin.addCommand({
     id: "review-other-unsorted",
-    name: "Review 'Other' / unsorted items",
+    name: "Review 'Other' items",
     callback: () => {
       const cache = loadEmbeddingCache(plugin.app.vault);
       const head = loadClassifierHead(plugin.app.vault);

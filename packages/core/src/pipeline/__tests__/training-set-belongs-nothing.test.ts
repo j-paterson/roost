@@ -17,6 +17,6 @@ describe("belongs-nothing sentinel", () => {
   });
   it("suppressionMap does not surface the sentinel as a category", () => {
     const ts = markBelongsNothing(emptyTrainingSet(), "id1");
-    expect(suppressionMap(ts).get("id1")?.has(BELONGS_NOTHING)).toBeFalsy();
+    expect(suppressionMap(ts).has("id1")).toBe(false);
   });
 });

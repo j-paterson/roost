@@ -172,8 +172,12 @@ def main():
     # vault= enables live frontmatter scan for roost_belongs_nothing: true stamps
     gold_ids = [g for g in N.load_gold(build, vault=vault) if cache.get(g) is not None]
     if not gold_ids:
-        print("NOTE: gold set (belongs-nothing-gold.json) not yet created — "
-              "OSCR-vs-gold omitted (gold review pending).")
+        if vault:
+            print("NOTE: No belongs-nothing-stamped items found in vault — "
+                  "OSCR-vs-gold omitted (gold review pending).")
+        else:
+            print("NOTE: gold set (belongs-nothing-gold.json) not yet created — "
+                  "OSCR-vs-gold omitted (gold review pending).")
 
     # ── Load unlabeled pool — DIAGNOSTIC ONLY, never fed to oscr/auroc ──
     print("Loading unlabeled pool (diagnostic only)...")
@@ -244,9 +248,13 @@ def main():
             loo[c] = round(L.auroc(kn, un), 4)
             print(f"  {c}: LOO OOD AUROC = {loo[c]} ({len(ood_ids)} OOD, {len(kn)} known)")
 
-    notes = [
+    _gold_omit_note = (
+        "OSCR/AURC vs gold: OMITTED — No belongs-nothing-stamped items found in vault (gold review pending)."
+        if vault else
         "OSCR/AURC vs gold: OMITTED — belongs-nothing-gold.json not yet created (gold review pending)."
-        if not gold_ids else f"OSCR/AURC vs gold: computed on {len(gold_ids)} human-verified OOD items.",
+    )
+    notes = [
+        _gold_omit_note if not gold_ids else f"OSCR/AURC vs gold: computed on {len(gold_ids)} human-verified OOD items.",
         "Unlabeled accept-rate pool = items with NO `collection` AND NO `roost_category` (truly untouched). NOT ground-truth OOD.",
         f"~{neg_comp['pct_system_sorted']}% of no-collection items carry roost_category "
         f"(system-sorted, not truly unfiled) → pool is NOT trusted OOD ground truth.",

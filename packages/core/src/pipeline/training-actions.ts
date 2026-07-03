@@ -85,7 +85,9 @@ export async function markBelongsNothingItem(deps: TrainingActionDeps): Promise<
   const snap = loadSnapshot(vault); snap[id] = snapshotValue; saveSnapshot(vault, snap);
   saveTrainingSet(vault, ts);
   appendEvalRecords(vault, [evalRecord]);
-  await fileManager.processFrontMatter(file, (fm) => { Object.assign(fm, patch); });
+  await fileManager.processFrontMatter(file, (fm) => {
+    for (const [k, v] of Object.entries(patch)) { if (v === null) delete (fm as Record<string, unknown>)[k]; else (fm as Record<string, unknown>)[k] = v; }
+  });
 }
 
 /** Pure: confirm a review PROPOSAL (category not yet in frontmatter). Writes the

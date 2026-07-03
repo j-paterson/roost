@@ -100,7 +100,7 @@ export function gatherReviewTargets(
   // Sort ascending by confidence (least confident = most uncertain = highest
   // training value reviewed first).
   collectedIds.sort(
-    (a, b) => (confidenceMap.get(a) ?? 0) - (confidenceMap.get(b) ?? 0),
+    (a, b) => (confidenceMap.get(a) ?? 0) - (confidenceMap.get(b) ?? 0) || a.localeCompare(b),
   );
 
   return { ids: collectedIds, proposalMap };
