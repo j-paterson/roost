@@ -154,7 +154,7 @@ export function mountFeedPanel(
     });
   };
   const onScrollEnd = (): void => {
-    if (suppressScrollSync) return;
+    if (suppressScrollSync || disposed) return;
     const idx = currentIndexFromScroll();
     if (idx !== activeIndex) setActiveIndex(idx, true);
   };
