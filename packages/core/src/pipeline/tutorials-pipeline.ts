@@ -93,12 +93,6 @@ interface TutorialCandidate {
 
 // ── Constants ──
 
-const TUTORIAL_CATEGORIES = new Set([
-  "tutorial", "howto", "diy", "learning", "education", "coding",
-  "programming", "art", "drawing", "photography", "editing",
-  "design", "craft", "woodworking", "sewing", "knitting",
-]);
-
 const FAST_PATH_TAGS = new Set([
   "tutorial", "stepbystep", "howto", "edutok", "learnontiktok",
 ]);

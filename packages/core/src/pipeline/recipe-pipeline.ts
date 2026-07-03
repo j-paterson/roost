@@ -70,12 +70,6 @@ export interface RecipeCandidate {
 
 // ── Constants ──
 
-const RECIPE_CATEGORIES = new Set([
-  "recipe", "cooking", "food", "restaurant", "meal", "dinner",
-  "lunch", "breakfast", "baking", "bbq", "grilling", "vegan",
-  "vegetarian",
-]);
-
 /** Single source of truth for the roost_category / roost_subcategory values the
  *  recipe pipeline owns. Consumed by FILED_RECIPE_CATEGORIES (the gather gate,
  *  lowercased) and RECIPE_ENRICHMENT.categoryMatches (UI/settings gating), so the

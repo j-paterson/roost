@@ -77,11 +77,6 @@ interface ProductCandidate {
 
 // ── Constants ──
 
-const PRODUCT_CATEGORIES = new Set([
-  "product", "tech", "gadget", "gear", "fashion", "style", "skincare",
-  "beauty", "makeup", "shopping", "review", "unboxing",
-]);
-
 const FAST_PATH_TAGS = new Set([
   "unboxing", "haul", "amazonfinds", "tiktokmademebuyit",
   "productreview", "amazonmusthaves", "techreview",

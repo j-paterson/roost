@@ -172,7 +172,7 @@ describe("scanPendingPipelines", () => {
   });
 
   it("(b) skip-verdict cache entry → NOT pending (anti-nag)", () => {
-    const fake = makeApp(tmp, "tiktok:r1", "recipe");
+    const fake = makeApp(tmp, "tiktok:r1", "recipe", { roost_category: "Recipes" });
     savePipelineCache(
       fake.vault as unknown as Parameters<typeof savePipelineCache>[0],
       RECIPE_CACHE_FILE,
@@ -187,7 +187,7 @@ describe("scanPendingPipelines", () => {
   it("(c) completed extraction + current schema → not pending, not stale", () => {
     // A note WITHOUT the enrichment_v_recipe field → isVersionStale returns false (legacy items
     // are not auto-flagged). So a completed extraction is not stale by default.
-    const fake = makeApp(tmp, "tiktok:r1", "recipe");
+    const fake = makeApp(tmp, "tiktok:r1", "recipe", { roost_category: "Recipes" });
     savePipelineCache(
       fake.vault as unknown as Parameters<typeof savePipelineCache>[0],
       RECIPE_CACHE_FILE,

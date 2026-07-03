@@ -177,7 +177,8 @@ interface HarnessCase {
   expectedFrontmatterKeys: string[];
   /**
    * Category value stored in .roost/embedding-cache.json.
-   * Must be in the pipeline's filter set (e.g. RECIPE_CATEGORIES, HOME_CATEGORIES…).
+   * The gather gate now reads filed frontmatter (roost_category/roost_subcategory),
+   * not the embedded category — this field is retained for cache seeding only.
    */
   embeddingCategory: string;
 }

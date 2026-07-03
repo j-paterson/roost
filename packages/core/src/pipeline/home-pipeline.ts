@@ -70,12 +70,6 @@ interface HomeCandidate {
 
 // ── Constants ──
 
-const HOME_CATEGORIES = new Set([
-  "home", "interior", "decor", "decoration", "furniture",
-  "organization", "renovation", "cleaning", "apartment",
-  "house", "room", "kitchen", "bathroom", "bedroom",
-]);
-
 const FAST_PATH_TAGS = new Set([
   "homedecor", "interiordesign", "roomtour", "roommakeover",
   "hometour", "closetorganization", "diyhomedecor",

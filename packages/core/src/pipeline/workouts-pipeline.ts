@@ -69,12 +69,6 @@ interface WorkoutCandidate {
 
 // ── Constants ──
 
-const WORKOUT_CATEGORIES = new Set([
-  "fitness", "workout", "exercise", "gym", "yoga", "pilates",
-  "stretching", "running", "cycling", "bodybuilding", "crossfit",
-  "calisthenics", "martial",
-]);
-
 const FAST_PATH_TAGS = new Set([
   "gymtok", "homeworkout", "absworkout", "coreworkout",
   "legday", "armday", "hiitworkout",

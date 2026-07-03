@@ -159,7 +159,7 @@ describe("gatherPlaceCandidateIds — filed-category branch", () => {
     expect(ids.has("tiktok:p2")).toBe(true);
   });
 
-  it("does NOT gather item that matches neither embedded, tags, nor filed category", () => {
+  it("does NOT gather item with no filed category", () => {
     const { app, syncFolder } = makeApp(tmp, "tiktok:p3", "random-unrelated-thing");
     const ids = gatherPlaceCandidateIds(app, syncFolder);
     expect(ids.has("tiktok:p3")).toBe(false);
@@ -198,7 +198,7 @@ describe("gatherProductCandidateIds — filed-category branch", () => {
     expect(ids.has("tiktok:pr2")).toBe(true);
   });
 
-  it("does NOT gather item that matches neither embedded, tags, nor filed category", () => {
+  it("does NOT gather item with no filed category", () => {
     const { app, syncFolder } = makeApp(tmp, "tiktok:pr3", "random-unrelated-thing");
     const ids = gatherProductCandidateIds(app, syncFolder);
     expect(ids.has("tiktok:pr3")).toBe(false);
@@ -237,7 +237,7 @@ describe("gatherWorkoutCandidateIds — filed-category branch", () => {
     expect(ids.has("tiktok:w2")).toBe(true);
   });
 
-  it("does NOT gather item that matches neither embedded, tags, nor filed category", () => {
+  it("does NOT gather item with no filed category", () => {
     const { app, syncFolder } = makeApp(tmp, "tiktok:w3", "random-unrelated-thing");
     const ids = gatherWorkoutCandidateIds(app, syncFolder);
     expect(ids.has("tiktok:w3")).toBe(false);
@@ -276,7 +276,7 @@ describe("gatherTutorialCandidateIds — filed-category branch", () => {
     expect(ids.has("tiktok:t2")).toBe(true);
   });
 
-  it("does NOT gather item that matches neither embedded, tags, nor filed category", () => {
+  it("does NOT gather item with no filed category", () => {
     const { app, syncFolder } = makeApp(tmp, "tiktok:t3", "random-unrelated-thing");
     const ids = gatherTutorialCandidateIds(app, syncFolder);
     expect(ids.has("tiktok:t3")).toBe(false);
@@ -323,7 +323,7 @@ describe("gatherHomeCandidateIds — filed-category branch", () => {
     expect(ids.has("tiktok:h4")).toBe(true);
   });
 
-  it("does NOT gather item that matches neither embedded, tags, nor filed category", () => {
+  it("does NOT gather item with no filed category", () => {
     const { app, syncFolder } = makeApp(tmp, "tiktok:h3", "random-unrelated-thing");
     const ids = gatherHomeCandidateIds(app, syncFolder);
     expect(ids.has("tiktok:h3")).toBe(false);
