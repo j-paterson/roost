@@ -62,8 +62,23 @@ def _embed(text, embed_url):
     v = json.load(urllib.request.urlopen(req, timeout=60))["embeddings"][0]
     return np.asarray(v, dtype=np.float64)
 
-def verify_embeddings_fresh(vault, sample_ids, embed_url="http://localhost:11435/api/embed", tol=0.9999):
-    checked, min_cos = 0, 1.0
+def verify_embeddings_fresh(vault, sample_ids, embed_url="http://localhost:11435/api/embed", tol=0.90):
+    """Model-identity check: verifies the running sidecar is the current v2 model,
+    NOT that vectors reproduce exactly (the embedding-cache.json does not store the
+    exact text that was embedded, so reconstruction is approximate).
+
+    Threshold semantics:
+      - Current v2 model re-embeds reconstructed text at cos 0.92–1.0 even with
+        imperfect text reconstruction (verified in-vault 2026-07-03).
+      - A stale/wrong model (base-nomic or old cache) re-embeds at cos ~0.67
+        (see ARCHITECTURE.md honest-eval-results: "sidecar reproduces cached vectors
+        at cos=1.0000 … vs raw nomic ~0.67").
+      - tol=0.90 cleanly separates current-v2 (≥0.90) from stale (<0.90).
+
+    Returns {"checked": int, "min_cos": float|None, "ok": bool}.
+    min_cos is None when no IDs were checkable (nothing measured ≠ perfect)."""
+    checked = 0
+    min_cos = None
     for rid in sample_ids:
         text, cached = _note_text_for_id(vault, rid)
         if cached is None or not text:
@@ -71,11 +86,26 @@ def verify_embeddings_fresh(vault, sample_ids, embed_url="http://localhost:11435
         fresh = _embed(text, embed_url)
         c = cached.astype(np.float64)
         cos = float(fresh @ c / ((np.linalg.norm(fresh) or 1) * (np.linalg.norm(c) or 1)))
-        min_cos = min(min_cos, cos)
+        min_cos = cos if min_cos is None else min(min_cos, cos)
         checked += 1
         if cos < tol:
             raise AssertionError(f"stale embedding for {rid}: cos={cos:.4f} < {tol} — cache is not current v2")
     return {"checked": checked, "min_cos": min_cos, "ok": checked > 0}
+
+
+def sidecar_model_stamp(vault):
+    """Stamp the sidecar's fine-tuned model file for provenance.
+    Tries <vault>/.roost/build/nomic-finetuned-hardneg/model.safetensors then
+    <vault>/.roost/nomic-finetuned-hardneg/model.safetensors; returns stamp() of
+    the first that exists, or {"exists": False} if neither does."""
+    candidates = [
+        os.path.join(vault, ".roost", "build", "nomic-finetuned-hardneg", "model.safetensors"),
+        os.path.join(vault, ".roost", "nomic-finetuned-hardneg", "model.safetensors"),
+    ]
+    for path in candidates:
+        if os.path.exists(path):
+            return stamp(path)
+    return {"exists": False}
 
 def _config_models(repo_root):
     cfg = os.path.join(repo_root, "packages", "core", "src", "config.ts")

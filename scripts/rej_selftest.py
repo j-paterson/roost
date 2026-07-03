@@ -77,3 +77,19 @@ def test_leave_one_out_splits():
 if __name__ == "__main__":
     test_leave_one_out_splits()
     print("rej_negatives OK")
+
+D = _load("exp-rejection-fresh")
+
+def test_knowns_unknowns_to_oscr_runs():
+    import honest_eval_lib as L
+    knowns = [(True, 0.9), (False, 0.4), (True, 0.8)]
+    unknowns = [0.3, 0.35]
+    o = L.oscr(knowns, unknowns)
+    assert 0.0 <= o <= 1.0, o
+    # D exposes a helper that packages per-signal scores into (knowns, unknowns).
+    kn, un = D.split_scores([("a", True, 0.9), ("b", False, 0.4)], [("z", 0.3)])
+    assert kn == [(True, 0.9), (False, 0.4)] and un == [0.3], (kn, un)
+
+if __name__ == "__main__":
+    test_knowns_unknowns_to_oscr_runs()
+    print("exp-rejection-fresh OK")
