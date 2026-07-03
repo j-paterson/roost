@@ -21,11 +21,31 @@ import rej_signals as S
 import rej_negatives as N
 
 _TITLE = re.compile(r'^title:\s*(.+)$', re.M)
+_COVER = re.compile(r'^cover:\s*"?\[\[([^\]]+)\]\]', re.M)
+VIDEO_EXT = (".mp4", ".webm", ".mov", ".m4v")
+IMG_EXT = (".jpg", ".jpeg", ".png", ".webp", ".gif")
+
+
+def _media_rels(vault, attach_dir_abs):
+    """Vault-relative media paths in an attachment folder: videos first, then images.
+    cover.jpg (the video thumbnail) is dropped when a video is present."""
+    if not attach_dir_abs or not os.path.isdir(attach_dir_abs):
+        return []
+    files = sorted(os.listdir(attach_dir_abs))
+    videos = [f for f in files if f.lower().endswith(VIDEO_EXT)]
+    images = [f for f in files if f.lower().endswith(IMG_EXT)]
+    if videos:
+        # drop thumbnails (cover / *-poster) that just duplicate the video's first frame
+        images = [f for f in images
+                  if f.lower() != "cover.jpg" and "poster" not in f.lower()]
+    ordered = videos + images
+    return [os.path.relpath(os.path.join(attach_dir_abs, f), vault) for f in ordered]
 
 
 def resolve_notes(vault, need_ids, sync_folder="Bookmarks"):
-    """roost_id -> (vault_relative_path_without_ext, title) for the needed ids only.
-    Stops scanning once all are found."""
+    """roost_id -> (note_rel_no_ext, title, [media_vault_rel...]) for the needed ids.
+    media = the item's real video/image files (for inline players/images). Stops
+    scanning once all are found."""
     need = set(need_ids)
     idx = {}
     for p in glob.glob(os.path.join(vault, sync_folder, "**", "*.md"), recursive=True):
@@ -44,7 +64,9 @@ def resolve_notes(vault, need_ids, sync_folder="Bookmarks"):
             rel = os.path.relpath(p, vault)
             if rel.endswith(".md"):
                 rel = rel[:-3]
-            idx[rid] = (rel, title)
+            cm = _COVER.search(fm_block)
+            attach = os.path.dirname(os.path.join(vault, cm.group(1))) if cm else None
+            idx[rid] = (rel, title, _media_rels(vault, attach))
     return idx
 
 
@@ -86,16 +108,21 @@ def main():
     ]
     missing = 0
     for i, (conf, bsim, rid, bcat) in enumerate(top, 1):
-        rel, title = idx.get(rid, (None, ""))
+        rel, title, media = idx.get(rid, (None, "", []))
         lines.append(f"## {i}. {title or rid}")
         lines.append(f"nearest category: **{bcat}** (sim {bsim:.2f}) · head-conf {conf:.2f} · `{rid}`")
         lines.append(f"- [ ] belongs to NOTHING  <!--id: {rid}-->")
         lines.append("")
-        if rel:
-            lines.append(f"![[{rel}]]")
-        else:
+        if rel is None:
             missing += 1
             lines.append("_(note file not found for preview)_")
+        else:
+            # Real media first — videos embed as scrubbable HTML5 players, images inline.
+            for m in media:
+                lines.append(f"![[{m}]]")
+            # The note transclusion carries the caption/body text (frontmatter cover isn't
+            # rendered in a transclusion, so no redundant thumbnail).
+            lines.append(f"![[{rel}]]")
         lines.append("")
         lines.append("---")
         lines.append("")
