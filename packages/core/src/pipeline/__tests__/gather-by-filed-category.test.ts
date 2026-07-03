@@ -358,6 +358,13 @@ describe("gatherRecipeCandidateIds — filed-category branch", () => {
     expect(gatherRecipeCandidateIds(app, syncFolder).has("tiktok:r1")).toBe(true);
   });
 
+  it("gathers item whose roost_subcategory matches categoryMatches", () => {
+    const { app, syncFolder } = makeApp(tmp, "tiktok:r2", "unrelated-thing", {
+      roost_subcategory: "Cooking",
+    });
+    expect(gatherRecipeCandidateIds(app, syncFolder).has("tiktok:r2")).toBe(true);
+  });
+
   it("does NOT gather on content category alone (no filed category)", () => {
     const { app, syncFolder } = makeApp(tmp, "tiktok:r9", "baking");
     expect(gatherRecipeCandidateIds(app, syncFolder).has("tiktok:r9")).toBe(false);
