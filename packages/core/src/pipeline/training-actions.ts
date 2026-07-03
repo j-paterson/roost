@@ -76,6 +76,18 @@ export async function rejectAutoItem(deps: TrainingActionDeps, guessedClass: str
   });
 }
 
+/** Effectful: mark an item as belonging to no category (terminal). Records the
+ *  BELONGS_NOTHING sentinel and stamps roost_belongs_nothing on the note. */
+export async function markBelongsNothingItem(deps: TrainingActionDeps): Promise<void> {
+  const { vault, fileManager, file, id, now } = deps;
+  const ts = loadTrainingSet(vault);
+  const { evalRecord, patch, snapshotValue } = planBelongsNothing(ts, id, now);
+  const snap = loadSnapshot(vault); snap[id] = snapshotValue; saveSnapshot(vault, snap);
+  saveTrainingSet(vault, ts);
+  appendEvalRecords(vault, [evalRecord]);
+  await fileManager.processFrontMatter(file, (fm) => { Object.assign(fm, patch); });
+}
+
 /** Pure: confirm a review PROPOSAL (category not yet in frontmatter). Writes the
  *  category AND human provenance, records a confirm-source positive (capped). */
 export function planReviewConfirm(
