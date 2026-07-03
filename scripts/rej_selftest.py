@@ -1,5 +1,7 @@
 import os, json, tempfile, importlib.util
 SD = os.path.dirname(os.path.abspath(__file__))
+import sys; sys.path.insert(0, SD)
+import honest_eval_lib as L
 def _load(name):
     s = importlib.util.spec_from_file_location(name, os.path.join(SD, name + ".py"))
     m = importlib.util.module_from_spec(s); s.loader.exec_module(m); return m
@@ -74,8 +76,57 @@ def test_leave_one_out_splits():
     assert [x["id"] for x in train_wo] == ["t1"], train_wo
     assert ood == ["f2"], ood
 
+def test_load_gold_vault_reads_marker():
+    with tempfile.TemporaryDirectory() as tmp:
+        bk = os.path.join(tmp, "Bookmarks")
+        os.makedirs(bk)
+        # Note stamped with roost_belongs_nothing: true
+        with open(os.path.join(bk, "stamped.md"), "w") as f:
+            f.write("---\nroost_id: id-stamped\nroost_belongs_nothing: true\n---\nContent\n")
+        # Normal note — no marker
+        with open(os.path.join(bk, "normal.md"), "w") as f:
+            f.write("---\nroost_id: id-normal\n---\nContent\n")
+        # Note with marker but no roost_id — must be ignored
+        with open(os.path.join(bk, "noid.md"), "w") as f:
+            f.write("---\nroost_belongs_nothing: true\n---\nContent\n")
+        build_dir = os.path.join(tmp, "build")
+        os.makedirs(build_dir)
+        ids = N.load_gold(build_dir, vault=tmp)
+        assert ids == ["id-stamped"], f"expected ['id-stamped'], got {ids}"
+
+def test_load_gold_fallback_json():
+    with tempfile.TemporaryDirectory() as tmp:
+        p = os.path.join(tmp, "belongs-nothing-gold.json")
+        json.dump({"ids": ["id-a", "id-b"]}, open(p, "w"))
+        ids = N.load_gold(tmp)
+        assert ids == ["id-a", "id-b"], ids
+
+def test_load_honest_labels_excludes_other():
+    with tempfile.TemporaryDirectory() as tmp:
+        bk = os.path.join(tmp, "Bookmarks")
+        os.makedirs(bk)
+        # Normal human-labeled item
+        with open(os.path.join(bk, "food.md"), "w") as f:
+            f.write("---\nroost_id: id-food\ncollection: Recipes\nplatform: tiktok\n---\n")
+        # Item with collection: Other (reserved — must be excluded from labels AND negatives)
+        with open(os.path.join(bk, "other_upper.md"), "w") as f:
+            f.write("---\nroost_id: id-other\ncollection: Other\nplatform: tiktok\n---\n")
+        # Item with collection: other (lowercase variant — also excluded)
+        with open(os.path.join(bk, "other_lower.md"), "w") as f:
+            f.write("---\nroost_id: id-other2\ncollection: other\nplatform: tiktok\n---\n")
+        labels, negatives = L.load_honest_labels(tmp)
+        assert "id-food" in labels and labels["id-food"] == "Recipes", labels
+        assert "id-other" not in labels, f"'Other' collection must be excluded from labels; got {labels}"
+        assert "id-other2" not in labels, f"'other' collection must be excluded from labels; got {labels}"
+        # Must not silently become a negative either — just dropped
+        assert "id-other" not in negatives, f"'Other' must not appear in negatives; got {negatives}"
+        assert "id-other2" not in negatives, f"'other' must not appear in negatives; got {negatives}"
+
 if __name__ == "__main__":
     test_leave_one_out_splits()
+    test_load_gold_vault_reads_marker()
+    test_load_gold_fallback_json()
+    test_load_honest_labels_excludes_other()
     print("rej_negatives OK")
 
 D = _load("exp-rejection-fresh")

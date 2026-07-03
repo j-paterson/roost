@@ -28,7 +28,19 @@ def leave_one_out(train_items, eval_items, category):
                if not it.get("isNegative") and it["groundTruth"] == category]
     return train_wo, ood_ids
 
-def load_gold(build_dir):
+def load_gold(build_dir, vault=None):
+    """Return roost_ids of items that belong to nothing (true OOD).
+    If vault is given, glob <vault>/Bookmarks/**/*.md and return ids whose frontmatter
+    carries `roost_belongs_nothing: true` (reads via L._read_fm which captures the field).
+    Falls back to belongs-nothing-gold.json in build_dir when vault is None."""
+    if vault is not None:
+        ids = []
+        for p in glob.glob(os.path.join(vault, "Bookmarks", "**", "*.md"), recursive=True):
+            fm = L._read_fm(p)
+            rid = fm.get("roost_id")
+            if rid and fm.get("roost_belongs_nothing", "").lower() == "true":
+                ids.append(rid)
+        return ids
     p = os.path.join(build_dir, "belongs-nothing-gold.json")
     if not os.path.exists(p):
         return []

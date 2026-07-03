@@ -156,7 +156,8 @@ def main():
     print("Training head classifier on train split...")
     clf, classes = S.train_head(train, cache)
     cats = sorted({it["groundTruth"] for it in train
-                   if not it.get("isNegative") and it["groundTruth"]})
+                   if not it.get("isNegative") and it["groundTruth"]
+                   and it["groundTruth"].lower() not in L.RESERVED_NON_CATEGORIES})
     cents = L.build_centroids(
         {c: [(it["id"], cache[it["id"]]) for it in train
              if it["groundTruth"] == c and cache.get(it["id"]) is not None]
@@ -168,7 +169,8 @@ def main():
     relmaha = S.rel_mahalanobis(train, cache)
 
     # ── Load trusted gold set (may be empty — review pending) ──
-    gold_ids = [g for g in N.load_gold(build) if cache.get(g) is not None]
+    # vault= enables live frontmatter scan for roost_belongs_nothing: true stamps
+    gold_ids = [g for g in N.load_gold(build, vault=vault) if cache.get(g) is not None]
     if not gold_ids:
         print("NOTE: gold set (belongs-nothing-gold.json) not yet created — "
               "OSCR-vs-gold omitted (gold review pending).")
