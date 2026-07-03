@@ -105,8 +105,10 @@ export async function paginateSaved(args: PaginateArgs): Promise<PaginateResult>
     const children = parsed.data?.children || [];
     let pageAllKnown = true;
     let processedCount = 0;
+    let lastFullname: string | null = null; // last item's own fullname (cursor fallback)
 
     for (const child of children) {
+      if (child.data?.id) lastFullname = (child.kind || "") + "_" + child.data.id;
       if (child.kind !== "t3") continue;
       const d = child.data;
       if (!d?.id) continue;
@@ -159,8 +161,17 @@ export async function paginateSaved(args: PaginateArgs): Promise<PaginateResult>
       consecutiveKnownPages = 0;
     }
 
-    cursor = parsed.data?.after ?? null;
-    if (!cursor) break;
+    // Termination. Reddit's saved.json?type=links reports data.after=null
+    // PREMATURELY on short pages while more items still exist (confirmed live: a
+    // 99-item page returned after=null, yet requesting after=<last item fullname>
+    // yielded 100 more links). So do NOT treat after=null as end-of-list. Fall
+    // back to the last item's own fullname as the cursor, and stop only on a
+    // genuinely empty page, an all-duplicate page (loop guard), or the hard cap.
+    if (children.length === 0) break;                    // genuine end of listing
+    if (processedCount === 0) break;                     // whole page was cross-page dupes → looped/ended
+    const nextCursor = (parsed.data?.after ?? null) || lastFullname;
+    if (!nextCursor || nextCursor === cursor) break;     // cannot advance further
+    cursor = nextCursor;
     // Pacing jitter between listing pages (8–12 s).
     await args.sleep(JITTER_MIN_MS + Math.floor(Math.random() * (JITTER_MAX_MS - JITTER_MIN_MS)));
   }
