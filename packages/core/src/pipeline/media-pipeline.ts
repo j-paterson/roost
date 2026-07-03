@@ -137,7 +137,7 @@ interface MediaCandidate {
 
 /** Single source of truth for the roost_category / roost_subcategory values the
  *  media pipeline owns. Feeds FILED_MEDIA_CATEGORIES (the gather gate, lowercased)
- *  and MEDIA_ENRICHMENT.categoryMatches so the two can't desync. */
+ *  and MEDIA_EXTRACTION_ENRICHMENT.categoryMatches so the two can't desync. */
 const MEDIA_FILED_CATEGORIES = ["Media", "Media List", "Books", "Book", "Film", "TV"] as const;
 
 /** roost_category / roost_subcategory values the media pipeline owns. Exported
@@ -221,10 +221,10 @@ function hasMediaFastPath(tags: string[]): boolean {
 
 // ── Candidate gathering ──
 
-/** Id-only predicate using the discovery (embedding-category + tag-keyword) branch.
- *  Does NOT include the filter-scoped (roost_category) branch, which is a
- *  per-run narrowing mode not part of the default discovery pass.
- *  No readRawJson call, so this is cheap enough to use in the pending-pipeline scan. */
+/** Returns the ids of bookmarks filed under a media category (`FILED_MEDIA_CATEGORIES`,
+ *  matched on roost_category or roost_subcategory) or a music subcategory
+ *  (`MUSIC_SUBCATEGORIES`). No readRawJson call, so this is cheap enough to use in
+ *  the pending-pipeline scan. */
 export function gatherMediaCandidateIds(app: App, syncFolder: string): Set<string> {
   const fileIndex = buildFileIndex(app, syncFolder);
   const ids = new Set<string>();
