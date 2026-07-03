@@ -76,15 +76,6 @@ const HOME_CATEGORIES = new Set([
   "house", "room", "kitchen", "bathroom", "bedroom",
 ]);
 
-const HOME_TAG_KEYWORDS = [
-  "homedecor", "interiordesign", "home", "apartment", "decor",
-  "organization", "renovation", "roomtour", "roommakeover",
-  "homedesign", "furniture", "cleaning", "cleaningtips",
-  "homestyling", "roomdecor", "bathroomdesign", "kitchendesign",
-  "closetorganization", "shelfie", "hometour", "smarthome",
-  "diyhomedecor", "minimalist", "cozy", "aesthetic",
-];
-
 const FAST_PATH_TAGS = new Set([
   "homedecor", "interiordesign", "roomtour", "roommakeover",
   "hometour", "closetorganization", "diyhomedecor",

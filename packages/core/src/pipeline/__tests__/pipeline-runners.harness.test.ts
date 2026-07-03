@@ -1317,10 +1317,10 @@ describe("tutorial (in-place enrichment)", () => {
     expect(u[TUTORIAL_FIELDS.version]).toBe(1);
   });
 
-  it("sets roost_category=Tutorials + roost_subcategory=skillArea when slot is empty", () => {
+  it("does not assign roost_category/subcategory when slot is empty", () => {
     const u = computeTutorialBackfillFields(baseTutorial, {});
-    expect(u["roost_category"]).toBe("Tutorials");
-    expect(u["roost_subcategory"]).toBe(baseTutorial.skillArea);
+    expect(u["roost_category"]).toBeUndefined();
+    expect(u["roost_subcategory"]).toBeUndefined();
   });
 
   it("does not overwrite existing roost_category when already set to a different category", () => {
@@ -1370,7 +1370,7 @@ describe("tutorial (in-place enrichment)", () => {
 
     expect(written).toContain(`${TUTORIAL_FIELDS.topic}: `);
     expect(written).toContain(`${TUTORIAL_FIELDS.version}: 1`);
-    expect(written).toContain("roost_category: Tutorials");
+    expect(written).not.toContain("roost_category");
   });
 
   it("does not call vault.modify if frontmatter is already up to date", async () => {
@@ -1433,7 +1433,7 @@ describe("home (in-place enrichment)", () => {
     expect(updates[HOME_FIELDS.title]).toBe(baseHome.title);
     expect(updates[HOME_FIELDS.room]).toBe(baseHome.room);
     expect(updates[HOME_FIELDS.version]).toBe(1);
-    expect(updates["roost_category"]).toBe("Home");
+    expect(updates["roost_category"]).toBeUndefined();
   });
 
   it("writeHomeToBookmark applies updates via updateNoteFrontmatter", async () => {
@@ -1457,7 +1457,7 @@ describe("home (in-place enrichment)", () => {
 
     expect(written).toContain(`${HOME_FIELDS.title}: `);
     expect(written).toContain(`${HOME_FIELDS.version}: 1`);
-    expect(written).toContain("roost_category: Home");
+    expect(written).not.toContain("roost_category");
   });
 });
 
@@ -1485,12 +1485,12 @@ describe("computeRecipeBackfillFields (branch coverage)", () => {
     expect(u["enrichment_v_recipe"]).toBe(1);
   });
 
-  it("empty fm → sets roost_category=Recipes + roost_subcategory=cuisine", async () => {
+  it("empty fm → assigns neither category nor subcategory", async () => {
     const { computeRecipeBackfillFields } = await import("@/pipeline/recipe-pipeline");
     const ext = makeRecipeExtraction();
     const u = computeRecipeBackfillFields(ext, {});
-    expect(u["roost_category"]).toBe("Recipes");
-    expect(u["roost_subcategory"]).toBe(ext.cuisine);
+    expect(u["roost_category"]).toBeUndefined();
+    expect(u["roost_subcategory"]).toBeUndefined();
   });
 
   it("matching category (Food), no subcategory → sets subcategory only", async () => {
@@ -1531,12 +1531,12 @@ describe("computePlaceBackfillFields (branch coverage)", () => {
     expect(u["enrichment_v_place"]).toBe(1);
   });
 
-  it("empty fm → sets roost_category=Places + roost_subcategory=placeType", async () => {
+  it("empty fm → assigns neither category nor subcategory", async () => {
     const { computePlaceBackfillFields } = await import("@/pipeline/places-pipeline");
     const ext = makePlaceExtraction();
     const u = computePlaceBackfillFields(ext, {});
-    expect(u["roost_category"]).toBe("Places");
-    expect(u["roost_subcategory"]).toBe(ext.placeType);
+    expect(u["roost_category"]).toBeUndefined();
+    expect(u["roost_subcategory"]).toBeUndefined();
   });
 
   it("matching category (Travel), no subcategory → sets subcategory only", async () => {
@@ -1582,7 +1582,7 @@ describe("computeProductBackfillFields (branch coverage)", () => {
     expect(u["enrichment_v_product"]).toBe(1);
   });
 
-  it("empty fm → sets roost_category=Products + roost_subcategory=productType", async () => {
+  it("empty fm → assigns neither category nor subcategory", async () => {
     // products-pipeline's internal ProductExtraction narrows productType to a
     // union; the fixture returns the public roost.d.ts type (productType:
     // string). Loosen the param type test-side — no production change.
@@ -1591,8 +1591,8 @@ describe("computeProductBackfillFields (branch coverage)", () => {
         (e: ReturnType<typeof makeProductExtraction>, fm: Record<string, unknown>) => Record<string, unknown>;
     const ext = makeProductExtraction();
     const u = computeProductBackfillFields(ext, {});
-    expect(u["roost_category"]).toBe("Products");
-    expect(u["roost_subcategory"]).toBe(ext.productType);
+    expect(u["roost_category"]).toBeUndefined();
+    expect(u["roost_subcategory"]).toBeUndefined();
   });
 
   it("matching category (Gear), no subcategory → sets subcategory only", async () => {
@@ -1655,7 +1655,7 @@ describe("computeWorkoutBackfillFields (branch coverage)", () => {
     expect(u["enrichment_v_workout"]).toBe(1);
   });
 
-  it("empty fm → sets roost_category=Workouts + roost_subcategory=workoutType", async () => {
+  it("empty fm → assigns neither category nor subcategory", async () => {
     // workouts-pipeline's internal WorkoutExtraction narrows workoutType to a
     // union; the fixture returns the public roost.d.ts type (workoutType:
     // string). Loosen the param type test-side — no production change.
@@ -1664,8 +1664,8 @@ describe("computeWorkoutBackfillFields (branch coverage)", () => {
         (e: ReturnType<typeof makeWorkoutExtraction>, fm: Record<string, unknown>) => Record<string, unknown>;
     const ext = makeWorkoutExtraction();
     const u = computeWorkoutBackfillFields(ext, {});
-    expect(u["roost_category"]).toBe("Workouts");
-    expect(u["roost_subcategory"]).toBe(ext.workoutType);
+    expect(u["roost_category"]).toBeUndefined();
+    expect(u["roost_subcategory"]).toBeUndefined();
   });
 
   it("matching category (Fitness), no subcategory → sets subcategory only", async () => {

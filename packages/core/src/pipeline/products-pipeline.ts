@@ -82,13 +82,6 @@ const PRODUCT_CATEGORIES = new Set([
   "beauty", "makeup", "shopping", "review", "unboxing",
 ]);
 
-const PRODUCT_TAG_KEYWORDS = [
-  "product", "review", "unboxing", "haul", "amazonfinds", "amazon",
-  "tiktokmademebuyit", "gadget", "tech", "gear", "skincare", "beauty",
-  "makeup", "fashion", "finds", "musthave", "shopping", "wishlist",
-  "recommendation", "affordable",
-];
-
 const FAST_PATH_TAGS = new Set([
   "unboxing", "haul", "amazonfinds", "tiktokmademebuyit",
   "productreview", "amazonmusthaves", "techreview",

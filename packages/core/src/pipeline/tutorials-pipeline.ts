@@ -99,14 +99,6 @@ const TUTORIAL_CATEGORIES = new Set([
   "design", "craft", "woodworking", "sewing", "knitting",
 ]);
 
-const TUTORIAL_TAG_KEYWORDS = [
-  "tutorial", "howto", "diy", "learn", "tip", "trick", "hack",
-  "guide", "stepbystep", "beginner", "advanced", "technique",
-  "editing", "photoshop", "procreate", "blender", "coding",
-  "programming", "drawing", "painting", "calligraphy", "crochet",
-  "knitting", "sewing", "woodworking", "learnon", "edutok",
-];
-
 const FAST_PATH_TAGS = new Set([
   "tutorial", "stepbystep", "howto", "edutok", "learnontiktok",
 ]);

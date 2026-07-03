@@ -52,10 +52,10 @@ describe("computeRecipeBackfillFields", () => {
     expect(updates[RECIPE_FIELDS.version]).toBe(1);
   });
 
-  it("sets roost_category + roost_subcategory when source has none", () => {
+  it("does not assign roost_category/subcategory when source has none", () => {
     const updates = computeRecipeBackfillFields(baseExtraction, {});
-    expect(updates["roost_category"]).toBe("Recipes");
-    expect(updates["roost_subcategory"]).toBe("Italian");
+    expect(updates["roost_category"]).toBeUndefined();
+    expect(updates["roost_subcategory"]).toBeUndefined();
   });
 
   it("sets only subcategory when source already has a matching category", () => {

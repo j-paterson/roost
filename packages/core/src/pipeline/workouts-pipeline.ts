@@ -75,14 +75,6 @@ const WORKOUT_CATEGORIES = new Set([
   "calisthenics", "martial",
 ]);
 
-const WORKOUT_TAG_KEYWORDS = [
-  "workout", "fitness", "gym", "exercise", "hiit", "yoga",
-  "pilates", "stretching", "calisthenics", "bodybuilding",
-  "crossfit", "gains", "fitnessmotivation", "legday", "armday",
-  "absworkout", "coreworkout", "homeworkout", "gymtok",
-  "flexibility", "mobility", "cardio", "running", "lifting",
-];
-
 const FAST_PATH_TAGS = new Set([
   "gymtok", "homeworkout", "absworkout", "coreworkout",
   "legday", "armday", "hiitworkout",

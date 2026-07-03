@@ -76,11 +76,6 @@ const RECIPE_CATEGORIES = new Set([
   "vegetarian",
 ]);
 
-const RECIPE_TAG_KEYWORDS = [
-  "recipe", "cooking", "cook", "food", "baking", "meal",
-  "dinner", "lunch", "breakfast", "ingredient",
-];
-
 /** Single source of truth for the roost_category / roost_subcategory values the
  *  recipe pipeline owns. Consumed by FILED_RECIPE_CATEGORIES (the gather gate,
  *  lowercased) and RECIPE_ENRICHMENT.categoryMatches (UI/settings gating), so the

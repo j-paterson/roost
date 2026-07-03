@@ -100,16 +100,6 @@ interface PlacesPipelineResult {
 
 // ── Constants ──
 
-const PLACE_CATEGORY_SUBSTRINGS = [
-  "travel", "architecture", "restaurant", "landscape", "nature",
-];
-
-const PLACE_TAG_KEYWORDS = [
-  "travel", "destination", "hotel", "restaurant", "vacation",
-  "landmark", "explore", "trip", "nature", "landscape",
-  "architecture", "sightseeing", "wanderlust",
-];
-
 const VALID_PLACE_TYPES = new Set<PlaceType>([
   "restaurant", "hotel", "landmark", "park", "neighborhood",
   "viewpoint", "beach", "museum", "shop", "cafe", "bar", "other",
