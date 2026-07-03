@@ -1,6 +1,6 @@
 import type { Vault } from "obsidian";
 import { loadPipelineCache, savePipelineCache } from "@/pipeline/shared";
-import { TRAINING_SET_VERSION } from "@/config";
+import { TRAINING_SET_VERSION, BELONGS_NOTHING } from "@/config";
 
 export interface TrainingSet {
   version: number;
@@ -44,10 +44,22 @@ export function rejectedClasses(ts: TrainingSet, id: string): Set<string> {
   return new Set(ts.rejections[id] ?? []);
 }
 
+/** Terminal reject: this id fits no category. Rides in the existing rejections list
+ *  as the BELONGS_NOTHING sentinel and subsumes any per-category rejections. */
+export function markBelongsNothing(ts: TrainingSet, id: string): TrainingSet {
+  ts.rejections[id] = [BELONGS_NOTHING];
+  delete ts.positives[id];
+  return ts;
+}
+export function isBelongsNothing(ts: TrainingSet, id: string): boolean {
+  return (ts.rejections[id] ?? []).includes(BELONGS_NOTHING);
+}
+
 export function suppressionMap(ts: TrainingSet): Map<string, Set<string>> {
   const m = new Map<string, Set<string>>();
   for (const [id, cats] of Object.entries(ts.rejections)) {
-    if (cats.length) m.set(id, new Set(cats));
+    const real = cats.filter((c) => c !== BELONGS_NOTHING);
+    if (real.length) m.set(id, new Set(real));
   }
   return m;
 }
