@@ -78,4 +78,25 @@ describe("buildCategoryDefs", () => {
     expect(defA.clipCentroid).toBeDefined();
     expect(defB.clipCentroid).toBeUndefined();
   });
+
+  it("excludes a collection named 'Other' from produced defs", () => {
+    const cache: Record<string, EmbeddingCacheEntry> = {
+      o1: entry([1, 0, 0]),
+      a1: entry([0, 1, 0]),
+    };
+    const defs = buildCategoryDefs({ Other: ["o1"], catA: ["a1"] }, descriptions, cache);
+    expect(defs.find(d => d.name === "Other")).toBeUndefined();
+    expect(defs.find(d => d.name === "catA")).toBeDefined();
+  });
+
+  it("excludes 'Other' case-insensitively (e.g. 'other', 'OTHER')", () => {
+    const cache: Record<string, EmbeddingCacheEntry> = {
+      o1: entry([1, 0, 0]),
+      o2: entry([0, 1, 0]),
+    };
+    const defsLower = buildCategoryDefs({ other: ["o1"] }, descriptions, cache);
+    expect(defsLower).toHaveLength(0);
+    const defsUpper = buildCategoryDefs({ OTHER: ["o2"] }, descriptions, cache);
+    expect(defsUpper).toHaveLength(0);
+  });
 });

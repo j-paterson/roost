@@ -12,7 +12,7 @@ import { vaultBasePath } from "@/lib/vault-utils";
 import { cachePath } from "@/lib/roost-paths";
 import type { EmbeddingCacheEntry, MatchDetail } from "@/types/roost";
 import type { StopSignal } from "@/types/sync";
-import { OLLAMA_URL, EVAL_MODEL, MIN_DISCOVERY_COHESION, SCORE_CONCURRENCY, OLLAMA_NUM_CTX, HEAD_REJECT_TAU, CENTROID_REJECT_TAU } from "@/config";
+import { OLLAMA_URL, EVAL_MODEL, MIN_DISCOVERY_COHESION, SCORE_CONCURRENCY, OLLAMA_NUM_CTX, HEAD_REJECT_TAU, CENTROID_REJECT_TAU, RESERVED_NON_CATEGORIES } from "@/config";
 import { cosineSimilarity, computeCentroid, computeWeightedCentroid, computeCohesion, stripPreamble, HUMAN_WEIGHT, fusedSimilarity } from "@/pipeline/shared";
 import type { AssignedBy } from "@/lib/vault-utils";
 import { resolveTaxonomy, type CategoryTaxonomy } from "@/pipeline/taxonomy";
@@ -1244,6 +1244,7 @@ export function buildCategoryDefs(
 ): CategoryDef[] {
   const defs: CategoryDef[] = [];
   for (const [name, ids] of Object.entries(collections)) {
+    if (RESERVED_NON_CATEGORIES.has(name.toLowerCase())) continue;
     const validIds = ids.filter(id => cache[id]?.vec);
     const vecs = validIds.map(id => cache[id].vec!);
     const nameVec = nameEmbeddings?.get(name.toLowerCase()) ?? null;

@@ -106,6 +106,9 @@ export const DEV_COMMANDS_ENABLED =
   typeof process !== "undefined" && process.env?.ROOST_DEV_COMMANDS === "1";
 
 // ── Self-improving loop (Spec 2) ──────────────────────────────────────────────
+/** Category names that are staging/abstain buckets, never learned classes (lowercased compare). */
+export const RESERVED_NON_CATEGORIES = new Set<string>(["other"]);
+
 /** Sentinel category in TrainingSet.rejections meaning "this item fits NO category"
  *  (a terminal reject). Never a real category; excluded from suppression + gather. */
 export const BELONGS_NOTHING = "*";
