@@ -527,10 +527,7 @@ export function computePlaceBackfillFields(
   if (!existingSubcategory) {
     const matchesPipeline = existingCategory
       && ["Places", "Travel"].some(c => c.toLowerCase() === existingCategory.toLowerCase());
-    if (!existingCategory) {
-      updates[CATEGORY_FIELD] = "Places";
-      updates[SUBCATEGORY_FIELD] = extraction.placeType;
-    } else if (matchesPipeline) {
+    if (matchesPipeline) {
       updates[SUBCATEGORY_FIELD] = extraction.placeType;
     }
   }

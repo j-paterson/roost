@@ -353,19 +353,16 @@ export function computeTutorialBackfillFields(
     [TUTORIAL_FIELDS.version]: TUTORIAL_PIPELINE_VERSION,
   };
 
-  // Set roost_category / roost_subcategory only when the slot is empty or matches
-  // a recognized tutorial category — never overwrite a user-assigned category.
+  // Set roost_subcategory only when the note is already filed under a
+  // recognized tutorial category and has no subcategory. Never assign a
+  // fresh roost_category — the user owns top-level filing.
   const existingCat = existingFm[CATEGORY_FIELD] as string | undefined;
-  if (!existingCat) {
-    updates[CATEGORY_FIELD] = "Tutorials";
-    updates[SUBCATEGORY_FIELD] = extraction.skillArea;
-  } else if (TUTORIAL_CATEGORY_MATCHES.has(existingCat)) {
+  if (existingCat && TUTORIAL_CATEGORY_MATCHES.has(existingCat)) {
     const existingSub = existingFm[SUBCATEGORY_FIELD] as string | undefined;
     if (!existingSub) {
       updates[SUBCATEGORY_FIELD] = extraction.skillArea;
     }
   }
-  // If existingCat is set but NOT a recognized tutorial category, leave both alone.
 
   return updates;
 }

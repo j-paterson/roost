@@ -366,10 +366,7 @@ export function computeRecipeBackfillFields(
       && ["Recipes", "Food", "Food & Drink", "Cooking"].some(
         c => c.toLowerCase() === existingCategory.toLowerCase()
       );
-    if (!existingCategory) {
-      updates[CATEGORY_FIELD] = "Recipes";
-      updates[SUBCATEGORY_FIELD] = extraction.cuisine;
-    } else if (matchesPipeline) {
+    if (matchesPipeline) {
       updates[SUBCATEGORY_FIELD] = extraction.cuisine;
     }
   }

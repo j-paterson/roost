@@ -359,10 +359,7 @@ export function computeWorkoutBackfillFields(
       && ["Fitness", "Workouts", "Workout", "Exercise"].some(
         c => c.toLowerCase() === existingCategory.toLowerCase()
       );
-    if (!existingCategory) {
-      updates[CATEGORY_FIELD] = "Workouts";
-      updates[SUBCATEGORY_FIELD] = extraction.workoutType;
-    } else if (matchesPipeline) {
+    if (matchesPipeline) {
       updates[SUBCATEGORY_FIELD] = extraction.workoutType;
     }
   }

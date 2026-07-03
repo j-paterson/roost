@@ -154,9 +154,15 @@ describe.each(PIPELINE_BACKFILL_CASES)("$id compute*BackfillFields", (c) => {
     c.assertFields(c.compute(c.extraction, {}));
   });
 
-  it("sets category and subcategory when both empty in frontmatter", () => {
+  it("does NOT assign a category when frontmatter is empty (no fresh filing)", () => {
     const u = c.compute(c.extraction, {});
-    expect(u.roost_category).toBe(c.category);
+    expect(u.roost_category).toBeUndefined();
+    expect(u.roost_subcategory).toBeUndefined();
+  });
+
+  it("fills subcategory (not category) when filed in this category with empty subcategory", () => {
+    const u = c.compute(c.extraction, { roost_category: c.category });
+    expect(u.roost_category).toBeUndefined();
     expect(u.roost_subcategory).toBe(c.subcategory);
   });
 
@@ -168,7 +174,7 @@ describe.each(PIPELINE_BACKFILL_CASES)("$id compute*BackfillFields", (c) => {
     expect(u.roost_subcategory).toBeUndefined();
   });
 
-  it("does not set category when note already has a different category", () => {
+  it("does not touch taxonomy when note has a different category", () => {
     const u = c.compute(c.extraction, { roost_category: c.wrongCategory });
     expect(u.roost_category).toBeUndefined();
     expect(u.roost_subcategory).toBeUndefined();

@@ -386,10 +386,7 @@ export function computeHomeBackfillFields(
       && ["Home", "Interiors", "Home & Interiors", "Decor"].some(
         c => c.toLowerCase() === existingCategory.toLowerCase()
       );
-    if (!existingCategory) {
-      updates[CATEGORY_FIELD] = "Home";
-      updates[SUBCATEGORY_FIELD] = ROOM_TYPE_DISPLAY[extraction.room as RoomType] || extraction.room;
-    } else if (matchesPipeline) {
+    if (matchesPipeline) {
       updates[SUBCATEGORY_FIELD] = ROOM_TYPE_DISPLAY[extraction.room as RoomType] || extraction.room;
     }
   }

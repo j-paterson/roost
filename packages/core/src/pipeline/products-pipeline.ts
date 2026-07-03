@@ -353,10 +353,7 @@ export function computeProductBackfillFields(
       && ["Product", "Products", "Gear", "Shopping"].some(
         c => c.toLowerCase() === existingCategory.toLowerCase()
       );
-    if (!existingCategory) {
-      updates[CATEGORY_FIELD] = "Products";
-      updates[SUBCATEGORY_FIELD] = extraction.productType;
-    } else if (matchesPipeline) {
+    if (matchesPipeline) {
       updates[SUBCATEGORY_FIELD] = extraction.productType;
     }
   }
