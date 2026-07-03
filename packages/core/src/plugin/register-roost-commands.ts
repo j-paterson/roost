@@ -19,6 +19,8 @@ import { isPipelineEnrichmentId } from "@/lib/enrichments";
 import { guardPipelineActive } from "@/lib/pipeline-gate-plugin";
 import { runFolderBackfill } from "@/sync/folder-backfill";
 import { loadEmbeddingCache, saveEmbeddingCache } from "@/pipeline/shared";
+import { loadClassifierHead } from "@/pipeline/classifier-head";
+import { gatherReviewTargets } from "@/ui/lib/smart-assign/review-target";
 // @ts-ignore — raw probe loaded as string by esbuild plugin
 import twitterProbeSource from "@/probes/twitter-probe.probe";
 
@@ -99,6 +101,35 @@ export function registerRoostCommands(plugin: RoostCommandHost): void {
       }
       saveEmbeddingCache(plugin.app.vault, cache);
       new Notice(`Cleared ${cleared} cached vectors. Run Smart Assign to re-embed with the current backend.`);
+    },
+  });
+  plugin.addCommand({
+    id: "review-other-unsorted",
+    name: "Review 'Other' / unsorted items",
+    callback: () => {
+      const cache = loadEmbeddingCache(plugin.app.vault);
+      const head = loadClassifierHead(plugin.app.vault);
+      const { ids, proposalMap } = gatherReviewTargets(
+        plugin.app,
+        plugin.settings.syncFolder,
+        // Default target: "other" — the holding bucket for items explicitly
+        // placed there but not yet given a real category.
+        // Extension point: expose "unsorted" or "both" via additional commands
+        // or a settings toggle when those pools need dedicated review passes.
+        "other",
+        cache,
+        head,
+      );
+      if (ids.length === 0) {
+        new Notice(
+          head
+            ? "No 'Other' items with embeddings found."
+            : "No 'Other' items found (head not trained — run Smart Assign first).",
+          6000,
+        );
+        return;
+      }
+      plugin.fireItemClick({ action: "startReviewPass", itemIds: ids, proposalMap });
     },
   });
 
