@@ -3,7 +3,6 @@ train on the TRAIN split, score the held-out split. Signals: production cascade
 (head-conf -> centroid), head confidence alone, centroid cosine, RelMahalanobis."""
 import numpy as np
 from sklearn.linear_model import LogisticRegression
-import honest_eval_lib as L
 
 def _l2(v):
     v = np.asarray(v, dtype=np.float64)

@@ -75,8 +75,8 @@ had hidden.
 `scripts/exp-rejection-fresh.py` (+ `rej_provenance.py`, `rej_signals.py`,
 `rej_negatives.py`) measures the CURRENT production rejection cascade held-out
 (train split → eval split), with a provenance preflight (every input stamped;
-embeddings asserted fresh at cos ≥ 0.9999) and three negative layers
-(leave-one-category-out, fixture unfiled negatives, optional assisted gold set via
+embeddings asserted fresh at cos ≥ 0.90 (model-identity; base-nomic re-embeds ~0.67, current v2 ≥ 0.90 — see rej_provenance.py)) and three negative layers
+(leave-one-category-out, untouched unlabeled vault pool (no collection AND no roost_category; diagnostic-only, never OSCR/AUROC), optional assisted gold set via
 `build-belongs-nothing-candidates.py` → `belongs-nothing-gold.json`). Metrics:
 OSCR / AURC / per-category LOO OOD AUROC / operating-point. Self-test: `rej_selftest.py`.
 Report: `docs/superpowers/specs/2026-07-03-fresh-rejection-eval-results.md`.

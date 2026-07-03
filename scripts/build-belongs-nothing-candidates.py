@@ -18,11 +18,6 @@ def main():
     cents = L.build_centroids(
         {c: [(it["id"], cache[it["id"]]) for it in items if it["groundTruth"] == c]
          for c in set(labels.values())}, exclude_ids=[])
-    titles = {}
-    for p in glob.glob(os.path.join(vault, "Bookmarks", "**", "*.md"), recursive=True):
-        fm = L._read_fm(p)
-        if fm.get("roost_id"):
-            titles[fm["roost_id"]] = ""  # title not in _FIELD set; left blank, id is enough for review
     rows = []
     for rid in labels:
         if cache.get(rid) is None:

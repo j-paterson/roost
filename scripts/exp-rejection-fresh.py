@@ -133,6 +133,7 @@ def main():
     sample = [it["id"] for it in ev if not it.get("isNegative")][:1 if args.smoke else 5]
     fresh = P.verify_embeddings_fresh(vault, sample)
     prov["_embeddings_fresh"] = fresh
+    assert fresh["ok"], "freshness check verified 0 items — embedding-cache.json missing text or sidecar returned nothing"
     prov["_sidecar_model"] = P.sidecar_model_stamp(vault)
 
     if args.smoke:
@@ -250,6 +251,7 @@ def main():
         "Per-category leave-one-out OOD AUROC is the headline open-set metric.",
         "fixture isNegative items not used for any metric.",
         "S3 RelMaha accuracy is always 0 (not a classifier; score used for OOD separation only).",
+        "S2 τ-recalibration omitted — a τ sweep would need an OOD target; the unlabeled pool is contaminated (diagnostic-only), so proper recalibration requires the gold set or a LOO-based sweep (follow-up once gold is assembled).",
     ]
 
     report = {
