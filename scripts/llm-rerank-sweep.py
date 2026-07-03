@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+"""SUPERSEDED / DO NOT TRUST (2026-07-03). Hardcodes VAULT=~/ObsidianBookmarks (the
+deleted pre-move path) and the pre-split .roost/ layout, and bypasses the
+contamination-safe honest_eval_lib. The fresh, provenance-audited rejection/rerank
+eval is scripts/exp-rejection-fresh.py (+ rej_*.py). Kept only for history."""
 """Phase B: LLM reranks top-K=3 embedding candidates.
 
 Sweeps 2 models (gemma4:e4b, llama3.2:3b) × 2 prompt templates (letter-pick, JSON-score).

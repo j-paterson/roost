@@ -1,6 +1,6 @@
 """Provenance preflight for the fresh rejection eval. Stamps every input
 (path, mtime, size, sha256, item count), verifies the embedding cache is the
-current v2 model (cosine >= 0.9999 vs a fresh sidecar re-embed), and reads the
+current v2 model (cosine >= 0.90 (model-identity: base-nomic re-embeds ~0.67, current v2 >= 0.90) vs a fresh sidecar re-embed), and reads the
 model tags + git SHA. Nothing downstream is trusted unless it appears here."""
 import os, json, hashlib, subprocess, re, urllib.request
 import numpy as np

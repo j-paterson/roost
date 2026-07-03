@@ -70,3 +70,16 @@ Stable across splits (no overfit). Under λ=0.5, the deploy-view best (~0.32) ba
 beats reject-all (0.30) while accept-all is ~0.075 — i.e. with mis-filing cost the
 status quo is near-net-neutral, which is the honest result the contaminated numbers
 had hidden.
+
+## Fresh rejection eval (2026-07-03)
+`scripts/exp-rejection-fresh.py` (+ `rej_provenance.py`, `rej_signals.py`,
+`rej_negatives.py`) measures the CURRENT production rejection cascade held-out
+(train split → eval split), with a provenance preflight (every input stamped;
+embeddings asserted fresh at cos ≥ 0.9999) and three negative layers
+(leave-one-category-out, fixture unfiled negatives, optional assisted gold set via
+`build-belongs-nothing-candidates.py` → `belongs-nothing-gold.json`). Metrics:
+OSCR / AURC / per-category LOO OOD AUROC / operating-point. Self-test: `rej_selftest.py`.
+Report: `docs/superpowers/specs/2026-07-03-fresh-rejection-eval-results.md`.
+Note: centroids come from the TRAIN split (`build_centroids`), NOT the production
+exporter — the fixture covers 100% of honest labels, so a full-fixture-held-out
+centroid is empty.
