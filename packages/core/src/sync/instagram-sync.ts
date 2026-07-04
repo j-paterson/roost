@@ -5,7 +5,8 @@
  */
 import { roostNormalize, type NormalizedRecord } from "../lib/normalize";
 import type { StopSignal, SyncPhaseProgress, ElectronWebview } from "@/types/sync";
-import { SYNC_BATCH_SIZE, EARLY_OUT_THRESHOLD } from "@/config";
+import { SYNC_BATCH_SIZE } from "@/config";
+import type { SyncMode } from "@/sync/sync-mode";
 // @ts-ignore — raw probe loaded as string by esbuild/vitest rawProbePlugin
 import instagramProbeSource from "../probes/instagram-probe.probe";
 
@@ -23,9 +24,8 @@ interface PaginateArgs {
   onRecords: (records: NormalizedRecord[]) => Promise<void>;
   collMap: Map<string, { name: string; count: number }>;
   knownIds: Set<string>;
-  prevComplete: boolean;
+  mode: SyncMode;
   batchSize: number;
-  earlyOutThreshold: number;
   maxItems: number | null;
   isStopped: () => boolean;
   onLog: (msg: string) => void;
@@ -87,7 +87,6 @@ export async function paginateSaved(args: PaginateArgs): Promise<PaginateResult>
   const maxRetries = args.maxBackoffRetries ?? MAX_BACKOFF_RETRIES;
   let cursor: string | null = null;
   let totalFetched = 0;
-  let consecutiveKnownPages = 0;
   let pending: NormalizedRecord[] = [];
 
   const flush = async () => {
@@ -138,8 +137,6 @@ export async function paginateSaved(args: PaginateArgs): Promise<PaginateResult>
     }
 
     const items = parsed.items || [];
-    let pageAllKnown = true;
-    let processedCount = 0;
     for (const it of items) {
       const media = it.media as Record<string, any> | undefined;
       if (!media || !media.code) continue;
@@ -150,9 +147,12 @@ export async function paginateSaved(args: PaginateArgs): Promise<PaginateResult>
         capturedVia: "sync",
       });
       if (!record) continue;
+      if (args.mode === "quick" && args.knownIds.has(record.id)) {
+        args.onLog("[instagram] reached a previously-synced item — quick sync stopping");
+        await flush();
+        return { totalFetched, earlyOut: true, abortedRateLimited: false };
+      }
       totalFetched++;
-      processedCount++;
-      if (!args.knownIds.has(record.id)) pageAllKnown = false;
       pending.push(record);
       if (pending.length >= args.batchSize) await flush();
       if (args.maxItems != null && totalFetched >= args.maxItems) {
@@ -162,22 +162,6 @@ export async function paginateSaved(args: PaginateArgs): Promise<PaginateResult>
       }
     }
     args.onProgress({ phase: "fetch", count: totalFetched, total: 0, done: false });
-
-    // Early-out: reverse-chron feed, so consecutive all-known pages mean we've
-    // caught up to a prior complete sync. Require processedCount > 0 so pages
-    // where all items lacked a code field (and were skipped) do not falsely
-    // satisfy the all-known condition.
-    if (args.prevComplete && pageAllKnown && processedCount > 0) {
-      consecutiveKnownPages++;
-      args.onLog(`[instagram] all-known page (${consecutiveKnownPages}/${args.earlyOutThreshold})`);
-      if (consecutiveKnownPages >= args.earlyOutThreshold) {
-        args.onLog("[instagram] previous sync complete — early out");
-        await flush();
-        return { totalFetched, earlyOut: true, abortedRateLimited: false };
-      }
-    } else {
-      consecutiveKnownPages = 0;
-    }
 
     if (!parsed.more_available || !parsed.next_max_id) break;
     cursor = parsed.next_max_id;
@@ -202,7 +186,7 @@ const realSleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 export async function syncInstagram(
   wc: ElectronWebview,
   webviewEl: ElectronWebview,
-  opts: { stopSignal?: StopSignal; maxItems?: number } = {},
+  opts: { stopSignal?: StopSignal; maxItems?: number; syncMode?: SyncMode } = {},
   onProgress?: (p: SyncPhaseProgress) => void,
   onRecords?: (records: NormalizedRecord[]) => Promise<void>,
   onLog?: (msg: string) => void,
@@ -238,13 +222,11 @@ export async function syncInstagram(
   const knownIds: Set<string> = await wc.executeJavaScript(`(function(){ var s = window.__ROOST_KNOWN_IDS__; return s ? Array.from(s) : []; })()`)
     .then((arr: unknown) => new Set(Array.isArray(arr) ? (arr as string[]) : []))
     .catch(() => new Set<string>());
-  const prevComplete = await wc.executeJavaScript(`!!window.__ROOST_PREV_SYNC_COMPLETE__`).catch(() => false);
 
   const result = await paginateSaved({
     igFetch, sleep: realSleep,
     onRecords: async (recs) => { if (onRecords && !isStopped()) await onRecords(recs); },
-    collMap, knownIds, prevComplete: prevComplete === true,
-    batchSize: SYNC_BATCH_SIZE, earlyOutThreshold: EARLY_OUT_THRESHOLD,
+    collMap, knownIds, batchSize: SYNC_BATCH_SIZE, mode: opts.syncMode ?? "full",
     maxItems: opts.maxItems && opts.maxItems > 0 ? opts.maxItems : null,
     isStopped, onLog: log, onProgress: progress,
   });
