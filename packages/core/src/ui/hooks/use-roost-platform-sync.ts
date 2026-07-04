@@ -88,6 +88,9 @@ export function useRoostPlatformSync({ app, plugin, log, scanLibrary }: UseRoost
     const prevSync = plugin.settings.syncState?.[platform];
     const prevComplete = prevSync?.complete === true;
     const sidebarMode: SyncMode = resolveSyncMode("quick", !!prevSync, prevComplete);
+    if (sidebarMode === "full") {
+      log(`[${platform}] last run didn't finish (or first sync) — doing a full scan`);
+    }
 
     const existingIds = await writer.getExistingIds();
     const incompleteScan = await writer.scanIncompleteIds();

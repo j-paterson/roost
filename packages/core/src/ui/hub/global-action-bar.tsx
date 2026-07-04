@@ -16,6 +16,8 @@ function countReadyPlatforms(state: HubState): number {
   let n = 0;
   if (state.platforms.tiktok.kind === "connected-idle") n += 1;
   if (state.platforms.x.kind === "connected-idle") n += 1;
+  if (state.platforms.instagram.kind === "connected-idle") n += 1;
+  if (state.platforms.reddit.kind === "connected-idle") n += 1;
   return n;
 }
 
