@@ -98,7 +98,6 @@ function makeTestHost(
     reviewConfirm: vi.fn().mockResolvedValue(undefined),
     reviewMove: vi.fn().mockResolvedValue(undefined),
     reviewReject: vi.fn().mockResolvedValue(undefined),
-    reviewNothing: vi.fn().mockResolvedValue(undefined),
     openReviewMoveModal: vi.fn(),
     ...overrides,
   };
@@ -129,54 +128,6 @@ describe("GalleryFeedModeController review-pass dispatch", () => {
       .handleTrainingAction("reject", "id1");
 
     await vi.waitFor(() => expect(host.reviewReject).toHaveBeenCalledWith("id1"));
-  });
-
-  it("nothing calls host.reviewNothing in review-pass mode", async () => {
-    const entries = [makeEntry("id1", "Tech"), makeEntry("id2", "Food")];
-    const host = makeTestHost(entries);
-    const ctrl = new GalleryFeedModeController(host);
-    ctrl.trainingMode = true;
-    ctrl.startReviewPass(["id1", "id2"]);
-
-    (ctrl as unknown as { handleTrainingAction: (a: string, id: string) => void })
-      .handleTrainingAction("nothing", "id1");
-
-    await vi.waitFor(() => expect(host.reviewNothing).toHaveBeenCalledWith("id1"));
-  });
-
-  it("nothing calls host.reviewNothing in regular training mode (no review pass)", async () => {
-    const entries = [makeEntry("id1", "Tech"), makeEntry("id2", "Food")];
-    const host = makeTestHost(entries);
-    const ctrl = new GalleryFeedModeController(host);
-    ctrl.trainingMode = true;
-    // No startReviewPass → regular training mode
-
-    (ctrl as unknown as { handleTrainingAction: (a: string, id: string) => void })
-      .handleTrainingAction("nothing", "id1");
-
-    await vi.waitFor(() => expect(host.reviewNothing).toHaveBeenCalledWith("id1"));
-    expect(host.confirmAuto).not.toHaveBeenCalled();
-    expect(host.rejectAuto).not.toHaveBeenCalled();
-  });
-
-  it("after nothing, the item is marked judged and leaves the queue", async () => {
-    const entries = [makeEntry("id1", "Tech"), makeEntry("id2", "Food")];
-    const host = makeTestHost(entries);
-    const ctrl = new GalleryFeedModeController(host);
-    ctrl.trainingMode = true;
-    ctrl.startReviewPass(["id1", "id2"]);
-
-    const setEntries = vi.fn();
-    (ctrl as unknown as { feedHandle: { setEntries: typeof setEntries } | null }).feedHandle = { setEntries };
-
-    (ctrl as unknown as { handleTrainingAction: (a: string, id: string) => void })
-      .handleTrainingAction("nothing", "id1");
-
-    await vi.waitFor(() => expect(host.reviewNothing).toHaveBeenCalled());
-    // After the async write resolves, only id2 remains
-    await vi.waitFor(() => expect(setEntries).toHaveBeenCalled());
-    const [remainingEntries] = setEntries.mock.calls[setEntries.mock.calls.length - 1];
-    expect(remainingEntries.map((e: ReturnType<typeof makeEntry>) => getRoostId(e))).not.toContain("id1");
   });
 
   it("recategorize calls openReviewMoveModal (not openMoveModal)", () => {

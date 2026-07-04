@@ -9,7 +9,6 @@ import { registerDigestCommands } from "@/plugin/digest-commands";
 import { registerMemoryCommands } from "@/plugin/memory-commands";
 import { registerBackfillCommands } from "@/plugin/backfill-commands";
 import { registerSeedCommands } from "@/plugin/seed-commands";
-import { registerSeedBelongsNothingCommand } from "@/plugin/seed-belongs-nothing";
 import { registerMigrationCommands } from "@/plugin/migration-commands";
 import { registerRemapCommands } from "@/plugin/remap-commands";
 import type { RoostCommandHost } from "@/plugin/roost-command-host";
@@ -187,7 +186,6 @@ export function registerRoostCommands(plugin: RoostCommandHost): void {
   registerMemoryCommands(plugin);
   registerBackfillCommands(plugin);
   registerSeedCommands(plugin);
-  registerSeedBelongsNothingCommand(plugin);
   registerRemapCommands(plugin);
 
   plugin.addCommand({

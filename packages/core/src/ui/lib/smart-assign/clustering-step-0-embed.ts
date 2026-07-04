@@ -4,7 +4,7 @@ import { loadEmbeddingCache, stripPreamble } from "@/pipeline/shared";
 import { probeSidecarUp } from "@/lib/sidecar-probe";
 
 import { loadProvenance, saveProvenance, classifyMismatch } from "@/lib/embedding-provenance";
-import { vaultBasePath, getSyncFiles, isBelongsNothingFm } from "@/lib/vault-utils";
+import { vaultBasePath } from "@/lib/vault-utils";
 
 import type { SmartAssignClusteringHost } from "@/ui/lib/smart-assign/clustering";
 import type { ClusteringStep0Slice } from "@/ui/lib/smart-assign/clustering-context";
@@ -94,23 +94,10 @@ export async function runClusteringStep0Embed(
     `Using ${input.itemIds.length} target items + ${anchorItemIds.size} anchor items (${items.length} have vecs), ${itemCollectionsAll.size} labeled`,
   );
 
-  // Build a belongs-nothing lookup so stamped-terminal items are excluded from
-  // every candidate set (prevents re-assignment loops after the user marks an
-  // item as "belongs to nothing" — clearing its category would otherwise make
-  // it re-appear as unsorted on the next Smart Assign run).
-  const belongsNothingIds = new Set<string>();
-  for (const file of getSyncFiles(host.app.vault, host.plugin.settings.syncFolder)) {
-    const fm = host.app.metadataCache.getFileCache(file)?.frontmatter;
-    if (fm?.roost_id && isBelongsNothingFm(fm)) {
-      belongsNothingIds.add(fm.roost_id as string);
-    }
-  }
-
   const unsortedIdSet = new Set<string>();
   const targetPlatformIds = new Set<string>();
   for (const id of input.itemIds) {
     if (!cache[id]?.vec) continue;
-    if (belongsNothingIds.has(id)) continue; // stamped terminal — skip
     unsortedIdSet.add(id);
     targetPlatformIds.add(id);
   }

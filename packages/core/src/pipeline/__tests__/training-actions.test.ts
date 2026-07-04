@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { planConfirm, planReject, planReviewConfirm, planCorrection, planBelongsNothing } from "@/pipeline/training-actions";
-import { emptyTrainingSet, isBelongsNothing } from "@/pipeline/training-set";
+import { planConfirm, planReject, planReviewConfirm, planCorrection } from "@/pipeline/training-actions";
+import { emptyTrainingSet } from "@/pipeline/training-set";
 import type { TrainingSet } from "@/pipeline/training-set";
 import { CATEGORY_FIELD, SUBCATEGORY_FIELD, ASSIGNED_BY_FIELD } from "@/config";
 
@@ -76,13 +76,3 @@ describe("planCorrection", () => {
   });
 });
 
-describe("planBelongsNothing", () => {
-  it("planBelongsNothing records the sentinel + stamps the note", () => {
-    const ts = emptyTrainingSet();
-    const { patch } = planBelongsNothing(ts, "id1", 123);
-    expect(isBelongsNothing(ts, "id1")).toBe(true);
-    expect(patch["roost_belongs_nothing"]).toBe(true);
-    expect(patch["roost_category"]).toBeNull();
-    expect(patch["roost_assigned_by"]).toBe("human");
-  });
-});

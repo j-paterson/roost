@@ -53,8 +53,8 @@ export interface FeedRenderContext {
   onAction: (action: "move" | "delete" | "open", roostId: string) => void;
   /** When true, training items render the confirm/reject action bar. */
   trainingMode?: boolean;
-  /** Routes a training-mode action for an item to the host (confirm/reject/recategorize/skip/nothing). */
-  onTrainingAction?: (action: "confirm" | "reject" | "recategorize" | "skip" | "nothing", roostId: string) => void;
+  /** Routes a training-mode action for an item to the host (confirm/reject/recategorize/skip). */
+  onTrainingAction?: (action: "confirm" | "reject" | "recategorize" | "skip", roostId: string) => void;
   /** Per-item guessed category override. In the Smart Assign review pass the proposed
    *  category lives in memory (proposedFolders), NOT in frontmatter, so readGuess can't
    *  see it — this supplies it. Returns null to fall back to readGuess (regular Train mode). */
@@ -64,7 +64,7 @@ export interface FeedRenderContext {
 export function buildTrainingBar(
   doc: Document,
   guess: string,
-  handlers: { onConfirm: () => void; onReject: () => void; onRecategorize: () => void; onSkip: () => void; onNothing: () => void },
+  handlers: { onConfirm: () => void; onReject: () => void; onRecategorize: () => void; onSkip: () => void },
 ): HTMLElement {
   const bar = doc.createElement("div");
   bar.className = "roost-training-bar";
@@ -92,7 +92,6 @@ export function buildTrainingBar(
   mk("reject", "✕", "No — reject (N)", handlers.onReject);
   mk("confirm", "✓", "Yes — keep (Y)", handlers.onConfirm);
   mk("skip", "»", "Skip (S)", handlers.onSkip);
-  mk("nothing", "∅", "Belongs to nothing (X)", handlers.onNothing);
   return bar;
 }
 
@@ -144,7 +143,6 @@ export function maybeAppendTrainingBar(
     onReject: () => ctx.onTrainingAction!("reject", roostId),
     onRecategorize: () => ctx.onTrainingAction!("recategorize", roostId),
     onSkip: () => ctx.onTrainingAction!("skip", roostId),
-    onNothing: () => ctx.onTrainingAction!("nothing", roostId),
   });
   el.appendChild(bar);
 }

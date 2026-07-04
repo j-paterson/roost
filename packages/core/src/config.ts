@@ -109,9 +109,6 @@ export const DEV_COMMANDS_ENABLED =
 /** Category names that are staging/abstain buckets, never learned classes (lowercased compare). */
 export const RESERVED_NON_CATEGORIES = new Set<string>(["other"]);
 
-/** Sentinel category in TrainingSet.rejections meaning "this item fits NO category"
- *  (a terminal reject). Never a real category; excluded from suppression + gather. */
-export const BELONGS_NOTHING = "*";
 export const TRAINING_SET_VERSION = 1;
 export const EVAL_LOG_VERSION = 1;
 /** Min human positives before a category is training-eligible (graduates into the head). */

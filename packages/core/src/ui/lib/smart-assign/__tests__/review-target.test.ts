@@ -5,7 +5,6 @@
  * Synthetic app with:
  *   NC_ITEM  — no roost_category (unsorted pool)
  *   OT_ITEM  — roost_category: "Other"
- *   BN_ITEM  — roost_belongs_nothing: true (must always be excluded)
  *
  * Stub head: 2 classes (Tech, Food), dim=2.
  *   W[Tech] = [1,0], W[Food] = [-1,0], b=[0,0].
@@ -57,13 +56,6 @@ const OT_ITEM: StubItem = {
   vec: [1, 1],
 };
 
-/** belongs-nothing stamped — must never appear in any result. */
-const BN_ITEM: StubItem = {
-  id: "tiktok:bn1",
-  frontmatter: { roost_id: "tiktok:bn1", roost_belongs_nothing: true },
-  vec: [1, 0],
-};
-
 // ── Factory helpers ───────────────────────────────────────────────────────────
 
 function makeApp(items: StubItem[]): App {
@@ -106,7 +98,7 @@ function makeCache(items: StubItem[]): Record<string, EmbeddingCacheEntry> {
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 describe("gatherReviewTargets", () => {
-  const ALL_ITEMS = [NC_ITEM, OT_ITEM, BN_ITEM];
+  const ALL_ITEMS = [NC_ITEM, OT_ITEM];
   const app = makeApp(ALL_ITEMS);
   const cache = makeCache(ALL_ITEMS);
 
@@ -119,12 +111,6 @@ describe("gatherReviewTargets", () => {
     it("sets a real-category proposal for the Other item", () => {
       const { proposalMap } = gatherReviewTargets(app, SYNC_FOLDER, "other", cache, STUB_HEAD);
       expect(proposalMap["tiktok:ot1"]).toBe("Tech");
-    });
-
-    it("excludes the belongs-nothing item", () => {
-      const { ids, proposalMap } = gatherReviewTargets(app, SYNC_FOLDER, "other", cache, STUB_HEAD);
-      expect(ids).not.toContain("tiktok:bn1");
-      expect(proposalMap["tiktok:bn1"]).toBeUndefined();
     });
 
     it("excludes the unsorted (no-category) item", () => {
@@ -144,20 +130,18 @@ describe("gatherReviewTargets", () => {
       expect(proposalMap["tiktok:nc1"]).toBe("Tech");
     });
 
-    it("excludes Other and belongs-nothing items", () => {
+    it("excludes Other items", () => {
       const { ids } = gatherReviewTargets(app, SYNC_FOLDER, "unsorted", cache, STUB_HEAD);
       expect(ids).not.toContain("tiktok:ot1");
-      expect(ids).not.toContain("tiktok:bn1");
     });
   });
 
   describe('target: "both"', () => {
-    it("returns both non-belongs-nothing items", () => {
+    it("returns both items", () => {
       const { ids } = gatherReviewTargets(app, SYNC_FOLDER, "both", cache, STUB_HEAD);
       expect(ids).toHaveLength(2);
       expect(ids).toContain("tiktok:nc1");
       expect(ids).toContain("tiktok:ot1");
-      expect(ids).not.toContain("tiktok:bn1");
     });
 
     it("ranks ascending by confidence: OT_ITEM (≈0.804) before NC_ITEM (≈0.881)", () => {

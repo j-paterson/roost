@@ -126,16 +126,6 @@ export function parseRoostId(content: string): string | null {
 }
 
 /**
- * Return true if the frontmatter marks an item as "belongs to nothing" —
- * i.e., the user explicitly decided it should never be assigned a category.
- * Such items must be excluded from the unsorted candidate set (library-tree
- * unsorted count and Smart Assign gather) to prevent re-assignment loops.
- */
-export function isBelongsNothingFm(fm: Record<string, unknown> | undefined | null): boolean {
-  return !!fm && fm.roost_belongs_nothing === true;
-}
-
-/**
  * Check if a frontmatter object matches a category filter.
  * - filterCategory === undefined → match all
  * - filterCategory === null → match only unsorted (no roost_category)

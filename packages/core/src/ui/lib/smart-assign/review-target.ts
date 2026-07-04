@@ -14,7 +14,6 @@
 
 import type { App } from "obsidian";
 import { CATEGORY_FIELD } from "@/config";
-import { isBelongsNothingFm } from "@/lib/vault-utils";
 import { classifyWithHead, type ClassifierHead } from "@/pipeline/classifier-head";
 import type { EmbeddingCacheEntry } from "@/types/roost";
 
@@ -57,10 +56,6 @@ export function gatherReviewTargets(
   for (const file of files) {
     const fm = app.metadataCache.getFileCache(file)?.frontmatter;
     if (!fm?.roost_id) continue;
-
-    // Exclude items the user has marked as "belongs to nothing" — they are
-    // terminal and must never re-appear in any candidate set.
-    if (isBelongsNothingFm(fm)) continue;
 
     const id = fm.roost_id as string;
 
