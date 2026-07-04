@@ -1,9 +1,40 @@
 // @vitest-environment happy-dom
-import { describe, it, expect, vi, afterEach } from "vitest";
+import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 import { PlatformCard } from "@/ui/hub/platform-card";
 
 afterEach(cleanup);
+
+// Capture constructed Menu instances so tests can invoke the registered handlers.
+// Note: vi.importActual("obsidian") resolves to src/__mocks__/obsidian.ts via the
+// vitest alias, not the real package.
+type CapturedItem = { title: string; onClick?: () => void };
+const menuItemsByInstance: CapturedItem[][] = [];
+
+vi.mock("obsidian", async () => {
+  const actual = await vi.importActual<typeof import("obsidian")>("obsidian");
+  class CapturingMenu {
+    items: CapturedItem[] = [];
+    constructor() { menuItemsByInstance.push(this.items); }
+    addItem(cb: (item: {
+      setTitle: (t: string) => typeof item;
+      setIcon: (n: string) => typeof item;
+      onClick: (fn: () => void) => typeof item;
+    }) => void) {
+      const config: CapturedItem = { title: "" };
+      const item = {
+        setTitle: (t: string) => { config.title = t; return item; },
+        setIcon: (_n: string) => item,
+        onClick: (fn: () => void) => { config.onClick = fn; return item; },
+      };
+      cb(item);
+      this.items.push(config);
+      return this;
+    }
+    showAtMouseEvent(_e: MouseEvent) { return this; }
+  }
+  return { ...actual, Menu: CapturingMenu };
+});
 
 describe("PlatformCard — unconfigured", () => {
   it("shows Connect button and educational copy", () => {
@@ -16,6 +47,8 @@ describe("PlatformCard — unconfigured", () => {
 });
 
 describe("PlatformCard — connected-idle", () => {
+  beforeEach(() => { menuItemsByInstance.length = 0; });
+
   it("shows item count, last-sync, and Sync button", () => {
     const onSync = vi.fn();
     const ts = Date.now() - 2 * 60 * 60 * 1000;
@@ -89,6 +122,31 @@ describe("PlatformCard — connected-idle", () => {
     };
     expect(screen.getAllByText(matchPartialText("4 threads incomplete")).length).toBeGreaterThan(0);
     expect(screen.getAllByText(matchPartialText("28 article bodies")).length).toBeGreaterThan(0);
+  });
+
+  it("caret button opens menu; Full-rescan item fires onFullSync and not onSync", () => {
+    const onSync = vi.fn();
+    const onFullSync = vi.fn();
+    render(
+      <PlatformCard
+        platform="tiktok"
+        state={{ kind: "connected-idle", itemCount: 100, lastSync: Date.now(), backlogs: { mediaFiles: 0, thread: 0, articleBody: 0, playback: 0 } }}
+        onConnect={() => {}}
+        onSync={onSync}
+        onFullSync={onFullSync}
+        onReconnect={() => {}}
+      />
+    );
+    // Click the caret button to build and show the menu
+    fireEvent.click(screen.getByRole("button", { name: /more sync options/i }));
+    // CapturingMenu.constructor pushed its items array into menuItemsByInstance
+    const items = menuItemsByInstance.at(-1)!;
+    const fullRescan = items.find((item) => item.title === "Full rescan");
+    expect(fullRescan, "Full rescan menu item must be registered").toBeTruthy();
+    // Invoke the captured handler — must call onFullSync, never onSync
+    fullRescan!.onClick!();
+    expect(onFullSync).toHaveBeenCalledOnce();
+    expect(onSync).not.toHaveBeenCalled();
   });
 });
 

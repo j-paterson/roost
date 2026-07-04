@@ -425,8 +425,8 @@ export function HubBody({ app, plugin }: { app: App; plugin: IRoostPlugin }) {
           loginActive={false}
           webviewMountRef={null}
           onConnect={() => {}}
-          onSync={() => void syncOne("eagle")}
-          onFullSync={() => void syncOne("eagle", "full")}
+          onSync={() => void syncOne("eagle")} // Eagle ignores mode — runs the Eagle import either way
+          onFullSync={() => void syncOne("eagle", "full")} // Eagle ignores mode — runs the Eagle import either way
           onReconnect={() => {}}
           onCancelLogin={() => {}}
           onDisconnect={undefined}

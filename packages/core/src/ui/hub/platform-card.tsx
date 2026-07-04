@@ -305,7 +305,7 @@ export function PlatformCard({
                       item
                         .setTitle("Full rescan")
                         .setIcon("refresh-cw")
-                        .onClick(() => onFullSync()),
+                        .onClick(onFullSync),
                     );
                     menu.showAtMouseEvent(e.nativeEvent);
                   }}
