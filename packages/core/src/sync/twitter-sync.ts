@@ -4,7 +4,7 @@
 import { roostUnwrapTweet } from "@/lib/normalize-helpers";
 import { roostNormalize, type NormalizedRecord } from "../lib/normalize";
 import type { StopSignal, SyncPhaseProgress, ElectronWebview } from "@/types/sync";
-import { SYNC_BATCH_SIZE, EARLY_OUT_THRESHOLD } from "@/config";
+import { SYNC_BATCH_SIZE } from "@/config";
 import { ThreadFetcher } from "./thread-fetcher";
 import { ArticleFetcher } from "./article-fetcher";
 import { getTweetAuthorId, getConversationId } from "@/lib/extract";
@@ -120,9 +120,14 @@ export async function syncTwitter(
   let lastNewItemTime = Date.now();
   const BATCH_SIZE = SYNC_BATCH_SIZE;
 
-  // Early-out: if previous sync was complete, stop after consecutive all-known batches
-  const prevSyncComplete = await wc.executeJavaScript(`!!window.__ROOST_PREV_SYNC_COMPLETE__`).catch(() => false);
-  let consecutiveKnownBatches = 0;
+  // Quick sync stops at the first already-known bookmark. Pull the known-id set
+  // into Node once (same source the vault index injected into the webview).
+  const mode: SyncMode = opts.syncMode ?? "full";
+  const knownIds: Set<string> = await wc
+    .executeJavaScript(`(function(){ var s = window.__ROOST_KNOWN_IDS__; return s ? Array.from(s) : []; })()`)
+    .then((arr: unknown) => new Set(Array.isArray(arr) ? (arr as string[]) : []))
+    .catch(() => new Set<string>());
+  let boundaryReached = false;
 
   while (!isStopped()) {
     await new Promise(r => setTimeout(r, 2000));
@@ -144,34 +149,18 @@ export async function syncTwitter(
 
     while (totalFetched - lastCollected >= BATCH_SIZE && !isStopped()) {
       const batch = await collectChunk(wc, lastCollected, BATCH_SIZE);
-      await collectBatch(batch);
+      const { collect, boundary } = sliceUntilKnown(batch, knownIds, mode);
+      await collectBatch(collect);
       lastCollected += BATCH_SIZE;
-
-      if (prevSyncComplete && batch.length > 0) {
-        const allKnown = await wc.executeJavaScript(`
-          (function() {
-            var known = window.__ROOST_KNOWN_IDS__;
-            if (!known) return false;
-            var ids = ${JSON.stringify(batch.map(r => r.id))};
-            return ids.every(function(id) { return known.has(id); });
-          })();
-        `).catch(() => false);
-
-        if (allKnown) {
-          consecutiveKnownBatches++;
-          onLog?.(`Batch: all ${batch.length} already synced (${consecutiveKnownBatches}/${EARLY_OUT_THRESHOLD})`);
-          if (consecutiveKnownBatches >= EARLY_OUT_THRESHOLD) {
-            onLog?.("Previous sync was complete — stopping scroll early");
-            break;
-          }
-        } else {
-          consecutiveKnownBatches = 0;
-        }
+      if (boundary) {
+        onLog?.(`Quick sync: reached a previously-synced bookmark — stopping scroll`);
+        boundaryReached = true;
+        break;
       }
     }
 
     // Break out of outer loop too if early-out triggered
-    if (prevSyncComplete && consecutiveKnownBatches >= EARLY_OUT_THRESHOLD) break;
+    if (boundaryReached) break;
     if (!status.scrollActive && status.bookmarks > 0) break;
     if (Date.now() - lastNewItemTime > maxScrollTime) break;
   }
@@ -183,11 +172,14 @@ export async function syncTwitter(
 
   // Only collect remaining if not stopped
   let finalCount = totalFetched;
-  if (!isStopped()) {
+  if (!isStopped() && !boundaryReached) {
     finalCount = await getStoreCount(wc);
     if (finalCount > lastCollected) {
       const batch = await collectChunk(wc, lastCollected, finalCount - lastCollected);
-      await collectBatch(batch);
+      // In quick mode a small account may never fill a 200-item batch; still stop
+      // at the boundary here.
+      const { collect } = sliceUntilKnown(batch, knownIds, mode);
+      await collectBatch(collect);
     }
   }
 
