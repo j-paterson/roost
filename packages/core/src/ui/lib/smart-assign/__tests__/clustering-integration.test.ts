@@ -614,4 +614,76 @@ describe("clustering integration (steps 0→1→2)", () => {
     expect(fitProposal).toBeDefined();
     expect(fitProposal!.itemIds.length).toBe(5);
   });
+
+  // ── Test: belongs-nothing exclusion in embed-step gather ────
+  //
+  // Verifies that a no-category item stamped `roost_belongs_nothing: true` is
+  // excluded from unsortedItemIds / unsortedIdSet while a sibling normal item
+  // (no category, no stamp) is included. This guards the gather loop inside
+  // runClusteringStep0Embed against silent regressions from future refactors.
+  it("excludes items stamped roost_belongs_nothing=true from unsortedItemIds and unsortedIdSet", async () => {
+    const normalId = "bn_normal";
+    const nothingId = "bn_nothing";
+
+    // ── Vault: getMarkdownFiles exposes both items (needed for getSyncFiles) ──
+    const adapter = new FileSystemAdapter();
+    (adapter as unknown as { basePath: string }).basePath = tmpDir;
+    const syncFolder = "Bookmarks";
+    const fileList = [
+      { path: `${syncFolder}/bn_normal.md` },
+      { path: `${syncFolder}/bn_nothing.md` },
+    ];
+    const vault = {
+      adapter,
+      getMarkdownFiles: () => fileList,
+    } as unknown as import("obsidian").Vault;
+
+    // Frontmatter: nothingId is stamped roost_belongs_nothing: true
+    const fmByPath: Record<string, Record<string, unknown>> = {
+      [`${syncFolder}/bn_normal.md`]: { roost_id: normalId },
+      [`${syncFolder}/bn_nothing.md`]: { roost_id: nothingId, roost_belongs_nothing: true },
+    };
+
+    // App: metadataCache returns correct frontmatter per file
+    const app = {
+      vault,
+      metadataCache: {
+        getFileCache: (f: { path: string }) => ({ frontmatter: fmByPath[f.path] ?? null }),
+      },
+    } as unknown as import("obsidian").App;
+
+    // Cache: both items have vec + vecText (non-null) → describeItems treats them
+    // as already-done and returns immediately without any LLM/embedder calls.
+    const cache: Record<string, EmbeddingCacheEntry> = {
+      [normalId]: { vision: null, summary: "normal item", category: null, vec: oneHot(5), vecText: oneHot(5) },
+      [nothingId]: { vision: null, summary: "belongs nothing", category: null, vec: oneHot(6), vecText: oneHot(6) },
+    };
+    saveEmbeddingCache(vault, cache);
+
+    // Both items are unsorted (no category, no collections)
+    const input: SmartAssignInput = {
+      itemIds: [normalId, nothingId],
+      collections: {},
+      topics: [],
+      itemProvenance: new Map(),
+      write: { into: "category" },
+      allowDiscovery: true,
+    };
+
+    const { host } = makeHost({ vault, input });
+    // Patch host.app so the belongsNothingIds scan sees correct frontmatter
+    (host as unknown as Record<string, unknown>)["app"] = app;
+
+    const signal: StopSignal = { stopped: false, stop() { this.stopped = true; } };
+
+    const s0 = await runClusteringStep0Embed(host, signal);
+
+    expect(s0).not.toBeNull();
+    // Normal item: present in both unsorted outputs
+    expect(s0!.unsortedItemIds).toContain(normalId);
+    expect(s0!.unsortedIdSet.has(normalId)).toBe(true);
+    // Belongs-nothing item: absent from both unsorted outputs
+    expect(s0!.unsortedItemIds).not.toContain(nothingId);
+    expect(s0!.unsortedIdSet.has(nothingId)).toBe(false);
+  });
 });

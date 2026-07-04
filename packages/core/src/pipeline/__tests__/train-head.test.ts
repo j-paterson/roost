@@ -1,5 +1,18 @@
-import { describe, it, expect } from "vitest";
-import { selectTrainingPositives } from "@/pipeline/train-head";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { selectTrainingPositives, buildTrainingRows } from "@/pipeline/train-head";
+import type { TrainingSet } from "@/pipeline/training-set";
+
+// ── Mock vault-I/O dependencies so buildTrainingRows can be unit-tested ──────
+vi.mock("@/pipeline/training-set", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/pipeline/training-set")>();
+  return { ...actual, loadTrainingSet: vi.fn() };
+});
+vi.mock("@/pipeline/shared", () => ({
+  loadEmbeddingCache: vi.fn(),
+}));
+
+import { loadTrainingSet } from "@/pipeline/training-set";
+import { loadEmbeddingCache } from "@/pipeline/shared";
 
 const P = (category: string, ts: number, source?: "correction" | "confirm") => ({ category, ts, source });
 
@@ -35,6 +48,80 @@ describe("selectTrainingPositives", () => {
     const positives = { a: P("Tech", 1, "correction"), b: P("Rare", 2, "correction") };
     const out = selectTrainingPositives(positives, new Set(["Tech"]), 2.0);
     expect(out.map((r) => r.id)).toEqual(["a"]);
+  });
+});
+
+describe("buildTrainingRows — reserved category exclusion", () => {
+  const mockVault = {} as import("obsidian").Vault;
+
+  beforeEach(() => {
+    vi.resetAllMocks();
+  });
+
+  it("excludes rows for 'Other' even when it has enough positives to be eligible", () => {
+    // TrainingSet with 6 positives in 'Other' (≥ TRAIN_ELIGIBILITY_MIN=5) and 5 in 'Tech'
+    const ts: TrainingSet = {
+      version: 1,
+      positives: {
+        o1: { category: "Other", ts: 1 },
+        o2: { category: "Other", ts: 2 },
+        o3: { category: "Other", ts: 3 },
+        o4: { category: "Other", ts: 4 },
+        o5: { category: "Other", ts: 5 },
+        o6: { category: "Other", ts: 6 },
+        t1: { category: "Tech", ts: 7 },
+        t2: { category: "Tech", ts: 8 },
+        t3: { category: "Tech", ts: 9 },
+        t4: { category: "Tech", ts: 10 },
+        t5: { category: "Tech", ts: 11 },
+      },
+      rejections: {},
+    };
+    vi.mocked(loadTrainingSet).mockReturnValue(ts);
+    const vec = [1, 0, 0];
+    vi.mocked(loadEmbeddingCache).mockReturnValue({
+      o1: { vec, vecText: vec, vision: null, summary: null, category: null, clipVec: null },
+      o2: { vec, vecText: vec, vision: null, summary: null, category: null, clipVec: null },
+      o3: { vec, vecText: vec, vision: null, summary: null, category: null, clipVec: null },
+      o4: { vec, vecText: vec, vision: null, summary: null, category: null, clipVec: null },
+      o5: { vec, vecText: vec, vision: null, summary: null, category: null, clipVec: null },
+      o6: { vec, vecText: vec, vision: null, summary: null, category: null, clipVec: null },
+      t1: { vec, vecText: vec, vision: null, summary: null, category: null, clipVec: null },
+      t2: { vec, vecText: vec, vision: null, summary: null, category: null, clipVec: null },
+      t3: { vec, vecText: vec, vision: null, summary: null, category: null, clipVec: null },
+      t4: { vec, vecText: vec, vision: null, summary: null, category: null, clipVec: null },
+      t5: { vec, vecText: vec, vision: null, summary: null, category: null, clipVec: null },
+    } as any);
+
+    const rows = buildTrainingRows(mockVault);
+    expect(rows.some((r) => r.category === "Other")).toBe(false);
+    expect(rows.some((r) => r.category === "Tech")).toBe(true);
+  });
+
+  it("excludes 'other' case-insensitively (lowercase variant)", () => {
+    const ts: TrainingSet = {
+      version: 1,
+      positives: {
+        o1: { category: "other", ts: 1 },
+        o2: { category: "other", ts: 2 },
+        o3: { category: "other", ts: 3 },
+        o4: { category: "other", ts: 4 },
+        o5: { category: "other", ts: 5 },
+      },
+      rejections: {},
+    };
+    vi.mocked(loadTrainingSet).mockReturnValue(ts);
+    const vec = [1, 0, 0];
+    vi.mocked(loadEmbeddingCache).mockReturnValue({
+      o1: { vec, vecText: vec, vision: null, summary: null, category: null, clipVec: null },
+      o2: { vec, vecText: vec, vision: null, summary: null, category: null, clipVec: null },
+      o3: { vec, vecText: vec, vision: null, summary: null, category: null, clipVec: null },
+      o4: { vec, vecText: vec, vision: null, summary: null, category: null, clipVec: null },
+      o5: { vec, vecText: vec, vision: null, summary: null, category: null, clipVec: null },
+    } as any);
+
+    const rows = buildTrainingRows(mockVault);
+    expect(rows).toHaveLength(0);
   });
 });
 

@@ -1,6 +1,6 @@
 import type { App } from "obsidian";
 import { CATEGORY_FIELD, SUBCATEGORY_FIELD, PLATFORM_DISPLAY } from "@/config";
-import { getSyncFiles, matchesCategoryFilter } from "@/lib/vault-utils";
+import { getSyncFiles, matchesCategoryFilter, isBelongsNothingFm } from "@/lib/vault-utils";
 import type { RoostSettings } from "@/settings";
 
 export interface LibraryTreeSubcategory {
@@ -90,6 +90,7 @@ export function scanLibraryTree(
   for (const file of files) {
     const fm = app.metadataCache.getFileCache(file)?.frontmatter;
     if (!fm?.roost_id) continue;
+    if (isBelongsNothingFm(fm)) continue; // stamped terminal — not unsorted, not a category
     const platform = fm.platform || "other";
     platformTotals.set(platform, (platformTotals.get(platform) || 0) + 1);
     grandTotal++;

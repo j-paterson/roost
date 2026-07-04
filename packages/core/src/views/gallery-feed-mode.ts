@@ -68,6 +68,9 @@ export interface GalleryFeedModeHost {
   /** originalGuess is the system's proposed category being corrected; null when unknown. */
   reviewMove(roostId: string, category: string, originalGuess: string | null): Promise<void>;
   reviewReject(roostId: string): Promise<void>;
+  /** Mark this item as belonging to no category (terminal). Works in both regular
+   *  training mode and review-pass mode — no guess required. */
+  reviewNothing(roostId: string): Promise<void>;
   openReviewMoveModal(entry: BasesEntry, onCategory: (category: string) => Promise<void>): void;
 }
 
@@ -226,7 +229,7 @@ export class GalleryFeedModeController {
   }
 
   private handleTrainingAction(
-    action: "confirm" | "reject" | "recategorize" | "skip",
+    action: "confirm" | "reject" | "recategorize" | "skip" | "nothing",
     roostId: string,
   ): void {
     if (!this.trainingMode) return;
@@ -247,6 +250,17 @@ export class GalleryFeedModeController {
       this.advanceAfterAction(roostId);
       return;
     }
+    // "nothing" is terminal — always routes through reviewNothing regardless of mode.
+    if (action === "nothing") {
+      if (this.inFlight.has(roostId)) return;
+      this.inFlight.add(roostId);
+      this.skipped.add(roostId);
+      void this.host.reviewNothing(roostId).finally(() => {
+        this.inFlight.delete(roostId);
+        this.advanceAfterAction(roostId);
+      });
+      return;
+    }
     if (this.inFlight.has(roostId)) return;
     this.inFlight.add(roostId);
     // Drop the item from the queue immediately (like skip): the frontmatter change is
@@ -261,12 +275,22 @@ export class GalleryFeedModeController {
    *  reject → planReject. Each action writes frontmatter immediately (commit-as-you-go),
    *  adds to humanAssignedRoostIds, and advances the feed. */
   private handleReviewPassAction(
-    action: "confirm" | "reject" | "recategorize" | "skip",
+    action: "confirm" | "reject" | "recategorize" | "skip" | "nothing",
     roostId: string,
   ): void {
     if (action === "skip") {
       this.skipped.add(roostId);
       this.advanceAfterAction(roostId);
+      return;
+    }
+    if (action === "nothing") {
+      if (this.inFlight.has(roostId)) return;
+      this.inFlight.add(roostId);
+      this.skipped.add(roostId);
+      void this.host.reviewNothing(roostId).finally(() => {
+        this.inFlight.delete(roostId);
+        this.advanceAfterAction(roostId);
+      });
       return;
     }
     if (action === "recategorize") {
@@ -320,6 +344,8 @@ export class GalleryFeedModeController {
         this.handleTrainingAction("reject", this.lastActiveRoostId);
       } else if (e.key === "s" || e.key === "S") {
         this.handleTrainingAction("skip", this.lastActiveRoostId);
+      } else if (e.key === "x" || e.key === "X") {
+        this.handleTrainingAction("nothing", this.lastActiveRoostId);
       }
     };
     this.keydownHandler = handler;

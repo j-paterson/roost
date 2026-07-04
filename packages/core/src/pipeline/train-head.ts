@@ -1,7 +1,7 @@
 import type { Vault } from "obsidian";
 import { loadTrainingSet, eligibleCategories } from "@/pipeline/training-set";
 import { loadEmbeddingCache } from "@/pipeline/shared";
-import { TRAIN_ELIGIBILITY_MIN, CONFIRM_CAP_RATIO } from "@/config";
+import { TRAIN_ELIGIBILITY_MIN, CONFIRM_CAP_RATIO, RESERVED_NON_CATEGORIES } from "@/config";
 
 export interface TrainingRow {
   id: string; vecText: number[]; vecVision: number[]; category: string; ts: number;
@@ -39,7 +39,9 @@ export function selectTrainingPositives(
 
 export function buildTrainingRows(vault: Vault): TrainingRow[] {
   const ts = loadTrainingSet(vault);
-  const eligible = new Set(eligibleCategories(ts, TRAIN_ELIGIBILITY_MIN));
+  const eligible = new Set(
+    eligibleCategories(ts, TRAIN_ELIGIBILITY_MIN).filter(c => !RESERVED_NON_CATEGORIES.has(c.toLowerCase())),
+  );
   const cache = loadEmbeddingCache(vault);
   const rows: TrainingRow[] = [];
   for (const { id, category, ts: at } of selectTrainingPositives(ts.positives, eligible, CONFIRM_CAP_RATIO)) {

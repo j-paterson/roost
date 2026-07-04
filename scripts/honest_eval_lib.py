@@ -6,6 +6,11 @@ import numpy as np
 
 SEED = 1729  # fixed; recorded in fixtures
 
+# Reserved non-category labels that are excluded from the known-category set.
+# "Other" is a catch-all bucket used by the TS layer — it is NOT a real learnable
+# class and must not contaminate the eval known-set. Mirror: TS RESERVED_NON_CATEGORIES.
+RESERVED_NON_CATEGORIES = {"other"}
+
 def load_cache(json_path=None, bin_path=None):
     """Return {id: np.ndarray(float32)}. Supports the v2 `embedding-vectors.bin`
     (keys-header + float32 matrix, dim from sibling embedding-meta.json) AND inline
@@ -199,7 +204,7 @@ def assert_disjoint(dev_ids, holdout_ids):
 import glob, re
 
 _FM = re.compile(r"^---\n(.*?)\n---", re.S)
-_FIELD = re.compile(r"^(roost_id|collection|roost_category|roost_assigned_by|platform):\s*(.+)$")
+_FIELD = re.compile(r"^(roost_id|collection|roost_category|roost_assigned_by|platform|roost_belongs_nothing):\s*(.+)$")
 
 
 def _read_fm(path):
@@ -248,7 +253,10 @@ def load_honest_labels(vault, sync_folder="Bookmarks"):
             continue
         coll = fm.get("collection")
         if coll and fm.get("roost_assigned_by") != "auto" and coll not in ("undefined", "null", ""):
-            labels[rid] = apply_alias(aliases, fm.get("platform", ""), coll)
+            cat = apply_alias(aliases, fm.get("platform", ""), coll)
+            if cat.lower() not in RESERVED_NON_CATEGORIES:
+                labels[rid] = cat
+            # else: "Other" is a reserved non-category — excluded from labels AND negatives
         elif not coll:
             negatives.add(rid)
     return labels, negatives

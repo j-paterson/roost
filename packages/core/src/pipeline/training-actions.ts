@@ -1,6 +1,6 @@
 import type { Vault, FileManager, TFile } from "obsidian";
 import { CATEGORY_FIELD, SUBCATEGORY_FIELD, ASSIGNED_BY_FIELD } from "@/config";
-import { type TrainingSet, addPositive, addRejection, loadTrainingSet, saveTrainingSet } from "@/pipeline/training-set";
+import { type TrainingSet, addPositive, addRejection, markBelongsNothing, loadTrainingSet, saveTrainingSet } from "@/pipeline/training-set";
 import { loadSnapshot, saveSnapshot } from "@/pipeline/category-snapshot";
 import { appendEvalRecords, type EvalRecord } from "@/pipeline/eval-log";
 
@@ -26,6 +26,19 @@ export function planReject(
   return {
     evalRecord: { ts: now, roostId: id, guess: guessedClass, tier: "none", finalLabel: null, correct: false, mode: "review" },
     patch: { [CATEGORY_FIELD]: null, [SUBCATEGORY_FIELD]: null, [ASSIGNED_BY_FIELD]: null },
+    snapshotValue: null,
+  };
+}
+
+/** Pure: mark an item as belonging to no category (terminal). Records the
+ *  BELONGS_NOTHING sentinel and stamps the note so it leaves every gather. */
+export function planBelongsNothing(
+  ts: TrainingSet, id: string, now: number,
+): { evalRecord: EvalRecord; patch: Record<string, unknown>; snapshotValue: null } {
+  markBelongsNothing(ts, id);
+  return {
+    evalRecord: { ts: now, roostId: id, guess: null, tier: "none", finalLabel: null, correct: false, mode: "review" },
+    patch: { [CATEGORY_FIELD]: null, [SUBCATEGORY_FIELD]: null, [ASSIGNED_BY_FIELD]: "human", roost_belongs_nothing: true },
     snapshotValue: null,
   };
 }
@@ -60,6 +73,20 @@ export async function rejectAutoItem(deps: TrainingActionDeps, guessedClass: str
   appendEvalRecords(vault, [evalRecord]);
   await fileManager.processFrontMatter(file, (fm) => {
     for (const [k, v] of Object.entries(patch)) { if (v === null) delete fm[k]; else fm[k] = v; }
+  });
+}
+
+/** Effectful: mark an item as belonging to no category (terminal). Records the
+ *  BELONGS_NOTHING sentinel and stamps roost_belongs_nothing on the note. */
+export async function markBelongsNothingItem(deps: TrainingActionDeps): Promise<void> {
+  const { vault, fileManager, file, id, now } = deps;
+  const ts = loadTrainingSet(vault);
+  const { evalRecord, patch, snapshotValue } = planBelongsNothing(ts, id, now);
+  const snap = loadSnapshot(vault); snap[id] = snapshotValue; saveSnapshot(vault, snap);
+  saveTrainingSet(vault, ts);
+  appendEvalRecords(vault, [evalRecord]);
+  await fileManager.processFrontMatter(file, (fm) => {
+    for (const [k, v] of Object.entries(patch)) { if (v === null) delete (fm as Record<string, unknown>)[k]; else (fm as Record<string, unknown>)[k] = v; }
   });
 }
 

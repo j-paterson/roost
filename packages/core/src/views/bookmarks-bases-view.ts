@@ -70,6 +70,7 @@ import { safeGetValue } from "@/lib/bases-entry";
 import {
   confirmAutoItem,
   rejectAutoItem,
+  markBelongsNothingItem,
   planReviewConfirm,
   planCorrection,
   type TrainingActionDeps,
@@ -413,6 +414,27 @@ export class BookmarksBasesView extends BasesView
       );
     } catch (e) {
       console.warn("[roost] reviewReject failed:", e);
+    }
+  }
+
+  /** Terminal action: mark this item as belonging to no category. No guess required.
+   *  Always marks judged (humanAssignedRoostIds) so confirmSmartAssign skips it;
+   *  stamps roost_belongs_nothing on the note when entry+file exist. */
+  async reviewNothing(roostId: string): Promise<void> {
+    const entry = this.findEntryByRoostId(roostId);
+    const file = entry ? this.app.vault.getFileByPath(entry.file.path) : null;
+    // Always mark judged even when the file is missing.
+    if (!this.humanAssignedRoostIds) this.humanAssignedRoostIds = new Set();
+    this.humanAssignedRoostIds.add(roostId);
+    this.syncHumanAssignedToPlugin();
+    this.onDataUpdated();
+    if (!entry || !file) return;
+    try {
+      await markBelongsNothingItem(
+        { vault: this.app.vault, fileManager: this.app.fileManager, file, id: roostId, now: Date.now() },
+      );
+    } catch (e) {
+      console.warn("[roost] reviewNothing failed:", e);
     }
   }
 
