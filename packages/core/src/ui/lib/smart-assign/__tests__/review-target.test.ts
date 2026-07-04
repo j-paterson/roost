@@ -56,6 +56,40 @@ const OT_ITEM: StubItem = {
   vec: [1, 1],
 };
 
+// Human-assigned Other — a human already decided; must NOT be gathered.
+const HU_OT_ITEM: StubItem = {
+  id: "tiktok:hu_ot1",
+  frontmatter: { roost_id: "tiktok:hu_ot1", roost_category: "Other", roost_assigned_by: "human" },
+  vec: [1, 1],
+};
+
+// Auto-assigned Other — not human-judged; must still be gathered.
+const AU_OT_ITEM: StubItem = {
+  id: "tiktok:au_ot1",
+  frontmatter: { roost_id: "tiktok:au_ot1", roost_category: "Other", roost_assigned_by: "auto" },
+  vec: [1, 1],
+};
+
+/**
+ * Head where "Other" is the top class for dim-0-aligned vectors.
+ * classes: ["Other", "Tech", "Food"]
+ *   W[Other] = [1,0]  → for vec [2,0] (norm [1,0]): z_Other=1
+ *   W[Tech]  = [0,1]  → z_Tech=0
+ *   W[Food]  = [-1,0] → z_Food=-1
+ * softmax([1,0,-1]) ≈ [0.665, 0.245, 0.090]
+ * argmax = "Other"; best non-reserved = "Tech" (0.245)
+ */
+const RESERVED_HEAD: ClassifierHead = {
+  classes: ["Other", "Tech", "Food"],
+  W: [
+    [1, 0],   // Other: aligned with dim 0
+    [0, 1],   // Tech: aligned with dim 1
+    [-1, 0],  // Food: negatively aligned to dim 0
+  ],
+  b: [0, 0, 0],
+  dim: 2,
+};
+
 // ── Factory helpers ───────────────────────────────────────────────────────────
 
 function makeApp(items: StubItem[]): App {
@@ -176,6 +210,48 @@ describe("gatherReviewTargets", () => {
       const sparseCache = makeCache([NC_ITEM]); // OT_ITEM has no entry → no vec
       const { ids } = gatherReviewTargets(app, SYNC_FOLDER, "other", sparseCache, STUB_HEAD);
       expect(ids).toHaveLength(0);
+    });
+  });
+
+  describe("human-judged Other exclusion", () => {
+    it("does not gather a human-assigned Other item (already judged)", () => {
+      const huApp = makeApp([HU_OT_ITEM]);
+      const huCache = makeCache([HU_OT_ITEM]);
+      const { ids } = gatherReviewTargets(huApp, SYNC_FOLDER, "other", huCache, STUB_HEAD);
+      expect(ids).not.toContain("tiktok:hu_ot1");
+      expect(ids).toHaveLength(0);
+    });
+
+    it("gathers an auto-assigned Other item (not human-judged)", () => {
+      const auApp = makeApp([AU_OT_ITEM]);
+      const auCache = makeCache([AU_OT_ITEM]);
+      const { ids } = gatherReviewTargets(auApp, SYNC_FOLDER, "other", auCache, STUB_HEAD);
+      expect(ids).toContain("tiktok:au_ot1");
+    });
+
+    it("also excludes human-Other from target='both'", () => {
+      const mixApp = makeApp([HU_OT_ITEM, NC_ITEM]);
+      const mixCache = makeCache([HU_OT_ITEM, NC_ITEM]);
+      const { ids } = gatherReviewTargets(mixApp, SYNC_FOLDER, "both", mixCache, STUB_HEAD);
+      expect(ids).not.toContain("tiktok:hu_ot1");
+      expect(ids).toContain("tiktok:nc1");
+    });
+  });
+
+  describe("reserved-category proposal skip", () => {
+    it("proposes a real (non-reserved) category when head top is 'Other'", () => {
+      // RESERVED_HEAD has Other > Tech > Food for vec=[2,0]; must propose "Tech"
+      const item: StubItem = {
+        id: "tiktok:res1",
+        frontmatter: { roost_id: "tiktok:res1", roost_category: "Other" },
+        vec: [2, 0],
+      };
+      const resApp = makeApp([item]);
+      const resCache = makeCache([item]);
+      const { proposalMap } = gatherReviewTargets(resApp, SYNC_FOLDER, "other", resCache, RESERVED_HEAD);
+      expect(proposalMap["tiktok:res1"]).toBeDefined();
+      expect(proposalMap["tiktok:res1"]?.toLowerCase()).not.toBe("other");
+      expect(proposalMap["tiktok:res1"]).toBe("Tech");
     });
   });
 });

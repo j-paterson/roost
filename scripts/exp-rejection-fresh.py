@@ -169,11 +169,12 @@ def main():
     relmaha = S.rel_mahalanobis(train, cache)
 
     # ── Load trusted gold set (may be empty — review pending) ──
-    # vault= enables live frontmatter scan for roost_belongs_nothing: true stamps
+    # vault= enables live frontmatter scan for human-'Other' items
+    # (roost_category lowercases to 'other' AND roost_assigned_by == 'human')
     gold_ids = [g for g in N.load_gold(build, vault=vault) if cache.get(g) is not None]
     if not gold_ids:
         if vault:
-            print("NOTE: No belongs-nothing-stamped items found in vault — "
+            print("NOTE: No human-'Other' items found in vault — "
                   "OSCR-vs-gold omitted (gold review pending).")
         else:
             print("NOTE: gold set (belongs-nothing-gold.json) not yet created — "
@@ -249,7 +250,7 @@ def main():
             print(f"  {c}: LOO OOD AUROC = {loo[c]} ({len(ood_ids)} OOD, {len(kn)} known)")
 
     _gold_omit_note = (
-        "OSCR/AURC vs gold: OMITTED — No belongs-nothing-stamped items found in vault (gold review pending)."
+        "OSCR/AURC vs gold: OMITTED — No human-'Other' items found in vault (gold review pending)."
         if vault else
         "OSCR/AURC vs gold: OMITTED — belongs-nothing-gold.json not yet created (gold review pending)."
     )

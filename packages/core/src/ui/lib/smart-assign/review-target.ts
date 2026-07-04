@@ -13,8 +13,8 @@
  */
 
 import type { App } from "obsidian";
-import { CATEGORY_FIELD } from "@/config";
-import { classifyWithHead, type ClassifierHead } from "@/pipeline/classifier-head";
+import { ASSIGNED_BY_FIELD, CATEGORY_FIELD, RESERVED_NON_CATEGORIES } from "@/config";
+import { softmaxProba, type ClassifierHead } from "@/pipeline/classifier-head";
 import type { EmbeddingCacheEntry } from "@/types/roost";
 
 /** Which pool of items to gather. */
@@ -66,11 +66,14 @@ export function gatherReviewTargets(
 
     const isUnsorted = cat === null;
     const isOther = cat !== null && cat.toLowerCase() === "other";
+    // A human-assigned "Other" means the user already decided — skip it so it does
+    // not loop back into the review queue after the first assignment.
+    const isHumanJudgedOther = isOther && (fm[ASSIGNED_BY_FIELD] as string | undefined) === "human";
 
     const matches =
       (target === "unsorted" && isUnsorted) ||
-      (target === "other" && isOther) ||
-      (target === "both" && (isUnsorted || isOther));
+      (target === "other" && isOther && !isHumanJudgedOther) ||
+      (target === "both" && (isUnsorted || (isOther && !isHumanJudgedOther)));
 
     if (!matches) continue;
 
@@ -80,9 +83,21 @@ export function gatherReviewTargets(
     if (!vec) continue;
 
     if (head !== null) {
-      const { category, confidence } = classifyWithHead(vec, head);
-      proposalMap[id] = category;
-      confidenceMap.set(id, confidence);
+      // Compute full softmax so we can pick the best *non-reserved* class.
+      // The deployed head may include "Other" as a class; proposing "Other" is
+      // useless (the item is already in that bucket), so we skip reserved names.
+      const proba = softmaxProba(vec, head);
+      let bestIdx = -1;
+      let bestP = -1;
+      for (let c = 0; c < head.classes.length; c++) {
+        if (!RESERVED_NON_CATEGORIES.has(head.classes[c].toLowerCase()) && proba[c] > bestP) {
+          bestP = proba[c];
+          bestIdx = c;
+        }
+      }
+      if (bestIdx < 0) bestIdx = 0; // pathological: all classes reserved — use argmax as fallback
+      proposalMap[id] = head.classes[bestIdx];
+      confidenceMap.set(id, proba[bestIdx]);
     } else {
       // No head yet — still include the item but record a neutral confidence
       // so the item participates in the review pass without a proposal.

@@ -204,7 +204,7 @@ def assert_disjoint(dev_ids, holdout_ids):
 import glob, re
 
 _FM = re.compile(r"^---\n(.*?)\n---", re.S)
-_FIELD = re.compile(r"^(roost_id|collection|roost_category|roost_assigned_by|platform|roost_belongs_nothing):\s*(.+)$")
+_FIELD = re.compile(r"^(roost_id|collection|roost_category|roost_assigned_by|platform):\s*(.+)$")
 
 
 def _read_fm(path):

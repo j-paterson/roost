@@ -76,23 +76,28 @@ def test_leave_one_out_splits():
     assert [x["id"] for x in train_wo] == ["t1"], train_wo
     assert ood == ["f2"], ood
 
-def test_load_gold_vault_reads_marker():
+def test_load_gold_vault_human_other_is_returned():
+    """Human-assigned Other = belongs-to-nothing gold: roost_category='Other' AND
+    roost_assigned_by='human' → included. Other combos → excluded."""
     with tempfile.TemporaryDirectory() as tmp:
         bk = os.path.join(tmp, "Bookmarks")
         os.makedirs(bk)
-        # Note stamped with roost_belongs_nothing: true
-        with open(os.path.join(bk, "stamped.md"), "w") as f:
-            f.write("---\nroost_id: id-stamped\nroost_belongs_nothing: true\n---\nContent\n")
-        # Normal note — no marker
-        with open(os.path.join(bk, "normal.md"), "w") as f:
-            f.write("---\nroost_id: id-normal\n---\nContent\n")
-        # Note with marker but no roost_id — must be ignored
+        # Human-assigned Other — MUST be returned
+        with open(os.path.join(bk, "human_other.md"), "w") as f:
+            f.write("---\nroost_id: id-human-other\nroost_category: Other\nroost_assigned_by: human\n---\nContent\n")
+        # Auto-assigned Other — must NOT be returned
+        with open(os.path.join(bk, "auto_other.md"), "w") as f:
+            f.write("---\nroost_id: id-auto-other\nroost_category: Other\nroost_assigned_by: auto\n---\nContent\n")
+        # Real-category human note — must NOT be returned
+        with open(os.path.join(bk, "real_cat.md"), "w") as f:
+            f.write("---\nroost_id: id-real-cat\nroost_category: Tech\nroost_assigned_by: human\n---\nContent\n")
+        # Note with no roost_id — must be ignored
         with open(os.path.join(bk, "noid.md"), "w") as f:
-            f.write("---\nroost_belongs_nothing: true\n---\nContent\n")
+            f.write("---\nroost_category: Other\nroost_assigned_by: human\n---\nContent\n")
         build_dir = os.path.join(tmp, "build")
         os.makedirs(build_dir)
         ids = N.load_gold(build_dir, vault=tmp)
-        assert ids == ["id-stamped"], f"expected ['id-stamped'], got {ids}"
+        assert ids == ["id-human-other"], f"expected ['id-human-other'], got {ids}"
 
 def test_load_gold_fallback_json():
     with tempfile.TemporaryDirectory() as tmp:
@@ -124,7 +129,7 @@ def test_load_honest_labels_excludes_other():
 
 if __name__ == "__main__":
     test_leave_one_out_splits()
-    test_load_gold_vault_reads_marker()
+    test_load_gold_vault_human_other_is_returned()
     test_load_gold_fallback_json()
     test_load_honest_labels_excludes_other()
     print("rej_negatives OK")
