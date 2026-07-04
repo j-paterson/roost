@@ -5,6 +5,7 @@ import { Button } from "@/ui/components/ui/button";
 import type { LiveSync } from "@/ui/hub/hub-body";
 import type { SyncProgress } from "@/ui/components/progress-header";
 import { enabledPlatforms } from "@/platforms/registry";
+import { Menu } from "obsidian";
 
 export type PlatformId = "tiktok" | "x" | "instagram" | "reddit" | "eagle";
 
@@ -194,6 +195,7 @@ export function PlatformCard({
   webviewMountRef,
   onConnect,
   onSync,
+  onFullSync,
   onReconnect,
   onCancelLogin,
   onDisconnect,
@@ -207,6 +209,7 @@ export function PlatformCard({
   webviewMountRef?: RefObject<HTMLDivElement | null> | null;
   onConnect: () => void;
   onSync: () => void;
+  onFullSync: () => void;
   onReconnect: () => void;
   /** Stop/cancel an in-progress inline login. */
   onCancelLogin?: () => void;
@@ -289,7 +292,27 @@ export function PlatformCard({
           detail={detail}
           action={
             <div className="flex items-center gap-2">
-              <Button variant="default" size="sm" onClick={onSync}>Sync</Button>
+              <div className="flex items-center">
+                <Button variant="default" size="sm" onClick={onSync} title="Quick sync — pull new items and stop at the last-synced point">Sync</Button>
+                <Button
+                  variant="default"
+                  size="sm"
+                  aria-label="More sync options"
+                  title="More sync options"
+                  onClick={(e: React.MouseEvent) => {
+                    const menu = new Menu();
+                    menu.addItem((item) =>
+                      item
+                        .setTitle("Full rescan")
+                        .setIcon("refresh-cw")
+                        .onClick(() => onFullSync()),
+                    );
+                    menu.showAtMouseEvent(e.nativeEvent);
+                  }}
+                >
+                  ▾
+                </Button>
+              </div>
               {onDisconnect && (
                 <Button variant="outline" size="xs" onClick={onDisconnect} title="Clear login + sync state for this platform">
                   Disconnect

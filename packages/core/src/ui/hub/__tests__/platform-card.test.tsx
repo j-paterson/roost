@@ -8,7 +8,7 @@ afterEach(cleanup);
 describe("PlatformCard — unconfigured", () => {
   it("shows Connect button and educational copy", () => {
     const onConnect = vi.fn();
-    render(<PlatformCard platform="tiktok" state={{ kind: "unconfigured" }} onConnect={onConnect} onSync={() => {}} onReconnect={() => {}} />);
+    render(<PlatformCard platform="tiktok" state={{ kind: "unconfigured" }} onConnect={onConnect} onSync={() => {}} onFullSync={vi.fn()} onReconnect={() => {}} />);
     expect(screen.getByText(/connect/i)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /connect/i }));
     expect(onConnect).toHaveBeenCalledOnce();
@@ -25,11 +25,12 @@ describe("PlatformCard — connected-idle", () => {
         state={{ kind: "connected-idle", itemCount: 4732, lastSync: ts, backlogs: { mediaFiles: 0, thread: 0, articleBody: 0, playback: 0 } }}
         onConnect={() => {}}
         onSync={onSync}
+        onFullSync={vi.fn()}
         onReconnect={() => {}}
       />
     );
     expect(screen.getByText(/4,732/)).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: /sync/i }));
+    fireEvent.click(screen.getByRole("button", { name: "Sync" }));
     expect(onSync).toHaveBeenCalledOnce();
   });
 
@@ -41,6 +42,7 @@ describe("PlatformCard — connected-idle", () => {
         state={{ kind: "connected-idle", itemCount: 10, lastSync: Date.now(), backlogs: { mediaFiles: 0, thread: 0, articleBody: 0, playback: 0 } }}
         onConnect={() => {}}
         onSync={() => {}}
+        onFullSync={vi.fn()}
         onReconnect={() => {}}
         onDisconnect={onDisconnect}
       />
@@ -56,6 +58,7 @@ describe("PlatformCard — connected-idle", () => {
         state={{ kind: "connected-idle", itemCount: 10, lastSync: Date.now(), backlogs: { mediaFiles: 0, thread: 0, articleBody: 0, playback: 0 } }}
         onConnect={() => {}}
         onSync={() => {}}
+        onFullSync={vi.fn()}
         onReconnect={() => {}}
       />
     );
@@ -74,6 +77,7 @@ describe("PlatformCard — connected-idle", () => {
         }}
         onConnect={() => {}}
         onSync={() => {}}
+        onFullSync={vi.fn()}
         onReconnect={() => {}}
       />
     );
@@ -96,6 +100,7 @@ describe("PlatformCard — syncing", () => {
         state={{ kind: "syncing", progress: { fetched: 412, total: 600 } }}
         onConnect={() => {}}
         onSync={() => {}}
+        onFullSync={vi.fn()}
         onReconnect={() => {}}
       />
     );
@@ -120,6 +125,7 @@ describe("PlatformCard — live sync (two-column row)", () => {
         webviewMountRef={mountRef}
         onConnect={() => {}}
         onSync={() => {}}
+        onFullSync={vi.fn()}
         onReconnect={() => {}}
         onCancel={onCancel}
       />
@@ -139,6 +145,7 @@ describe("PlatformCard — live sync (two-column row)", () => {
         state={{ kind: "connected-idle", itemCount: 5, lastSync: Date.now(), backlogs: { mediaFiles: 0, thread: 0, articleBody: 0, playback: 0 } }}
         onConnect={() => {}}
         onSync={() => {}}
+        onFullSync={vi.fn()}
         onReconnect={() => {}}
       />
     );
@@ -155,6 +162,7 @@ describe("PlatformCard — error", () => {
         state={{ kind: "error", reason: "Rate limit" }}
         onConnect={() => {}}
         onSync={onSync}
+        onFullSync={vi.fn()}
         onReconnect={() => {}}
       />
     );
@@ -173,6 +181,7 @@ describe("PlatformCard — expired-auth", () => {
         state={{ kind: "expired-auth" }}
         onConnect={() => {}}
         onSync={() => {}}
+        onFullSync={vi.fn()}
         onReconnect={onReconnect}
       />
     );

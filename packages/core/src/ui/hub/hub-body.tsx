@@ -183,9 +183,10 @@ export function HubBody({ app, plugin }: { app: App; plugin: IRoostPlugin }) {
     try {
       // Sequential queue — running every platform's webview + enrichment pipeline
       // at once overloads resources. One platform at a time, each to completion.
-      // A per-platform error is logged and the queue continues; cancelling a
-      // platform (Stop) also stops the queue (cancelOne flips its stopSignal and
-      // the loop below sees it is no longer connected-idle / running).
+      // A per-platform error is logged and the queue continues; the Cancel button
+      // calls setGlobalRunningSynced(false), which sets globalRunningRef.current
+      // to false, and the loop checks if (!globalRunningRef.current) before
+      // starting each platform.
       for (const p of targets) {
         if (!globalRunningRef.current) break; // queue-level cancel
         try {
@@ -407,6 +408,7 @@ export function HubBody({ app, plugin }: { app: App; plugin: IRoostPlugin }) {
               webviewMountRef={mountRefs.current[platformId]}
               onConnect={() => void connect(platformId)}
               onSync={() => void syncOne(platformId, "quick")}
+              onFullSync={() => void syncOne(platformId, "full")}
               onReconnect={() => void connect(platformId)}
               onCancelLogin={() => stopLogin(platformId)}
               onDisconnect={() => disconnect(platformId)}
@@ -424,6 +426,7 @@ export function HubBody({ app, plugin }: { app: App; plugin: IRoostPlugin }) {
           webviewMountRef={null}
           onConnect={() => {}}
           onSync={() => void syncOne("eagle")}
+          onFullSync={() => void syncOne("eagle", "full")}
           onReconnect={() => {}}
           onCancelLogin={() => {}}
           onDisconnect={undefined}
