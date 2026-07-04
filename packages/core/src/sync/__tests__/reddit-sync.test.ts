@@ -12,7 +12,7 @@ describe("paginateSaved", () => {
   it("follows pagination to the empty end page; emits normalized records", async () => {
     const fetch: RedditFetch = vi.fn().mockResolvedValueOnce(listing(["a", "b"], "t3_b")).mockResolvedValueOnce(listing(["c"], null)).mockResolvedValueOnce(listing([], null));
     const emitted: string[] = [];
-    const res = await paginateSaved({ fetch, sleep: async () => {}, onRecords: async (rs) => { emitted.push(...rs.map(r => r.id)); }, knownIds: new Set(), prevComplete: false, batchSize: 1, earlyOutThreshold: 3, maxItems: null, hardCap: 1000, isStopped: () => false, onLog: () => {}, onProgress: () => {} });
+    const res = await paginateSaved({ fetch, sleep: async () => {}, onRecords: async (rs) => { emitted.push(...rs.map(r => r.id)); }, knownIds: new Set(), mode: "full", batchSize: 1, maxItems: null, hardCap: 1000, isStopped: () => false, onLog: () => {}, onProgress: () => {} });
     expect(res.totalFetched).toBe(3);
     expect(emitted).toEqual(["reddit:a", "reddit:b", "reddit:c"]);
     expect((fetch as ReturnType<typeof vi.fn>).mock.calls[1][0]).toContain("after=t3_b");
@@ -27,7 +27,7 @@ describe("paginateSaved", () => {
       .mockResolvedValueOnce(listing(["c", "d"], null))   // resumed via after=t3_b; last = t3_d
       .mockResolvedValueOnce(listing([], null));          // genuine end: empty page
     const emitted: string[] = [];
-    const res = await paginateSaved({ fetch, sleep: async () => {}, onRecords: async (rs) => { emitted.push(...rs.map(r => r.id)); }, knownIds: new Set(), prevComplete: false, batchSize: 1, earlyOutThreshold: 3, maxItems: null, hardCap: 1000, isStopped: () => false, onLog: () => {}, onProgress: () => {} });
+    const res = await paginateSaved({ fetch, sleep: async () => {}, onRecords: async (rs) => { emitted.push(...rs.map(r => r.id)); }, knownIds: new Set(), mode: "full", batchSize: 1, maxItems: null, hardCap: 1000, isStopped: () => false, onLog: () => {}, onProgress: () => {} });
     expect(emitted).toEqual(["reddit:a", "reddit:b", "reddit:c", "reddit:d"]);
     expect(res.totalFetched).toBe(4);
     expect((fetch as ReturnType<typeof vi.fn>).mock.calls[1][0]).toContain("after=t3_b");
@@ -38,7 +38,7 @@ describe("paginateSaved", () => {
     const fetch: RedditFetch = vi.fn()
       .mockResolvedValueOnce(listing(["a"], null))
       .mockResolvedValueOnce(listing([], null));
-    const res = await paginateSaved({ fetch, sleep: async () => {}, onRecords: async () => {}, knownIds: new Set(), prevComplete: false, batchSize: 1, earlyOutThreshold: 3, maxItems: null, hardCap: 1000, isStopped: () => false, onLog: () => {}, onProgress: () => {} });
+    const res = await paginateSaved({ fetch, sleep: async () => {}, onRecords: async () => {}, knownIds: new Set(), mode: "full", batchSize: 1, maxItems: null, hardCap: 1000, isStopped: () => false, onLog: () => {}, onProgress: () => {} });
     expect(res.totalFetched).toBe(1);
     expect((fetch as ReturnType<typeof vi.fn>).mock.calls.length).toBe(2);
   });
@@ -46,7 +46,7 @@ describe("paginateSaved", () => {
   it("stops when a whole page is cross-page duplicates (loop guard)", async () => {
     // Same page returned forever: after the first, every item is a dup → must stop.
     const fetch: RedditFetch = vi.fn().mockResolvedValue(listing(["a", "b"], null));
-    const res = await paginateSaved({ fetch, sleep: async () => {}, onRecords: async () => {}, knownIds: new Set(), prevComplete: false, batchSize: 1, earlyOutThreshold: 3, maxItems: null, hardCap: 1000, isStopped: () => false, onLog: () => {}, onProgress: () => {} });
+    const res = await paginateSaved({ fetch, sleep: async () => {}, onRecords: async () => {}, knownIds: new Set(), mode: "full", batchSize: 1, maxItems: null, hardCap: 1000, isStopped: () => false, onLog: () => {}, onProgress: () => {} });
     expect(res.totalFetched).toBe(2); // a,b once; second identical page is all dupes → stop
   });
 
@@ -59,7 +59,7 @@ describe("paginateSaved", () => {
       const ids = Array.from({ length: 100 }, (_, i) => "x" + (base + i));
       return listing(ids, "t3_" + ids[ids.length - 1]); // distinct advancing cursor per page
     });
-    const res = await paginateSaved({ fetch, sleep: async () => {}, onRecords: async () => {}, knownIds: new Set(), prevComplete: false, batchSize: 100, earlyOutThreshold: 3, maxItems: null, hardCap: 250, isStopped: () => false, onLog: () => {}, onProgress: () => {} });
+    const res = await paginateSaved({ fetch, sleep: async () => {}, onRecords: async () => {}, knownIds: new Set(), mode: "full", batchSize: 100, maxItems: null, hardCap: 250, isStopped: () => false, onLog: () => {}, onProgress: () => {} });
     expect(res.hitHardCap).toBe(true);
     expect(res.totalFetched).toBe(249); // returns on the item that hits rawCount===250, before emitting it
   });
@@ -67,7 +67,7 @@ describe("paginateSaved", () => {
   it("dedupes ids seen across pages", async () => {
     const fetch: RedditFetch = vi.fn().mockResolvedValueOnce(listing(["a", "b"], "t3_b")).mockResolvedValueOnce(listing(["b", "c"], null)).mockResolvedValueOnce(listing([], null));
     const emitted: string[] = [];
-    const res = await paginateSaved({ fetch, sleep: async () => {}, onRecords: async (rs) => { emitted.push(...rs.map(r => r.id)); }, knownIds: new Set(), prevComplete: false, batchSize: 1, earlyOutThreshold: 3, maxItems: null, hardCap: 1000, isStopped: () => false, onLog: () => {}, onProgress: () => {} });
+    const res = await paginateSaved({ fetch, sleep: async () => {}, onRecords: async (rs) => { emitted.push(...rs.map(r => r.id)); }, knownIds: new Set(), mode: "full", batchSize: 1, maxItems: null, hardCap: 1000, isStopped: () => false, onLog: () => {}, onProgress: () => {} });
     expect(emitted).toEqual(["reddit:a", "reddit:b", "reddit:c"]); // b not re-emitted
     expect(res.totalFetched).toBe(3);
   });
@@ -75,13 +75,54 @@ describe("paginateSaved", () => {
   it("filters non-t3 children", async () => {
     const fetch: RedditFetch = vi.fn().mockResolvedValue({ status: 200, body: JSON.stringify({ kind: "Listing", data: { after: null, children: [ { kind: "t1", data: { id: "cmt" } }, { kind: "t3", data: { id: "post", permalink: "/r/x/comments/post/t/", created_utc: 1700000000, author: "u", subreddit: "x" } } ] } }) });
     const emitted: string[] = [];
-    await paginateSaved({ fetch, sleep: async () => {}, onRecords: async (rs) => { emitted.push(...rs.map(r => r.id)); }, knownIds: new Set(), prevComplete: false, batchSize: 1, earlyOutThreshold: 3, maxItems: null, hardCap: 1000, isStopped: () => false, onLog: () => {}, onProgress: () => {} });
+    await paginateSaved({ fetch, sleep: async () => {}, onRecords: async (rs) => { emitted.push(...rs.map(r => r.id)); }, knownIds: new Set(), mode: "full", batchSize: 1, maxItems: null, hardCap: 1000, isStopped: () => false, onLog: () => {}, onProgress: () => {} });
     expect(emitted).toEqual(["reddit:post"]);
   });
 
   it("backs off then aborts on 429", async () => {
     const fetch: RedditFetch = vi.fn().mockResolvedValue({ status: 429, body: "" });
-    const res = await paginateSaved({ fetch, sleep: async () => {}, onRecords: async () => {}, knownIds: new Set(), prevComplete: false, batchSize: 1, earlyOutThreshold: 3, maxItems: null, hardCap: 1000, isStopped: () => false, onLog: () => {}, onProgress: () => {}, maxBackoffRetries: 2 });
+    const res = await paginateSaved({ fetch, sleep: async () => {}, onRecords: async () => {}, knownIds: new Set(), mode: "full", batchSize: 1, maxItems: null, hardCap: 1000, isStopped: () => false, onLog: () => {}, onProgress: () => {}, maxBackoffRetries: 2 });
     expect(res.abortedRateLimited).toBe(true);
+  });
+
+  it("quick mode stops at the first already-known item", async () => {
+    const fetch: RedditFetch = vi.fn().mockResolvedValueOnce(listing(["new1", "new2", "known1", "new3"], null));
+    const emitted: string[] = [];
+    const res = await paginateSaved({
+      fetch, sleep: async () => {},
+      onRecords: async (rs) => { emitted.push(...rs.map((r) => r.id)); },
+      knownIds: new Set(["reddit:known1"]), mode: "quick",
+      batchSize: 10, maxItems: null, hardCap: 1000, isStopped: () => false,
+      onLog: () => {}, onProgress: () => {},
+    });
+    expect(res.earlyOut).toBe(true);
+    expect(emitted).toEqual(["reddit:new1", "reddit:new2"]);
+  });
+
+  it("quick mode does not false-early-out on a page with skipped non-t3 children", async () => {
+    // A t1 child whose data.id matches a known id must NOT trigger the quick-stop
+    // check — the check only fires for t3 items that pass roostNormalize.
+    const fetch: RedditFetch = vi.fn()
+      .mockResolvedValueOnce({
+        status: 200,
+        body: JSON.stringify({ kind: "Listing", data: {
+          after: null, dist: 2,
+          children: [
+            { kind: "t1", data: { id: "known1" } }, // non-t3 — skipped before quick-stop check
+            { kind: "t3", data: { id: "new1", name: "t3_new1", permalink: "/r/x/comments/new1/t/", created_utc: 1700000000, author: "u", subreddit: "x" } },
+          ],
+        } }),
+      })
+      .mockResolvedValueOnce(listing([], null)); // terminating empty page
+    const emitted: string[] = [];
+    const res = await paginateSaved({
+      fetch, sleep: async () => {},
+      onRecords: async (rs) => { emitted.push(...rs.map((r) => r.id)); },
+      knownIds: new Set(["reddit:known1"]), mode: "quick",
+      batchSize: 10, maxItems: null, hardCap: 1000, isStopped: () => false,
+      onLog: () => {}, onProgress: () => {},
+    });
+    expect(res.earlyOut).toBe(false);
+    expect(emitted).toEqual(["reddit:new1"]);
   });
 });

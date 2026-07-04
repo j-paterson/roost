@@ -5,7 +5,8 @@
  */
 import { roostNormalize, type NormalizedRecord } from "../lib/normalize";
 import type { StopSignal, SyncPhaseProgress, ElectronWebview } from "@/types/sync";
-import { SYNC_BATCH_SIZE, EARLY_OUT_THRESHOLD } from "@/config";
+import { SYNC_BATCH_SIZE } from "@/config";
+import type { SyncMode } from "@/sync/sync-mode";
 // @ts-ignore — raw probe loaded as string by esbuild/vitest rawProbePlugin
 import redditProbeSource from "../probes/reddit-probe.probe";
 
@@ -23,9 +24,8 @@ interface PaginateArgs {
   sleep: (ms: number) => Promise<void>;
   onRecords: (records: NormalizedRecord[]) => Promise<void>;
   knownIds: Set<string>;
-  prevComplete: boolean;
+  mode: SyncMode;
   batchSize: number;
-  earlyOutThreshold: number;
   maxItems: number | null;
   /** Absolute cap on raw t3 items scanned (incl. cross-page dupes). Reddit hard-caps at 1000. */
   hardCap: number;
@@ -61,7 +61,6 @@ export async function paginateSaved(args: PaginateArgs): Promise<PaginateResult>
   let cursor: string | null = null;
   let totalFetched = 0;   // unique items emitted
   let rawCount = 0;       // all t3 items scanned (including cross-page dupes)
-  let consecutiveKnownPages = 0;
   let pending: NormalizedRecord[] = [];
 
   const flush = async () => {
@@ -103,7 +102,6 @@ export async function paginateSaved(args: PaginateArgs): Promise<PaginateResult>
     }
 
     const children = parsed.data?.children || [];
-    let pageAllKnown = true;
     let processedCount = 0;
     let lastFullname: string | null = null; // last item's own fullname (cursor fallback)
 
@@ -131,9 +129,14 @@ export async function paginateSaved(args: PaginateArgs): Promise<PaginateResult>
       });
       if (!record) continue;
 
+      if (args.mode === "quick" && args.knownIds.has(record.id)) {
+        args.onLog("[reddit] reached a previously-synced item — quick sync stopping");
+        await flush();
+        return { totalFetched, earlyOut: true, abortedRateLimited: false, hitHardCap: false };
+      }
+
       totalFetched++;
       processedCount++;
-      if (!args.knownIds.has(record.id)) pageAllKnown = false;
       pending.push(record);
       if (pending.length >= args.batchSize) await flush();
 
@@ -145,21 +148,6 @@ export async function paginateSaved(args: PaginateArgs): Promise<PaginateResult>
     }
 
     args.onProgress({ phase: "fetch", count: totalFetched, total: 0, done: false });
-
-    // Early-out: reverse-chron listing means consecutive all-known pages signal
-    // we've caught up to a prior complete sync. Require processedCount > 0 to
-    // avoid falsely triggering when all items on a page were dupes.
-    if (args.prevComplete && pageAllKnown && processedCount > 0) {
-      consecutiveKnownPages++;
-      args.onLog(`[reddit] all-known page (${consecutiveKnownPages}/${args.earlyOutThreshold})`);
-      if (consecutiveKnownPages >= args.earlyOutThreshold) {
-        args.onLog("[reddit] previous sync complete — early out");
-        await flush();
-        return { totalFetched, earlyOut: true, abortedRateLimited: false, hitHardCap: false };
-      }
-    } else {
-      consecutiveKnownPages = 0;
-    }
 
     // Termination. Reddit's saved.json?type=links reports data.after=null
     // PREMATURELY on short pages while more items still exist (confirmed live: a
@@ -193,7 +181,7 @@ const realSleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 export async function syncReddit(
   wc: ElectronWebview,
   webviewEl: ElectronWebview,
-  opts: { stopSignal?: StopSignal; maxItems?: number } = {},
+  opts: { stopSignal?: StopSignal; maxItems?: number; syncMode?: SyncMode } = {},
   onProgress?: (p: SyncPhaseProgress) => void,
   onRecords?: (records: NormalizedRecord[]) => Promise<void>,
   onLog?: (msg: string) => void,
@@ -234,7 +222,6 @@ export async function syncReddit(
     .executeJavaScript(`(function(){ var s = window.__ROOST_KNOWN_IDS__; return s ? Array.from(s) : []; })()`)
     .then((arr: unknown) => new Set(Array.isArray(arr) ? (arr as string[]) : []))
     .catch(() => new Set<string>());
-  const prevComplete = await wc.executeJavaScript(`!!window.__ROOST_PREV_SYNC_COMPLETE__`).catch(() => false);
 
   const result = await paginateSaved({
     fetch: redditFetch,
@@ -242,9 +229,8 @@ export async function syncReddit(
     me,
     onRecords: async (recs) => { if (onRecords && !isStopped()) await onRecords(recs); },
     knownIds,
-    prevComplete: prevComplete === true,
+    mode: opts.syncMode ?? "full",
     batchSize: SYNC_BATCH_SIZE,
-    earlyOutThreshold: EARLY_OUT_THRESHOLD,
     maxItems: opts.maxItems && opts.maxItems > 0 ? opts.maxItems : null,
     hardCap: MAX_SAVED_ITEMS,
     isStopped,
