@@ -28,7 +28,6 @@ export const MIN_DISCOVERY_COHESION = 0.75;
 
 // ── Sync ──
 export const SYNC_BATCH_SIZE = 200;
-export const EARLY_OUT_THRESHOLD = 3;
 export const TIKTOK_VIDEO_DOWNLOAD_TIMEOUT_MS = 60_000;
 export const MEDIA_DOWNLOAD_MAX_RETRIES = 2;
 /** Per-stage cap for the embed pipeline's backend calls (vision, topic, embed).

@@ -459,10 +459,9 @@
 
     let pages = 0;
 
-    let consecutiveKnownPages = 0;
     const knownIds = window.__ROOST_KNOWN_IDS__;
-    // If previous sync completed, we can stop early when hitting known territory
-    const prevSyncComplete = window.__ROOST_PREV_SYNC_COMPLETE__ || false;
+    // Quick sync stops at the first all-known page; full sync never early-outs.
+    const syncMode = window.__ROOST_SYNC_MODE__ || "full";
 
     while (store.hasMore) {
       if (window.__tiktokStopFetch) { console.log("[Roost TikTok] Fetch stopped by user"); break; }
@@ -497,22 +496,21 @@
             return id && knownIds.has('tiktok:' + id);
           });
           if (allKnown) {
-            consecutiveKnownPages++;
-            console.log(`[Roost TikTok] Page ${pages + 1}: all ${list.length} items known (${consecutiveKnownPages} consecutive)`);
+            console.log(`[Roost TikTok] Page ${pages + 1}: all ${list.length} items known`);
             // Update cursor to keep pagination moving
             if (data.cursor !== undefined) store.cursor = String(data.cursor);
             if (data.hasMore !== undefined) store.hasMore = !!data.hasMore;
             pages++;
 
-            // If previous sync was complete, stop after 3 consecutive known pages
-            if (prevSyncComplete && consecutiveKnownPages >= 3) {
-              console.log("[Roost TikTok] Previous sync complete + 3 known pages — stopping early");
+            // Quick sync: reached previously-synced territory — stop at the first
+            // fully-known page. Full sync: skip this page but keep scanning to the end.
+            if (syncMode === "quick") {
+              console.log("[Roost TikTok] Quick sync — first all-known page, stopping early");
               store.hasMore = false;
               break;
             }
-            continue; // skip processing, jump to next page
+            continue; // full mode: skip processing this known page, keep scanning
           }
-          consecutiveKnownPages = 0;
         }
 
         const added = processResponse(data);

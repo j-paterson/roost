@@ -158,7 +158,7 @@ export async function runPlatformSync(opts: RunPlatformSyncOpts): Promise<RunPla
     log(`${totalCount} existing ${platform} bookmarks (quick mode — skipping backlog scan)`);
   }
   await wc.executeJavaScript(
-    `window.__ROOST_KNOWN_IDS__=new Set(${JSON.stringify(platformIds)});window.__ROOST_PREV_SYNC_COMPLETE__=${JSON.stringify(prevSync?.complete === true)};void 0;`,
+    `window.__ROOST_KNOWN_IDS__=new Set(${JSON.stringify(platformIds)});window.__ROOST_SYNC_MODE__=${JSON.stringify(effectiveMode)};void 0;`,
   ).catch(() => {});
 
   // Suppress per-write gallery + folder-tree rebuilds for the duration of the

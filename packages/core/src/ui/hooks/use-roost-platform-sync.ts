@@ -5,6 +5,7 @@ import type { Platform, StopSignal, SyncPhaseProgress } from "@/types/sync";
 import type { NormalizedRecord } from "@/lib/normalize";
 import type { IRoostPlugin } from "@/types/plugin";
 import { getPlatform, PLATFORMS } from "@/platforms/registry";
+import { resolveSyncMode, type SyncMode } from "@/sync/sync-mode";
 import { VaultWriter } from "@/sync/vault-writer";
 import { importFromEagle, getEagleLibraryPath } from "@/sync/eagle-import";
 import { ensureBasesFiles } from "@/sync/bases-setup";
@@ -86,6 +87,7 @@ export function useRoostPlatformSync({ app, plugin, log, scanLibrary }: UseRoost
     let syncCompleted = false;
     const prevSync = plugin.settings.syncState?.[platform];
     const prevComplete = prevSync?.complete === true;
+    const sidebarMode: SyncMode = resolveSyncMode("quick", !!prevSync, prevComplete);
 
     const existingIds = await writer.getExistingIds();
     const incompleteScan = await writer.scanIncompleteIds();
@@ -122,7 +124,7 @@ export function useRoostPlatformSync({ app, plugin, log, scanLibrary }: UseRoost
     log(`${totalCount} existing ${platform} bookmarks (${incompleteIds.size} need resync${breakdown})`);
     await wc
       .executeJavaScript(
-        `window.__ROOST_KNOWN_IDS__=new Set(${JSON.stringify(platformIds)});window.__ROOST_PREV_SYNC_COMPLETE__=${JSON.stringify(prevComplete)};void 0;`,
+        `window.__ROOST_KNOWN_IDS__=new Set(${JSON.stringify(platformIds)});window.__ROOST_SYNC_MODE__=${JSON.stringify(sidebarMode)};void 0;`,
       )
       .catch(() => {});
 
@@ -161,6 +163,7 @@ export function useRoostPlatformSync({ app, plugin, log, scanLibrary }: UseRoost
           {
             stopSignal: signal,
             hydrateCachedThread: (r) => writer.hydrateThreadFromCache(r),
+            syncMode: sidebarMode,
           },
           onProgress,
           onRecords,
