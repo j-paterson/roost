@@ -7,6 +7,7 @@ import { PrereqStrip } from "@/ui/hub/prereq-strip";
 import { PlatformCard, type PlatformId } from "@/ui/hub/platform-card";
 import { ENRICHMENTS, PIPELINE_ENRICHMENTS, isPipelineEnrichmentId } from "@/lib/enrichments";
 import { runPlatformSync } from "@/sync/run-platform-sync";
+import type { SyncMode } from "@/sync/sync-mode";
 import { IntegrationsPanel } from "@/ui/hub/integrations-panel";
 import { buildIntegrationRows } from "@/ui/hub/integration-rows";
 import { clearDetectCache, type IntegrationId } from "@/integrations/registry";
@@ -65,6 +66,11 @@ export function HubBody({ app, plugin }: { app: App; plugin: IRoostPlugin }) {
     ) as Record<Platform, number | null>;
   }
 
+  // Mirror of globalRunning as a ref so the async queue loop reads the live
+  // cancel flag (React state is stale inside a running async closure).
+  const globalRunningRef = useRef(false);
+  const setGlobalRunningSynced = (v: boolean) => { globalRunningRef.current = v; setGlobalRunning(v); };
+
   // Refs hold the DOM mount targets for each platform's webview during sync.
   // PlatformCard renders an empty div with this ref attached when syncing.
   // Single ref holding the whole map — hooks-safe (one unconditional useRef call).
@@ -83,7 +89,7 @@ export function HubBody({ app, plugin }: { app: App; plugin: IRoostPlugin }) {
     plugin.fireLog?.(m);
   };
 
-  const runOne = async (platform: Platform): Promise<void> => {
+  const runOne = async (platform: Platform, mode: SyncMode = "quick"): Promise<void> => {
     if (liveSyncs[platform]) return;
     // Wait one frame so the platform card renders its mount div before we
     // try to attach the webview to it.
@@ -149,6 +155,7 @@ export function HubBody({ app, plugin }: { app: App; plugin: IRoostPlugin }) {
             };
           });
         },
+        syncMode: mode,
         suppressNotice: true,
       }));
     } finally {
@@ -162,35 +169,43 @@ export function HubBody({ app, plugin }: { app: App; plugin: IRoostPlugin }) {
     if (live) live.signal.stop();
   };
 
-  const updateAll = async () => {
+  const updateAll = async (mode: SyncMode) => {
     const targets: Platform[] = [];
     if (state.platforms.tiktok.kind === "connected-idle") targets.push("tiktok");
     if (state.platforms.x.kind === "connected-idle") targets.push("twitter");
     if (state.platforms.instagram.kind === "connected-idle") targets.push("instagram");
     if (state.platforms.reddit.kind === "connected-idle") targets.push("reddit");
-    // Defensive: the action bar already disables the buttons when nothing is
-    // connected, but never let a click silently do nothing.
     if (targets.length === 0) {
       new Notice("Connect TikTok, X/Twitter, Instagram, or Reddit first, then sync.");
       return;
     }
-    setGlobalRunning(true);
+    setGlobalRunningSynced(true);
     try {
-      // Run in parallel — each platform has its own webview, writer, and
-      // mount target.
-      await Promise.all(targets.map((p) => runOne(p)));
+      // Sequential queue — running every platform's webview + enrichment pipeline
+      // at once overloads resources. One platform at a time, each to completion.
+      // A per-platform error is logged and the queue continues; cancelling a
+      // platform (Stop) also stops the queue (cancelOne flips its stopSignal and
+      // the loop below sees it is no longer connected-idle / running).
+      for (const p of targets) {
+        if (!globalRunningRef.current) break; // queue-level cancel
+        try {
+          await runOne(p, mode);
+        } catch (e) {
+          log(`[${p}] sync failed — continuing queue: ${e instanceof Error ? e.message : String(e)}`);
+        }
+      }
     } finally {
-      setGlobalRunning(false);
+      setGlobalRunningSynced(false);
     }
   };
 
-  const syncOne = async (id: Platform | "eagle") => {
+  const syncOne = async (id: Platform | "eagle", mode: SyncMode = "quick") => {
     if (id === "eagle") {
       await plugin.runEagleImport();
       plugin.triggerHubStateChange();
       return;
     }
-    await runOne(id);
+    await runOne(id, mode);
   };
 
   const PLATFORM_LABEL: Record<Platform, string> = Object.fromEntries(
@@ -373,9 +388,9 @@ export function HubBody({ app, plugin }: { app: App; plugin: IRoostPlugin }) {
       <GlobalActionBar
         state={state}
         isRunning={anySyncing}
-        onFastSync={() => void updateAll()}
-        onDeepSync={() => void updateAll()}
-        onCancel={() => { enabledPlatforms().forEach((d) => cancelOne(d.id)); }}
+        onQuickSyncAll={() => void updateAll("quick")}
+        onFullSyncAll={() => void updateAll("full")}
+        onCancel={() => { enabledPlatforms().forEach((d) => cancelOne(d.id)); setGlobalRunningSynced(false); }}
       />
       <div className="border-b border-border pb-2">
         {/* Webview-sync platforms: tiktok then x, driven by the registry. */}
@@ -391,7 +406,7 @@ export function HubBody({ app, plugin }: { app: App; plugin: IRoostPlugin }) {
               loginActive={loginActive[platformId]}
               webviewMountRef={mountRefs.current[platformId]}
               onConnect={() => void connect(platformId)}
-              onSync={() => void syncOne(platformId)}
+              onSync={() => void syncOne(platformId, "quick")}
               onReconnect={() => void connect(platformId)}
               onCancelLogin={() => stopLogin(platformId)}
               onDisconnect={() => disconnect(platformId)}

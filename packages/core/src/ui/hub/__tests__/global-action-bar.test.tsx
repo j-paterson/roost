@@ -39,19 +39,19 @@ function connectedState(): HubState {
 }
 
 describe("GlobalActionBar", () => {
-  it("shows both Fast sync and Deep sync buttons when a platform is connected", () => {
-    render(<GlobalActionBar state={connectedState()} isRunning={false} onFastSync={noop} onDeepSync={noop} onCancel={noop} />);
-    expect(screen.getByRole("button", { name: /fast sync/i })).toBeTruthy();
-    expect(screen.getByRole("button", { name: /deep sync/i })).toBeTruthy();
+  it("shows both Quick sync all and Full rescan all buttons when a platform is connected", () => {
+    render(<GlobalActionBar state={connectedState()} isRunning={false} onQuickSyncAll={noop} onFullSyncAll={noop} onCancel={noop} />);
+    expect(screen.getByRole("button", { name: /quick sync all/i })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /full rescan all/i })).toBeTruthy();
   });
 
   it("shows guidance + a disabled button when no platform is connected", () => {
-    render(<GlobalActionBar state={mkState()} isRunning={false} onFastSync={noop} onDeepSync={noop} onCancel={noop} />);
+    render(<GlobalActionBar state={mkState()} isRunning={false} onQuickSyncAll={noop} onFullSyncAll={noop} onCancel={noop} />);
     expect(screen.getByText(/connect a platform below/i)).toBeTruthy();
     const btn = screen.getByRole("button", { name: /connect a platform first/i });
     expect(btn.hasAttribute("disabled")).toBe(true);
     // The real sync buttons must not be present in this state.
-    expect(screen.queryByRole("button", { name: /fast sync/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /quick sync all/i })).toBeNull();
   });
 
   it("renders the subline with platform + backlog counts when pending", () => {
@@ -65,12 +65,12 @@ describe("GlobalActionBar", () => {
       },
       global: { lastFullUpdate: null, anythingToUpdate: true, anythingNeedsAttention: false, runningJob: null, pipelinesPending: { total: 0, byPipeline: [] } },
     });
-    render(<GlobalActionBar state={state} isRunning={false} onFastSync={noop} onDeepSync={noop} onCancel={noop} />);
+    render(<GlobalActionBar state={state} isRunning={false} onQuickSyncAll={noop} onFullSyncAll={noop} onCancel={noop} />);
     expect(screen.getByText(/1 platform · 12 backfills/i)).toBeTruthy();
   });
 
   it("shows 'Syncing in progress…' + Cancel when isRunning", () => {
-    render(<GlobalActionBar state={mkState()} isRunning={true} onFastSync={noop} onDeepSync={noop} onCancel={noop} />);
+    render(<GlobalActionBar state={mkState()} isRunning={true} onQuickSyncAll={noop} onFullSyncAll={noop} onCancel={noop} />);
     expect(screen.getByText(/syncing in progress/i)).toBeTruthy();
     expect(screen.getByText(/cancel all/i)).toBeTruthy();
   });
@@ -80,22 +80,22 @@ describe("GlobalActionBar", () => {
       prereqs: { folder: "missing", ollama: "ok" },
       global: { lastFullUpdate: null, anythingToUpdate: false, anythingNeedsAttention: true, runningJob: null, pipelinesPending: { total: 0, byPipeline: [] } },
     });
-    render(<GlobalActionBar state={state} isRunning={false} onFastSync={noop} onDeepSync={noop} onCancel={noop} />);
+    render(<GlobalActionBar state={state} isRunning={false} onQuickSyncAll={noop} onFullSyncAll={noop} onCancel={noop} />);
     const btn = screen.getByRole("button", { name: /fix prereqs/i });
     expect(btn.hasAttribute("disabled")).toBe(true);
   });
 
-  it("calls onFastSync when Fast sync clicked", () => {
+  it("calls onQuickSyncAll when Quick sync all clicked", () => {
     const fn = vi.fn();
-    render(<GlobalActionBar state={connectedState()} isRunning={false} onFastSync={fn} onDeepSync={noop} onCancel={noop} />);
-    fireEvent.click(screen.getByRole("button", { name: /fast sync/i }));
+    render(<GlobalActionBar state={connectedState()} isRunning={false} onQuickSyncAll={fn} onFullSyncAll={noop} onCancel={noop} />);
+    fireEvent.click(screen.getByRole("button", { name: /quick sync all/i }));
     expect(fn).toHaveBeenCalledOnce();
   });
 
-  it("calls onDeepSync when Deep sync clicked", () => {
+  it("calls onFullSyncAll when Full rescan all clicked", () => {
     const fn = vi.fn();
-    render(<GlobalActionBar state={connectedState()} isRunning={false} onFastSync={noop} onDeepSync={fn} onCancel={noop} />);
-    fireEvent.click(screen.getByRole("button", { name: /deep sync/i }));
+    render(<GlobalActionBar state={connectedState()} isRunning={false} onQuickSyncAll={noop} onFullSyncAll={fn} onCancel={noop} />);
+    fireEvent.click(screen.getByRole("button", { name: /full rescan all/i }));
     expect(fn).toHaveBeenCalledOnce();
   });
 });

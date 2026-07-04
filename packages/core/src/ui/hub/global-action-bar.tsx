@@ -22,14 +22,14 @@ function countReadyPlatforms(state: HubState): number {
 export function GlobalActionBar({
   state,
   isRunning,
-  onFastSync,
-  onDeepSync,
+  onQuickSyncAll,
+  onFullSyncAll,
   onCancel,
 }: {
   state: HubState;
   isRunning: boolean;
-  onFastSync: () => void;
-  onDeepSync: () => void;
+  onQuickSyncAll: () => void;
+  onFullSyncAll: () => void;
   onCancel: () => void;
 }) {
   // Sync only needs a folder to write notes into. Ollama is for Smart
@@ -98,18 +98,18 @@ export function GlobalActionBar({
         <Button
           variant="secondary"
           size="sm"
-          onClick={onFastSync}
-          title="Skip in-line thread + article enrichment. Standalone backfill commands fill those later. Recommended for routine updates."
+          onClick={onQuickSyncAll}
+          title="Top up every connected platform: pull new items only, stopping at the last-synced point. Runs one platform at a time."
         >
-          ⚡ Fast sync
+          ⚡ Quick sync all
         </Button>
         <Button
           variant="default"
           size="sm"
-          onClick={onDeepSync}
-          title="Full sync including in-line thread context + article body enrichment. Slower but fully enriched in one pass."
+          onClick={onFullSyncAll}
+          title="Full rescan of every platform: re-check everything and fill in missing media/threads. Runs one platform at a time."
         >
-          ⟳ Deep sync
+          ⟳ Full rescan all
         </Button>
       </div>
     </div>
