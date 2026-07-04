@@ -366,7 +366,7 @@ export async function syncTikTok(
   await wc.executeJavaScript(`window.__tiktokStopFetch = true; void 0;`).catch(() => {});
 
   // Only collect remaining if not stopped
-  if (!isStopped() && totalFetched > lastCollected) {
+  if (!isStopped() && !boundaryReached && totalFetched > lastCollected) {
     const batch = await collectChunkFiltered(wc, lastCollected, totalFetched - lastCollected);
     if (batch.length > 0 && onRecords) await onRecords(batch);
   }
