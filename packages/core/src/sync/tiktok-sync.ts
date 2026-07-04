@@ -1,5 +1,6 @@
 import { roostNormalize, type NormalizedRecord } from "../lib/normalize";
 import type { StopSignal, SyncPhaseProgress, ElectronWebview } from "@/types/sync";
+import type { SyncMode } from "@/sync/sync-mode";
 import { SYNC_BATCH_SIZE } from "@/config";
 // @ts-ignore — raw probe loaded as string by esbuild plugin
 import tiktokProbeSource from "../probes/tiktok-probe.probe";
@@ -12,12 +13,13 @@ interface SyncResult {
 export async function syncTikTok(
   wc: ElectronWebview,
   webviewEl: ElectronWebview,
-  opts: { stopSignal?: StopSignal; maxItems?: number } = {},
+  opts: { stopSignal?: StopSignal; maxItems?: number; syncMode?: SyncMode } = {},
   onProgress?: (p: SyncPhaseProgress) => void,
   onRecords?: (records: NormalizedRecord[]) => Promise<void>,
   onLog?: (msg: string) => void,
 ): Promise<SyncResult> {
   const isStopped = () => opts.stopSignal?.stopped === true;
+  const mode: SyncMode = opts.syncMode ?? "full";
   // Optional cap on items fetched. Used by the first-sync sample path —
   // bound the initial run so users see results in ~2 min instead of hours.
   const cap = opts.maxItems && opts.maxItems > 0 ? opts.maxItems : null;
@@ -270,6 +272,7 @@ export async function syncTikTok(
   let lastCollected = 0;
   let totalFetched = 0;
   const BATCH_SIZE = SYNC_BATCH_SIZE;
+  let boundaryReached = false;
 
   while (!isStopped()) {
     await new Promise(r => setTimeout(r, 1000));
@@ -330,8 +333,21 @@ export async function syncTikTok(
         })();
       `).catch(() => 0);
 
+      // Quick sync: the favorites list is newest-first, so the first batch
+      // containing ANY known item is the boundary. Collect the new items in it
+      // (collectChunkFiltered drops known ids) and stop — everything below is
+      // already synced.
+      if (mode === "quick" && knownCount > 0) {
+        const batch = await collectChunkFiltered(wc, lastCollected, BATCH_SIZE);
+        if (batch.length > 0 && onRecords && !isStopped()) await onRecords(batch);
+        onLog?.(`Quick sync: reached previously-synced favorites — stopping fetch`);
+        await wc.executeJavaScript(`window.__tiktokStopFetch=true;void 0;`).catch(() => {});
+        boundaryReached = true;
+        break;
+      }
+
       if (knownCount === BATCH_SIZE) {
-        // Entire batch is known — skip collection entirely
+        // Full mode, entire batch known — skip collection, keep scanning.
         onLog?.(`Skipped batch at ${lastCollected} — all ${BATCH_SIZE} items known`);
         lastCollected += BATCH_SIZE;
         continue;
@@ -343,7 +359,7 @@ export async function syncTikTok(
       lastCollected += BATCH_SIZE;
     }
 
-    if (status.done || status.error) break;
+    if (boundaryReached || status.done || status.error) break;
   }
 
   // Stop the probe's internal fetch immediately
