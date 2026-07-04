@@ -111,13 +111,6 @@ export interface RoostSettings {
    *  Films/Series/Documentaries. Free signup at themoviedb.org.
    *  Empty string falls back to search-URL only. */
   tmdbApiKey: string;
-  /** When true, syncTwitter skips the in-line thread + article enrichment
-   *  passes. New items still reach disk via the flush; thread + article
-   *  body are filled later by the standalone "Backfill X thread context" /
-   *  "Backfill X article bodies" commands. Drops incremental sync time
-   *  from minutes to seconds. Default false — opt in once the standalone
-   *  backfills are proven on the user's vault. */
-  fastSyncMode: boolean;
   /** Internal one-time marker: has the legacy tweet-body catch-up run? New
    *  tweets render at write time (twitter-record-writer); this flag gates the
    *  ONE-TIME auto catch-up of pre-031 legacy notes on plugin load. Set true
@@ -181,7 +174,6 @@ export const DEFAULT_SETTINGS: RoostSettings = {
   anthropicApiKey: "",
   anthropicModel: "claude-haiku-4-5-20251001",
   tmdbApiKey: "",
-  fastSyncMode: false,
   tweetBodyBackfillDone: false,
   categoryOrder: [],
   subcategoryOrder: {},
@@ -229,24 +221,6 @@ export class RoostSettingTab extends PluginSettingTab {
         .setValue(this.plugin.settings.syncFolder)
         .onChange(async (value) => {
           this.plugin.settings.syncFolder = value || "Bookmarks";
-          await this.plugin.saveSettings();
-        })
-      );
-
-    new Setting(containerEl)
-      .setName("Fast sync mode")
-      .setDesc(
-        "When enabled, syncing X/Twitter only discovers new bookmarks — " +
-        "thread context and X article bodies are NOT enriched in-line. " +
-        "Drops sync time from minutes to seconds. Run the standalone " +
-        "'Backfill X thread context' and 'Backfill X article bodies' " +
-        "commands (Cmd+P) to fill those gaps separately. Recommended only " +
-        "after you've verified those backfill commands work on your vault.",
-      )
-      .addToggle(toggle => toggle
-        .setValue(this.plugin.settings.fastSyncMode)
-        .onChange(async (value) => {
-          this.plugin.settings.fastSyncMode = value;
           await this.plugin.saveSettings();
         })
       );

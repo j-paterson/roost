@@ -83,7 +83,7 @@ export function HubBody({ app, plugin }: { app: App; plugin: IRoostPlugin }) {
     plugin.fireLog?.(m);
   };
 
-  const runOne = async (platform: Platform, fastMode?: boolean): Promise<void> => {
+  const runOne = async (platform: Platform): Promise<void> => {
     if (liveSyncs[platform]) return;
     // Wait one frame so the platform card renders its mount div before we
     // try to attach the webview to it.
@@ -103,7 +103,6 @@ export function HubBody({ app, plugin }: { app: App; plugin: IRoostPlugin }) {
         platform,
         mountTarget: target,
         signal,
-        fastMode,
         onLog: log,
         onProgress: (p: SyncPhaseProgress) => {
           // Match the sidebar's setSyncProgress logic: overwrite phase/count
@@ -163,7 +162,7 @@ export function HubBody({ app, plugin }: { app: App; plugin: IRoostPlugin }) {
     if (live) live.signal.stop();
   };
 
-  const updateAll = async (fastMode: boolean) => {
+  const updateAll = async () => {
     const targets: Platform[] = [];
     if (state.platforms.tiktok.kind === "connected-idle") targets.push("tiktok");
     if (state.platforms.x.kind === "connected-idle") targets.push("twitter");
@@ -178,8 +177,8 @@ export function HubBody({ app, plugin }: { app: App; plugin: IRoostPlugin }) {
     setGlobalRunning(true);
     try {
       // Run in parallel — each platform has its own webview, writer, and
-      // mount target. fastMode is X-only (TikTok ignores it).
-      await Promise.all(targets.map((p) => runOne(p, fastMode)));
+      // mount target.
+      await Promise.all(targets.map((p) => runOne(p)));
     } finally {
       setGlobalRunning(false);
     }
@@ -374,8 +373,8 @@ export function HubBody({ app, plugin }: { app: App; plugin: IRoostPlugin }) {
       <GlobalActionBar
         state={state}
         isRunning={anySyncing}
-        onFastSync={() => void updateAll(true)}
-        onDeepSync={() => void updateAll(false)}
+        onFastSync={() => void updateAll()}
+        onDeepSync={() => void updateAll()}
         onCancel={() => { enabledPlatforms().forEach((d) => cancelOne(d.id)); }}
       />
       <div className="border-b border-border pb-2">

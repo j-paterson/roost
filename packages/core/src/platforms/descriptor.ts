@@ -8,6 +8,7 @@
  */
 import type { Platform, ElectronWebview, StopSignal, SyncPhaseProgress } from "@/types/sync";
 import type { NormalizedRecord, RawApiData, NormalizeOptions } from "@/lib/normalize-helpers";
+import type { SyncMode } from "@/sync/sync-mode";
 import type { BookmarkRecord, extractTwitterMedia } from "@/lib/twitter-helpers";
 import type { extractTikTokMedia } from "@/lib/tiktok-helpers";
 import type { extractInstagramMedia } from "@/lib/instagram-helpers";
@@ -61,7 +62,7 @@ export type SyncFn = (
     stopSignal?: StopSignal;
     maxItems?: number;
     hydrateCachedThread?: (record: NormalizedRecord) => Promise<boolean>;
-    fastSyncMode?: boolean;
+    syncMode?: SyncMode;
     maxScrollTime?: number;
   },
   onProgress?: (p: SyncPhaseProgress) => void,

@@ -15,6 +15,7 @@ import {
 } from "@/lib/article-utils";
 // @ts-ignore — raw probe loaded as string by esbuild plugin
 import twitterProbeSource from "../probes/twitter-probe.probe";
+import { sliceUntilKnown, type SyncMode } from "@/sync/sync-mode";
 
 const pendingHandlers = new WeakMap<HTMLElement, { domReady: EventListener; finish: EventListener }>();
 
@@ -37,11 +38,7 @@ export async function syncTwitter(
     hydrateCachedThread?: (record: NormalizedRecord) => Promise<boolean>;
     /** Optional cap on items collected. Used by the first-sync sample path. */
     maxItems?: number;
-    /** When true, skip Step 5 (TweetDetail probe / thread enrichment) and
-     *  Step 6 (article body fetch). Items still flow through scroll + flush;
-     *  thread / article enrichment is left for the standalone backfill
-     *  commands. Drops a multi-minute enrich loop on every incremental sync. */
-    fastSyncMode?: boolean;
+    syncMode?: SyncMode;
   } = {},
   onProgress?: (p: SyncPhaseProgress) => void,
   onRecords?: (records: NormalizedRecord[]) => Promise<void>,
@@ -203,7 +200,7 @@ export async function syncTwitter(
   //   - whether BookmarkFolderTimeline fires reliably on that navigation
   //   - whether tweets-in-folders also appear in the main Bookmarks timeline
   const folderResults: { name: string; itemCount: number }[] = [];
-  if (!isStopped() && !opts.fastSyncMode) {
+  if (!isStopped()) {
     onLog?.("Scanning bookmark folders...");
     const rawFolders = await wc.executeJavaScript(`
       (function() {
@@ -281,13 +278,7 @@ export async function syncTwitter(
   // Steps 5 + 6: TweetDetail probe (thread enrichment) + article body fetch.
   // segments.length >= 2 → real thread; segments.length < 2 → standalone (mark probed);
   // null → fetch failed (mark probe_failed so vault-writer leaves it flagged for retry).
-  // When opts.fastSyncMode is true, both steps are skipped — the standalone
-  // "Backfill X thread context" and "Backfill X article bodies" commands
-  // handle these gaps separately. The flush below still runs so newly-
-  // discovered items reach disk regardless.
-  if (pendingAll.length > 0 && opts.fastSyncMode) {
-    onLog?.(`Fast-sync: skipping enrichment of ${pendingAll.length} items (run backfill commands separately)`);
-  } else if (pendingAll.length > 0) {
+  if (pendingAll.length > 0) {
     // Keep probe re-injected across the bootstrap navigation. Without this the
     // probe is lost when loadURL() replaces the document.
     const reinjectProbe = async () => {
@@ -429,8 +420,7 @@ export async function syncTwitter(
   }
 
   // Flush all records (enriched or not — consumer handles fallback). Always
-  // runs regardless of fastSyncMode so newly-discovered items reach disk
-  // even when Step 5/6 are skipped.
+  // runs so newly-discovered items reach disk.
   if (onRecords && !isStopped() && pendingAll.length > 0) {
     await onRecords(pendingAll);
   }

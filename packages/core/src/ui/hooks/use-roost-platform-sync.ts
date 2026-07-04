@@ -161,7 +161,6 @@ export function useRoostPlatformSync({ app, plugin, log, scanLibrary }: UseRoost
           {
             stopSignal: signal,
             hydrateCachedThread: (r) => writer.hydrateThreadFromCache(r),
-            fastSyncMode: plugin.settings.fastSyncMode,
           },
           onProgress,
           onRecords,

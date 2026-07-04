@@ -17,6 +17,7 @@ import type {
 } from "@/types/sync";
 import type { NormalizedRecord } from "@/lib/normalize";
 import { getPlatform } from "@/platforms/registry";
+import { resolveSyncMode, type SyncMode } from "@/sync/sync-mode";
 import { VaultWriter } from "@/sync/vault-writer";
 import { findBinary } from "@/integrations/detect";
 import { ensureBasesFiles } from "@/sync/bases-setup";
@@ -44,10 +45,12 @@ export interface RunPlatformSyncOpts {
   /** Suppress the "Sync complete" Notice (e.g. when the caller wants to
    *  combine multiple platforms into one summary). */
   suppressNotice?: boolean;
-  /** Override settings.fastSyncMode for this sync. When true, skip in-line
-   *  thread + article enrichment (X only — no effect on TikTok). When
-   *  undefined, the call falls back to the persisted setting. */
-  fastMode?: boolean;
+  /** Requested sync extent. "quick" stops at the first already-known item and
+   *  skips re-touching existing items; "full" scrolls to the end and drains the
+   *  enrichment backlog. Defaults to "full" when omitted. The *effective* mode
+   *  is resolved against SyncState (quick falls back to full on first sync or an
+   *  interrupted prior run). */
+  syncMode?: SyncMode;
 }
 
 export interface RunPlatformSyncResult {
@@ -68,8 +71,16 @@ export interface RunPlatformSyncResult {
  * webviews and writers).
  */
 export async function runPlatformSync(opts: RunPlatformSyncOpts): Promise<RunPlatformSyncResult> {
-  const { plugin, app, platform, mountTarget, signal, onProgress, onBatchWritten, onLog, suppressNotice, fastMode } = opts;
-  const effectiveFastMode = fastMode ?? plugin.settings.fastSyncMode;
+  const { plugin, app, platform, mountTarget, signal, onProgress, onBatchWritten, onLog, suppressNotice, syncMode } = opts;
+  const prevSync = plugin.settings.syncState?.[platform];
+  const effectiveMode: SyncMode = resolveSyncMode(
+    syncMode ?? "full",
+    !!prevSync,
+    prevSync?.complete === true,
+  );
+  if ((syncMode ?? "full") === "quick" && effectiveMode === "full") {
+    onLog?.(`[${platform}] last run didn't finish (or first sync) — doing a full scan`);
+  }
   const log = (m: string) => { onLog?.(m); };
 
   const wm = plugin.getWebviewManager();
@@ -125,26 +136,29 @@ export async function runPlatformSync(opts: RunPlatformSyncOpts): Promise<RunPla
   let totalSkipped = 0;
   let totalResynced = 0;
   let syncCompleted = false;
-  const prevSync = plugin.settings.syncState?.[platform];
-  const prevComplete = prevSync?.complete === true;
 
   const existingIds = await writer.getExistingIds();
-  const incompleteScan = await writer.scanIncompleteIds();
-  const incompleteIds = incompleteScan.all;
-  plugin.lastIncompleteScan = incompleteScan.byCategory;
+  // Quick sync never drains the enrichment backlog, so skip the (full-vault)
+  // incomplete scan entirely — it is pure overhead in quick mode.
+  const incomplete = effectiveMode === "full" ? await writer.scanIncompleteIds() : null;
 
   const platformIds = [...existingIds].filter((id) => id.startsWith(platform + ":"));
   const totalCount = platformIds.length;
-  const bc = incompleteScan.byCategory;
-  const breakdownParts: string[] = [];
-  if (bc.rawJson.size) breakdownParts.push(`${bc.rawJson.size} raw-json`);
-  if (bc.mediaFiles.size) breakdownParts.push(`${bc.mediaFiles.size} media`);
-  if (bc.thread.size) breakdownParts.push(`${bc.thread.size} thread`);
-  if (bc.articleBody.size) breakdownParts.push(`${bc.articleBody.size} article-body`);
-  const breakdown = breakdownParts.length ? `: ${breakdownParts.join(" · ")}` : "";
-  log(`${totalCount} existing ${platform} bookmarks (${incompleteIds.size} need resync${breakdown})`);
+  if (incomplete) {
+    plugin.lastIncompleteScan = incomplete.byCategory;
+    const bc = incomplete.byCategory;
+    const breakdownParts: string[] = [];
+    if (bc.rawJson.size) breakdownParts.push(`${bc.rawJson.size} raw-json`);
+    if (bc.mediaFiles.size) breakdownParts.push(`${bc.mediaFiles.size} media`);
+    if (bc.thread.size) breakdownParts.push(`${bc.thread.size} thread`);
+    if (bc.articleBody.size) breakdownParts.push(`${bc.articleBody.size} article-body`);
+    const breakdown = breakdownParts.length ? `: ${breakdownParts.join(" · ")}` : "";
+    log(`${totalCount} existing ${platform} bookmarks (${incomplete.all.size} need resync${breakdown})`);
+  } else {
+    log(`${totalCount} existing ${platform} bookmarks (quick mode — skipping backlog scan)`);
+  }
   await wc.executeJavaScript(
-    `window.__ROOST_KNOWN_IDS__=new Set(${JSON.stringify(platformIds)});window.__ROOST_PREV_SYNC_COMPLETE__=${JSON.stringify(prevComplete)};void 0;`,
+    `window.__ROOST_KNOWN_IDS__=new Set(${JSON.stringify(platformIds)});window.__ROOST_PREV_SYNC_COMPLETE__=${JSON.stringify(prevSync?.complete === true)};void 0;`,
   ).catch(() => {});
 
   // Suppress per-write gallery + folder-tree rebuilds for the duration of the
@@ -178,7 +192,7 @@ export async function runPlatformSync(opts: RunPlatformSyncOpts): Promise<RunPla
         {
           stopSignal: signal,
           hydrateCachedThread: (r) => writer.hydrateThreadFromCache(r),
-          fastSyncMode: effectiveFastMode,
+          syncMode: effectiveMode,
         },
         onProgress,
         onRecords,
