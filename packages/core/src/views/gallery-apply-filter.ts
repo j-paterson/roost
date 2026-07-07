@@ -62,7 +62,10 @@ export function applyGalleryFilter(
   host.setCurrentFilter(filter);
   host.pushFilterHistory(filter, pushHistory);
 
-  if (plugin?.bulkWriteInProgress) {
+  // Defer only NON-user-initiated re-applications during a bulk write. A user
+  // clicking a folder (pushHistory) must update the gallery immediately, even
+  // while a background sync is streaming writes.
+  if (plugin?.bulkWriteInProgress && !pushHistory) {
     traceEvent("applyFilter:deferred");
     return;
   }

@@ -713,7 +713,10 @@ export class BookmarksBasesView extends BasesView
       currentFilterCategory: this.currentFilter?.category ?? null,
       dataLen: this.data?.data?.length ?? 0,
     });
-    if (plugin?.bulkWriteInProgress) {
+    // Suppress data-event repaints during a bulk write, but NOT a filter
+    // re-application (reapplyingFilter) — that's a user view change, not a
+    // write-storm event, so it must render even mid-sync.
+    if (plugin?.bulkWriteInProgress && !this.reapplyingFilter) {
       traceEvent("onDataUpdated:guarded");
       return;
     }
@@ -733,8 +736,9 @@ export class BookmarksBasesView extends BasesView
   }
 
   private performDataUpdate(): void {
-    // Re-check the guard: a Roost bulk write may have begun during the coalescing window.
-    if (this.getRoostPlugin()?.bulkWriteInProgress) {
+    // Re-check the guard: a Roost bulk write may have begun during the coalescing
+    // window. A filter re-application (reapplyingFilter) still renders — see onDataUpdated.
+    if (this.getRoostPlugin()?.bulkWriteInProgress && !this.reapplyingFilter) {
       traceEvent("onDataUpdated:guarded");
       return;
     }
