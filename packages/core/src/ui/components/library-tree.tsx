@@ -64,6 +64,13 @@ interface LibraryTreeProps {
   categories: { name: string; count: number; subcategories?: SubcategoryEntry[] }[];
   pipelineCategories?: Set<string>;
   platforms: { name: string; display: string; total: number }[];
+  /** Per-platform auth status (keyed by platform name) so the sync pill can show
+   *  "connected → sync" vs "logged out → open login". Absent = treat as unknown. */
+  platformAuth?: Record<string, "connected" | "logged-out" | "unknown" | undefined>;
+  /** Platforms waiting in the sync queue (not yet running). */
+  queuedPlatforms?: Platform[];
+  /** Slot to dock the platform webview mini-preview into while a sync runs. */
+  miniSyncRef?: React.RefObject<HTMLDivElement | null>;
   activeFilter: RoostFilter;
   activePlatform: Platform | null;
   syncingPlatform: Platform | null;
@@ -146,7 +153,7 @@ function getDropZone(e: React.DragEvent<HTMLElement>): DropZone {
 }
 
 function LibraryTreeImpl({
-  total, unsorted, categories, pipelineCategories, platforms, activeFilter, activePlatform, syncingPlatform, syncing, importing,
+  total, unsorted, categories, pipelineCategories, platforms, platformAuth, queuedPlatforms, miniSyncRef, activeFilter, activePlatform, syncingPlatform, syncing, importing,
   onFilter, onShowPlatform, onHidePlatform, onSync, onImportEagle, onDeleteCategory,
   onCreateSubcategory, onDeleteSubcategory, onRenameCategory, onRenameSubcategory,
   onResort, onSortIntoSubcategories, smartAssignBusy,
@@ -211,42 +218,87 @@ function LibraryTreeImpl({
       )}
 
       {(platforms.length > 0 || hasItems) && (
+        <>
         <div className="roost-sync-strip">
-          {platforms.map(p => (
-            <div key={p.name} className="roost-sync-strip-platform">
-              <span className="roost-sync-strip-name">{p.display}</span>
+          {platforms.map(p => {
+            const platform = p.name as Platform;
+            const isActive = activePlatform === platform;
+            const connected = platformAuth?.[p.name] === "connected";
+            const busy = syncingPlatform === platform;
+            const isQueued = queuedPlatforms?.includes(platform) ?? false;
+            // One pill per platform. The primary click does what the platform's
+            // state calls for: hide an open webview, quick-sync a connected
+            // platform (queued behind any running sync), or open the login
+            // webview for a logged-out one. The icon and colour advertise which.
+            const stateClass = busy ? "is-syncing" : isQueued ? "is-queued" : isActive ? "is-active" : connected ? "is-connected" : "is-disconnected";
+            const label = busy ? `Syncing ${p.display}…`
+              : isQueued ? `Queued — ${p.display}`
+              : isActive ? `Hide ${p.display}`
+              : connected ? `Sync ${p.display}`
+              : `Log in to ${p.display}`;
+            const handleClick = isActive
+              ? () => onHidePlatform()
+              : connected
+                ? () => onSync(platform)
+                : () => onShowPlatform(platform);
+            // Spinner lives in the same trailing slot as the icon so nothing
+            // shifts sides when a sync starts. Sync glyph is a solid block, not a
+            // hairline outline (illegible at 10px).
+            const icon = busy
+              ? <span className="roost-spinner" />
+              : isQueued
+                ? <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                : isActive
+                  ? <svg width="10" height="10" viewBox="0 0 12 12"><path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
+                  : connected
+                    ? <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M17.65 6.35A7.96 7.96 0 0 0 12 4a8 8 0 1 0 7.73 10h-2.08A6 6 0 1 1 12 6c1.66 0 3.15.69 4.22 1.78L13 11h7V4z"/></svg>
+                    : <svg width="10" height="10" viewBox="0 0 12 12"><path d="M2 10L10 2M10 2H4M10 2v6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>;
+            return (
               <Button
-                variant="ghost" size="icon-xs"
-                className="roost-tree-action"
-                title={`Log in to ${p.display}`}
-                onClick={() => activePlatform === p.name ? onHidePlatform() : onShowPlatform(p.name as Platform)}
-              >{activePlatform === p.name ? <svg width="10" height="10" viewBox="0 0 12 12"><path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg> : <svg width="10" height="10" viewBox="0 0 12 12"><path d="M2 10L10 2M10 2H4M10 2v6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>}</Button>
-              <Button
-                variant="ghost" size="icon-xs"
-                className="roost-tree-action"
-                title={`Sync ${p.display}`}
-                onClick={() => onSync(p.name as Platform)}
-                loading={syncingPlatform === p.name}
-                disabled={syncing}
-              ><svg width="10" height="10" viewBox="0 0 12 12"><path d="M1.5 6a4.5 4.5 0 0 1 7.65-3.2L10.5 1.5v3h-3l1.15-1.15A3 3 0 0 0 3 6M10.5 6a4.5 4.5 0 0 1-7.65 3.2L1.5 10.5v-3h3L3.35 8.65A3 3 0 0 0 9 6" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/></svg></Button>
-            </div>
-          ))}
-          <div className="roost-sync-strip-platform">
-            <span className="roost-sync-strip-name">Eagle</span>
-            <Button
-              variant="ghost" size="icon-xs"
-              className="roost-tree-action"
-              title="Import from Eagle"
-              onClick={onImportEagle}
-              loading={importing}
-              disabled={syncing}
-            ><svg width="10" height="10" viewBox="0 0 12 12"><path d="M1.5 6a4.5 4.5 0 0 1 7.65-3.2L10.5 1.5v3h-3l1.15-1.15A3 3 0 0 0 3 6M10.5 6a4.5 4.5 0 0 1-7.65 3.2L1.5 10.5v-3h3L3.35 8.65A3 3 0 0 0 9 6" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/></svg></Button>
-          </div>
+                key={p.name}
+                variant="ghost" size="sm"
+                className={`roost-sync-pill ${stateClass}`}
+                title={label}
+                aria-label={label}
+                disabled={busy || isQueued}
+                onClick={handleClick}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  const menu = new Menu();
+                  menu.addItem(item => item
+                    .setTitle(isActive ? `Hide ${p.display}` : `Open ${p.display}`)
+                    .setIcon(isActive ? "eye-off" : "external-link")
+                    .onClick(() => isActive ? onHidePlatform() : onShowPlatform(platform)));
+                  menu.showAtMouseEvent(e.nativeEvent);
+                }}
+              >
+                <span className="roost-sync-pill-name">{p.display}</span>
+                {icon && <span className="roost-sync-pill-icon">{icon}</span>}
+              </Button>
+            );
+          })}
         </div>
+        <div
+          ref={miniSyncRef}
+          className="roost-mini-sync"
+          style={syncingPlatform ? undefined : { display: "none" }}
+        />
+        </>
       )}
 
       {hasItems && (
         <div className="nav-folder-children">
+          {/* All Bookmarks — the null filter, matching the gallery's default view. */}
+          <div className="tree-item">
+            <div
+              className={`tree-item-self nav-file-title${!activeFilter ? " is-active" : ""}`}
+              data-category="__all__"
+              onClick={() => onFilter(null)}
+            >
+              <span className="tree-item-inner nav-file-title-content">All Bookmarks</span>
+              <span className="roost-tree-count">{total}</span>
+            </div>
+          </div>
           <div className="tree-item">
             <div
               className={`tree-item-self nav-file-title${activeFilter?.category === null && !activeFilter?.platform ? " is-active" : ""}`}

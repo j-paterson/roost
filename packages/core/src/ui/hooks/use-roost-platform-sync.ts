@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, type RefObject } from "react";
 import { App, Notice } from "obsidian";
 import type { SyncProgress } from "@/ui/components/progress-header";
 import type { Platform, StopSignal, SyncPhaseProgress } from "@/types/sync";
@@ -9,21 +9,35 @@ import { resolveSyncMode, type SyncMode } from "@/sync/sync-mode";
 import { VaultWriter } from "@/sync/vault-writer";
 import { importFromEagle, getEagleLibraryPath } from "@/sync/eagle-import";
 import { ensureBasesFiles } from "@/sync/bases-setup";
+import { waitForMetadataQuiet } from "@/lib/metadata-cache-quiet";
 
 export interface UseRoostPlatformSyncParams {
   app: App;
   plugin: IRoostPlugin;
   log: (msg: string) => void;
   scanLibrary: () => void | Promise<void>;
+  /** Slot to dock the platform webview into as a miniature preview during sync
+   *  (instead of opening the full site in a new tab). Absent → falls back to the
+   *  full webview leaf. */
+  miniMountRef?: RefObject<HTMLDivElement | null>;
 }
 
-export function useRoostPlatformSync({ app, plugin, log, scanLibrary }: UseRoostPlatformSyncParams) {
+export function useRoostPlatformSync({ app, plugin, log, scanLibrary, miniMountRef }: UseRoostPlatformSyncParams) {
   const [syncingPlatform, setSyncingPlatform] = useState<Platform | null>(null);
   const [syncStatus, setSyncStatus] = useState("");
   const [syncProgress, setSyncProgress] = useState<SyncProgress | null>(null);
   const [importing, setImporting] = useState(false);
   const [activePlatform, setActivePlatform] = useState<Platform | null>(null);
+  const [queuedPlatforms, setQueuedPlatforms] = useState<Platform[]>([]);
   const stopSignalRef = useRef<StopSignal | null>(null);
+  // Sync queue: platforms waiting to run. runQueueRef.current holds the pending
+  // list; processingQueueRef guards a single serial drainer so two clicks never
+  // sync concurrently (concurrent webview scrapes conflict).
+  const runQueueRef = useRef<Platform[]>([]);
+  const processingQueueRef = useRef(false);
+  // Synchronous mirror of the running platform — dedupe can't rely on the async
+  // syncingPlatform state (a fast second click would slip through before it commits).
+  const runningPlatformRef = useRef<Platform | null>(null);
 
   const syncing = syncingPlatform != null || importing;
 
@@ -37,12 +51,24 @@ export function useRoostPlatformSync({ app, plugin, log, scanLibrary }: UseRoost
     setActivePlatform(null);
   }
 
-  async function handleSync(platform: Platform) {
-    if (syncing) return;
+  async function runSync(platform: Platform) {
+    runningPlatformRef.current = platform;
     const wm = plugin.getWebviewManager();
-    showPlatform(platform);
+    wm.create(platform);
     const el = wm.getElement(platform);
-    if (!el) return;
+    if (!el) { runningPlatformRef.current = null; return; }
+
+    setSyncingPlatform(platform);
+    // Dock the webview as a miniature preview under the sync pills (like the Hub)
+    // rather than opening the full site in a new tab. Wait one frame so React has
+    // painted the now-visible slot, then MOUNT BEFORE waiting on webContents — a
+    // webview only initializes (fires dom-ready → webContents becomes available)
+    // once it's attached to visible DOM. Returned to its hidden container in the
+    // finally below.
+    await new Promise<void>(r => requestAnimationFrame(() => r()));
+    const miniTarget = miniMountRef?.current ?? null;
+    if (miniTarget) wm.mount(platform, miniTarget, { mini: true });
+    else showPlatform(platform);
 
     let wc = wm.getWebContents(platform);
     if (!wc) {
@@ -60,10 +86,12 @@ export function useRoostPlatformSync({ app, plugin, log, scanLibrary }: UseRoost
     }
     if (!wc) {
       log(`[FAIL] Webview for ${platform} not ready`);
+      wm.unmount(platform);
+      setSyncingPlatform(null);
+      runningPlatformRef.current = null;
       return;
     }
 
-    setSyncingPlatform(platform);
     await ensureBasesFiles(app.vault, plugin.settings.syncFolder);
     const signal: StopSignal = {
       stopped: false,
@@ -93,11 +121,11 @@ export function useRoostPlatformSync({ app, plugin, log, scanLibrary }: UseRoost
     }
 
     const existingIds = await writer.getExistingIds();
-    const incompleteScan = await writer.scanIncompleteIds();
-    const incompleteIds = incompleteScan.all;
-    // Cache the breakdown on the plugin so the hub can render per-platform
-    // backlog rows without re-running the (full-vault) scan.
-    plugin.lastIncompleteScan = incompleteScan.byCategory;
+    // Quick sync never drains the enrichment backlog, so skip the (full-vault)
+    // incomplete scan — pure overhead in quick mode (matches the Hub). Full
+    // rescan still runs it and refreshes the hub's cached backlog breakdown.
+    const incompleteScan = sidebarMode === "full" ? await writer.scanIncompleteIds() : null;
+    if (incompleteScan) plugin.lastIncompleteScan = incompleteScan.byCategory;
     // Treat all existing items as "known" for the scroll early-out. Items that
     // need enrichment (thread-probe, missing media) are scattered throughout
     // the timeline; if we disqualified them from "known", the consecutive-
@@ -117,19 +145,30 @@ export function useRoostPlatformSync({ app, plugin, log, scanLibrary }: UseRoost
     // user can tell at a glance which backfill (thread, media, article-body)
     // is on the hook this run. Empty buckets are omitted; if everything is
     // already enriched the suffix shrinks to "(0 need resync)".
-    const bc = incompleteScan.byCategory;
-    const breakdownParts: string[] = [];
-    if (bc.rawJson.size) breakdownParts.push(`${bc.rawJson.size} raw-json`);
-    if (bc.mediaFiles.size) breakdownParts.push(`${bc.mediaFiles.size} media`);
-    if (bc.thread.size) breakdownParts.push(`${bc.thread.size} thread`);
-    if (bc.articleBody.size) breakdownParts.push(`${bc.articleBody.size} article-body`);
-    const breakdown = breakdownParts.length ? `: ${breakdownParts.join(" · ")}` : "";
-    log(`${totalCount} existing ${platform} bookmarks (${incompleteIds.size} need resync${breakdown})`);
+    if (incompleteScan) {
+      const bc = incompleteScan.byCategory;
+      const breakdownParts: string[] = [];
+      if (bc.rawJson.size) breakdownParts.push(`${bc.rawJson.size} raw-json`);
+      if (bc.mediaFiles.size) breakdownParts.push(`${bc.mediaFiles.size} media`);
+      if (bc.thread.size) breakdownParts.push(`${bc.thread.size} thread`);
+      if (bc.articleBody.size) breakdownParts.push(`${bc.articleBody.size} article-body`);
+      const breakdown = breakdownParts.length ? `: ${breakdownParts.join(" · ")}` : "";
+      log(`${totalCount} existing ${platform} bookmarks (${incompleteScan.all.size} need resync${breakdown})`);
+    } else {
+      log(`${totalCount} existing ${platform} bookmarks — quick sync`);
+    }
     await wc
       .executeJavaScript(
         `window.__ROOST_KNOWN_IDS__=new Set(${JSON.stringify(platformIds)});window.__ROOST_SYNC_MODE__=${JSON.stringify(sidebarMode)};void 0;`,
       )
       .catch(() => {});
+
+    // Suppress the gallery/tree repaint storm while notes stream in — the gallery
+    // guards onDataUpdated on bulkWriteInProgress; without this the sidebar sync
+    // strobes the gallery (the Hub path already does this in run-platform-sync).
+    // Nesting-safe: an outer Smart Assign scope, if any, owns the settle.
+    const bulkWasOn = plugin.bulkWriteInProgress;
+    if (!bulkWasOn) plugin.bulkWriteInProgress = true;
 
     try {
       const onProgress = (p: SyncPhaseProgress) => {
@@ -192,10 +231,49 @@ export function useRoostPlatformSync({ app, plugin, log, scanLibrary }: UseRoost
         timestamp: Date.now(),
       };
       await plugin.saveSettings();
+      wm.unmount(platform);
       setSyncingPlatform(null);
+      runningPlatformRef.current = null;
       stopSignalRef.current = null;
       setSyncStatus("");
       setSyncProgress(null);
+      if (!bulkWasOn) {
+        // Let the final frontmatter writes settle, drop the flag, then trigger
+        // exactly one gallery rebuild + tree reconcile.
+        await waitForMetadataQuiet(app.metadataCache);
+        plugin.bulkWriteInProgress = false;
+        plugin.fireDataRefresh();
+      }
+    }
+  }
+
+  // Public entry point. Enqueue a platform sync and kick the serial drainer.
+  // Clicking a platform that is already syncing or already queued is a no-op.
+  function handleSync(platform: Platform) {
+    if (runningPlatformRef.current === platform || runQueueRef.current.includes(platform)) return;
+    runQueueRef.current = [...runQueueRef.current, platform];
+    setQueuedPlatforms(runQueueRef.current);
+    void processSyncQueue();
+  }
+
+  // Drains the queue one platform at a time; a second click while a sync runs
+  // appends to the queue rather than starting a concurrent (conflicting) scrape.
+  async function processSyncQueue() {
+    if (processingQueueRef.current) return;
+    processingQueueRef.current = true;
+    try {
+      while (runQueueRef.current.length > 0) {
+        const [next, ...rest] = runQueueRef.current;
+        runQueueRef.current = rest;
+        setQueuedPlatforms(rest);
+        try {
+          await runSync(next);
+        } catch (e: unknown) {
+          log(`[ERROR] sync ${next}: ${e instanceof Error ? e.message : String(e)}`);
+        }
+      }
+    } finally {
+      processingQueueRef.current = false;
     }
   }
 
@@ -257,6 +335,7 @@ export function useRoostPlatformSync({ app, plugin, log, scanLibrary }: UseRoost
 
   return {
     syncingPlatform,
+    queuedPlatforms,
     importing,
     activePlatform,
     syncStatus,

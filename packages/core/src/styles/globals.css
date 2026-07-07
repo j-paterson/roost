@@ -241,25 +241,112 @@ button.roost-tree-action.roost-tree-action:disabled {
   opacity: 0.3;
 }
 
-/* Sync strip — compact platform controls at top of library tree */
+/* Sync strip — one pill per platform at the top of the library tree.
+   The pill IS the button: colour + icon advertise the click action
+   (connected → sync, logged-out → open login, open webview → hide). */
 .roost-sync-strip {
   display: flex;
-  gap: 8px;
+  flex-wrap: wrap;
+  gap: 6px;
   padding: 6px 12px;
   border-bottom: 1px solid var(--background-modifier-border);
 }
 
-.roost-sync-strip-platform {
-  display: flex;
+button.roost-sync-pill.roost-sync-pill {
+  display: inline-flex;
   align-items: center;
-  gap: 2px;
-}
-
-.roost-sync-strip-name {
+  gap: 4px;
+  height: 22px;
+  min-height: 0;
+  padding: 0 9px;
+  border-radius: 999px;
   font-size: var(--font-smallest);
   font-weight: 500;
+  line-height: 1;
+  box-shadow: none;
+  border: 1px solid transparent;
+  cursor: pointer;
+}
+
+button.roost-sync-pill .roost-sync-pill-icon {
+  display: inline-flex;
+  align-items: center;
+  opacity: 0.8;
+}
+button.roost-sync-pill .roost-spinner {
+  width: 10px;
+  height: 10px;
+  border-width: 1.5px;
+}
+
+/* connected → subtle accent tint; click quick-syncs */
+button.roost-sync-pill.is-connected.is-connected {
+  color: var(--text-normal);
+  background: color-mix(in srgb, var(--interactive-accent) 14%, transparent);
+  border-color: color-mix(in srgb, var(--interactive-accent) 30%, transparent);
+}
+button.roost-sync-pill.is-connected.is-connected:hover {
+  background: color-mix(in srgb, var(--interactive-accent) 26%, transparent);
+}
+
+/* logged out → muted dashed ghost; click opens the login webview */
+button.roost-sync-pill.is-disconnected.is-disconnected {
   color: var(--text-muted);
-  margin-right: 2px;
+  background: transparent;
+  border-color: var(--background-modifier-border);
+  border-style: dashed;
+}
+button.roost-sync-pill.is-disconnected.is-disconnected:hover {
+  color: var(--text-normal);
+  background: var(--background-modifier-hover);
+}
+
+/* webview open → solid accent; click hides it */
+button.roost-sync-pill.is-active.is-active {
+  color: var(--text-on-accent);
+  background: var(--interactive-accent);
+  border-color: var(--interactive-accent);
+}
+
+/* actively syncing → same accent tint as connected, kept prominent (not dimmed
+   by :disabled) since its miniature preview is showing below */
+button.roost-sync-pill.is-syncing.is-syncing {
+  color: var(--text-normal);
+  background: color-mix(in srgb, var(--interactive-accent) 20%, transparent);
+  border-color: color-mix(in srgb, var(--interactive-accent) 34%, transparent);
+}
+
+/* queued behind a running sync → muted, gently pulsing */
+button.roost-sync-pill.is-queued.is-queued {
+  color: var(--text-muted);
+  background: var(--background-modifier-hover);
+  border-color: transparent;
+  animation: roost-sync-pill-pulse 1.4s ease-in-out infinite;
+}
+@keyframes roost-sync-pill-pulse {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 0.85; }
+}
+
+button.roost-sync-pill.roost-sync-pill:disabled {
+  cursor: default;
+}
+button.roost-sync-pill.is-connected:disabled,
+button.roost-sync-pill.is-disconnected:disabled {
+  opacity: 0.4;
+}
+
+/* Docked miniature of the platform webview shown while a sidebar sync runs,
+   in place of opening the full site in a new tab. The webview is scaled to a
+   4:3 preview by WebviewManager.mount(..., { mini: true }). */
+.roost-mini-sync {
+  margin: 0 12px 8px;
+  aspect-ratio: 4 / 3;
+  overflow: hidden;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  background: var(--background-secondary);
+  position: relative;
 }
 
 /* Dropdown item hover */
@@ -425,16 +512,14 @@ button.roost-tree-action.roost-tree-action:disabled {
    * background so the Roost view blends with the surrounding workspace. */
 }
 
-/* Bulk-write visual cue — applied to the bases view container while a bulk
- * write or heavy job (Smart Assign confirm, category/subcategory rename,
- * sync, backfills, category pipelines) is in flight. A light dim signals
- * "operation in progress" and pairs with the .roost-bulk-write-overlay pill.
- * The grid stays INTERACTIVE — heavy jobs can run for minutes/hours, so the
- * user must be able to keep browsing. Flicker is already prevented by the
- * onDataUpdated rebuild-suppression guards (which read bulkWriteInProgress),
- * not by this rule, so there is no need to block pointer events. */
+/* Bulk-write cue — applied to the bases view container while a bulk write or
+ * heavy job (Smart Assign confirm, rename, sync, backfills, pipelines) is in
+ * flight. The grid stays fully INTERACTIVE and un-dimmed — the user keeps
+ * browsing/filtering during background writes (flicker is already prevented by
+ * the onDataUpdated rebuild-suppression guards). The small .roost-bulk-write-
+ * overlay pill carries the "in progress" signal; no grid dim, which read as
+ * "frozen" even though the gallery is live. */
 .roost-bulk-write-active {
-  opacity: 0.8;
   transition: opacity 200ms ease;
 }
 

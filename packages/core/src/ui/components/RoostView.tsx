@@ -12,6 +12,7 @@ import { StagingPanel } from "@/ui/components/staging-panel";
 import { EditDescriptionModal } from "@/ui/components/edit-description-modal";
 import { SetupHealthPanel } from "@/ui/components/setup-health-panel";
 import { RoostHubStatusRow } from "@/ui/components/roost-hub-status-row";
+import { useHubState } from "@/ui/hub/use-hub-state";
 import { useSmartAssign } from "@/ui/hooks/use-smart-assign";
 import { useRoostPipelineRows } from "@/ui/hooks/use-roost-pipeline-rows";
 import { useRoostPlatformSync } from "@/ui/hooks/use-roost-platform-sync";
@@ -72,7 +73,18 @@ export function RoostView({ app, plugin }: RoostViewProps) {
     [plugin],
   );
 
-  const platformSync = useRoostPlatformSync({ app, plugin, log, scanLibrary });
+  const miniSyncRef = useRef<HTMLDivElement>(null);
+  const platformSync = useRoostPlatformSync({ app, plugin, log, scanLibrary, miniMountRef: miniSyncRef });
+  const hubState = useHubState(app, plugin);
+  // Collapse per-platform hub state to the auth signal the sync pill needs.
+  const authFor = (kind: string): "connected" | "logged-out" | "unknown" =>
+    kind === "unconfigured" || kind === "expired-auth" ? "logged-out" : kind === "connecting" ? "unknown" : "connected";
+  const platformAuth: Record<string, "connected" | "logged-out" | "unknown"> = {
+    tiktok: authFor(hubState.platforms.tiktok.kind),
+    twitter: authFor(hubState.platforms.x.kind),
+    instagram: authFor(hubState.platforms.instagram.kind),
+    reddit: authFor(hubState.platforms.reddit.kind),
+  };
 
   const { pipelineState, handleRunPipeline, handleCancelPipeline } = useRoostPipelineRows({
     plugin,
@@ -283,6 +295,9 @@ export function RoostView({ app, plugin }: RoostViewProps) {
           categories={libraryTree.categories}
           pipelineCategories={getPipelineCategoryNames()}
           platforms={libraryTree.platforms}
+          platformAuth={platformAuth}
+          queuedPlatforms={platformSync.queuedPlatforms}
+          miniSyncRef={miniSyncRef}
           activeFilter={activeFilter}
           activePlatform={platformSync.activePlatform}
           syncingPlatform={platformSync.syncingPlatform}
