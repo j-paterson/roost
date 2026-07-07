@@ -99,9 +99,10 @@ export async function syncTwitter(
     if (onRecords && !isStopped()) await onRecords(batch);
   };
 
-  // Step 2: Wait for initial bookmarks
+  // Step 2: Wait for initial bookmarks — poll until the store has items rather
+  // than a blind 5s settle, so a fast page load isn't padded to a fixed wait.
   onProgress?.({ phase: "loading", count: 0, total: 0, done: false });
-  await new Promise(r => setTimeout(r, 5000));
+  await waitUntil(async () => (await getStoreCount(wc)) > 0, 5000, 250);
 
   const initial = await getStoreCount(wc);
   onProgress?.({ phase: "loading", count: initial, total: 0, done: false });
@@ -192,7 +193,9 @@ export async function syncTwitter(
   //   - whether BookmarkFolderTimeline fires reliably on that navigation
   //   - whether tweets-in-folders also appear in the main Bookmarks timeline
   const folderResults: { name: string; itemCount: number }[] = [];
-  if (!isStopped()) {
+  // Folder tagging navigates into every bookmark folder (a few seconds each) —
+  // skip it on a quick top-up; new items get their folder tags on a full rescan.
+  if (!isStopped() && mode === "full") {
     onLog?.("Scanning bookmark folders...");
     const rawFolders = await wc.executeJavaScript(`
       (function() {
@@ -419,6 +422,16 @@ export async function syncTwitter(
 
   onProgress?.({ phase: "done", count: finalCount, total: finalCount, done: true });
   return { totalFetched: finalCount, folders: folderResults };
+}
+
+/** Poll `cond` every `stepMs` until it returns true or `maxMs` elapses.
+ *  Replaces blind fixed sleeps so a fast-responding page isn't padded. */
+async function waitUntil(cond: () => Promise<boolean>, maxMs: number, stepMs: number): Promise<void> {
+  const start = Date.now();
+  while (Date.now() - start < maxMs) {
+    if (await cond().catch(() => false)) return;
+    await new Promise(r => setTimeout(r, stepMs));
+  }
 }
 
 async function getStoreCount(wc: ElectronWebview): Promise<number> {
