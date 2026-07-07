@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { planConfirm, planReject, planReviewConfirm, planCorrection } from "@/pipeline/training-actions";
+import { planConfirm, planReject, planRejectProposal, planReviewConfirm, planCorrection } from "@/pipeline/training-actions";
 import { emptyTrainingSet } from "@/pipeline/training-set";
 import type { TrainingSet } from "@/pipeline/training-set";
 import { CATEGORY_FIELD, SUBCATEGORY_FIELD, ASSIGNED_BY_FIELD } from "@/config";
@@ -26,6 +26,19 @@ describe("planReject", () => {
     expect(out.patch).toEqual({ [CATEGORY_FIELD]: null, [SUBCATEGORY_FIELD]: null, [ASSIGNED_BY_FIELD]: null });
     expect(out.snapshotValue).toBeNull();
     expect(out.evalRecord).toMatchObject({ roostId: "b", guess: "Tech", finalLabel: null, correct: false, mode: "review" });
+  });
+});
+
+describe("planRejectProposal", () => {
+  it("rejects the PROPOSED class, adds no positive, and clears NO frontmatter (item stays filed)", () => {
+    const ts = emptyTrainingSet();
+    const out = planRejectProposal(ts, "c", "Media", 300);
+    // per-category negative recorded against the proposal, not "Other"
+    expect(ts.rejections["c"]).toEqual(["Media"]);
+    expect(ts.positives["c"]).toBeUndefined();
+    // unlike planReject, frontmatter is left untouched so roost_category (e.g. Other) survives
+    expect(out.patch).toEqual({});
+    expect(out.evalRecord).toMatchObject({ roostId: "c", guess: "Media", finalLabel: null, correct: false, mode: "review" });
   });
 });
 

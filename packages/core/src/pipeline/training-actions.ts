@@ -30,6 +30,20 @@ export function planReject(
   };
 }
 
+/** Pure: reject a review PROPOSAL (the best-fit class shown in the banner) WITHOUT re-filing
+ *  the item. Records a per-category negative for `proposedClass` and returns an empty patch,
+ *  so the item keeps its current roost_category (e.g. "Other") and stays eligible for future
+ *  review passes. Contrast planReject, which clears the category to fully unsorted. */
+export function planRejectProposal(
+  ts: TrainingSet, id: string, proposedClass: string, now: number,
+): { evalRecord: EvalRecord; patch: Record<string, unknown> } {
+  addRejection(ts, id, proposedClass);
+  return {
+    evalRecord: { ts: now, roostId: id, guess: proposedClass, tier: "none", finalLabel: null, correct: false, mode: "review" },
+    patch: {},
+  };
+}
+
 export interface TrainingActionDeps {
   vault: Vault;
   fileManager: FileManager;
@@ -61,6 +75,23 @@ export async function rejectAutoItem(deps: TrainingActionDeps, guessedClass: str
   await fileManager.processFrontMatter(file, (fm) => {
     for (const [k, v] of Object.entries(patch)) { if (v === null) delete fm[k]; else fm[k] = v; }
   });
+}
+
+/** Effectful: record a proposal rejection (per-category negative). Persists the training-set
+ *  and eval log only; the empty patch means NO frontmatter is written and NO snapshot is
+ *  touched, so the item stays filed as-is (e.g. "Other") and remains eligible for future
+ *  review passes. */
+export async function rejectProposalItem(deps: TrainingActionDeps, proposedClass: string): Promise<void> {
+  const { vault, fileManager, file, id, now } = deps;
+  const ts = loadTrainingSet(vault);
+  const { evalRecord, patch } = planRejectProposal(ts, id, proposedClass, now);
+  saveTrainingSet(vault, ts);
+  appendEvalRecords(vault, [evalRecord]);
+  if (Object.keys(patch).length > 0) {
+    await fileManager.processFrontMatter(file, (fm) => {
+      for (const [k, v] of Object.entries(patch)) { if (v === null) delete fm[k]; else fm[k] = v; }
+    });
+  }
 }
 
 /** Pure: confirm a review PROPOSAL (category not yet in frontmatter). Writes the

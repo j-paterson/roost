@@ -117,7 +117,7 @@ describe("GalleryFeedModeController review-pass dispatch", () => {
     await vi.waitFor(() => expect(host.reviewConfirm).toHaveBeenCalledWith("id1", "Tech"));
   });
 
-  it("reject calls host.reviewReject", async () => {
+  it("reject calls host.reviewReject with the frontmatter guess when no proposal is staged", async () => {
     const entries = [makeEntry("id1", "Tech"), makeEntry("id2", "Food")];
     const host = makeTestHost(entries);
     const ctrl = new GalleryFeedModeController(host);
@@ -127,7 +127,22 @@ describe("GalleryFeedModeController review-pass dispatch", () => {
     (ctrl as unknown as { handleTrainingAction: (a: string, id: string) => void })
       .handleTrainingAction("reject", "id1");
 
-    await vi.waitFor(() => expect(host.reviewReject).toHaveBeenCalledWith("id1"));
+    await vi.waitFor(() => expect(host.reviewReject).toHaveBeenCalledWith("id1", "Tech"));
+  });
+
+  // Other-review pass: banner shows the proposal (e.g. "Media") while frontmatter is "Other".
+  // Reject must record a negative for the PROPOSAL, not the frontmatter "Other".
+  it("reject passes the PROPOSED category (not frontmatter 'Other') to host.reviewReject", async () => {
+    const entries = [makeEntry("id1", "Other")];
+    const host = makeTestHost(entries);
+    const ctrl = new GalleryFeedModeController(host);
+    ctrl.trainingMode = true;
+    ctrl.startReviewPass(["id1"], { id1: "Media" });
+
+    (ctrl as unknown as { handleTrainingAction: (a: string, id: string) => void })
+      .handleTrainingAction("reject", "id1");
+
+    await vi.waitFor(() => expect(host.reviewReject).toHaveBeenCalledWith("id1", "Media"));
   });
 
   it("recategorize calls openReviewMoveModal (not openMoveModal)", () => {

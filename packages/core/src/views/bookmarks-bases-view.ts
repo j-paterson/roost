@@ -70,6 +70,7 @@ import { safeGetValue } from "@/lib/bases-entry";
 import {
   confirmAutoItem,
   rejectAutoItem,
+  rejectProposalItem,
   planReviewConfirm,
   planCorrection,
   type TrainingActionDeps,
@@ -396,20 +397,24 @@ export class BookmarksBasesView extends BasesView
     }
   }
 
-  async reviewReject(roostId: string): Promise<void> {
+  async reviewReject(roostId: string, proposedClass: string | null = null): Promise<void> {
     const entry = this.findEntryByRoostId(roostId);
     const file = entry ? this.app.vault.getFileByPath(entry.file.path) : null;
-    const guess = entry ? readGuess(entry).category : null;
+    // Reject the PROPOSED category the user saw in the banner (e.g. "Media"), not the
+    // frontmatter category — which for Other-review items is "Other", so rejecting it is
+    // both inert and wrong. Fall back to the frontmatter guess only when no proposal was
+    // staged. The item's roost_category is left untouched so it stays reviewable.
+    const rejected = proposedClass ?? (entry ? readGuess(entry).category : null);
     // Always mark judged so confirmSmartAssign excludes this id even when no guess exists.
     if (!this.humanAssignedRoostIds) this.humanAssignedRoostIds = new Set();
     this.humanAssignedRoostIds.add(roostId);
     this.syncHumanAssignedToPlugin();
     this.onDataUpdated();
-    if (!entry || !file || !guess) return;
+    if (!entry || !file || !rejected) return;
     try {
-      await rejectAutoItem(
+      await rejectProposalItem(
         { vault: this.app.vault, fileManager: this.app.fileManager, file, id: roostId, now: Date.now() },
-        guess,
+        rejected,
       );
     } catch (e) {
       console.warn("[roost] reviewReject failed:", e);

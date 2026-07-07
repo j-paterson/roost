@@ -67,7 +67,7 @@ export interface GalleryFeedModeHost {
   reviewConfirm(roostId: string, category: string): Promise<void>;
   /** originalGuess is the system's proposed category being corrected; null when unknown. */
   reviewMove(roostId: string, category: string, originalGuess: string | null): Promise<void>;
-  reviewReject(roostId: string): Promise<void>;
+  reviewReject(roostId: string, proposedClass?: string | null): Promise<void>;
   openReviewMoveModal(entry: BasesEntry, onCategory: (category: string) => Promise<void>): void;
 }
 
@@ -302,8 +302,12 @@ export class GalleryFeedModeController {
       }
       p = this.host.reviewConfirm(roostId, cat);
     } else {
-      // reject
-      p = this.host.reviewReject(roostId);
+      // reject: reject the PROPOSED category the user saw (skips frontmatter, which for
+      // Other-review items is "Other"), recording a per-category negative and leaving the
+      // item filed as-is so it stays reviewable.
+      const entry = this.host.findEntryByRoostId(roostId);
+      const cat = (this.reviewProposals?.[roostId] ?? null) || (entry ? readGuess(entry).category : null);
+      p = this.host.reviewReject(roostId, cat);
     }
     void p.finally(() => { this.inFlight.delete(roostId); this.advanceAfterAction(roostId); });
   }
